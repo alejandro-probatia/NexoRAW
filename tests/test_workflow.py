@@ -163,6 +163,97 @@ def test_collect_chart_samples_minimal_artifacts_omits_images(tmp_path: Path, mo
     assert not list((tmp_path / "overlays").glob("*.png"))
 
 
+def test_collect_chart_samples_reports_blocking_fallback_detection(tmp_path: Path, monkeypatch):
+    chart = tmp_path / "chart_fallback.tiff"
+    chart.write_bytes(b"placeholder")
+    image = np.full((20, 30, 3), 0.25, dtype=np.float32)
+    detection = ChartDetectionResult(
+        chart_type="unit",
+        confidence_score=0.05,
+        valid_patch_ratio=0.0,
+        homography=[1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
+        chart_polygon=[Point2(0, 0), Point2(29, 0), Point2(29, 19), Point2(0, 19)],
+        patches=[],
+        warnings=["fallback geometrico no fiable"],
+        detection_mode="fallback",
+    )
+
+    monkeypatch.setattr(workflow, "develop_image_array", lambda *_args, **_kwargs: image)
+    monkeypatch.setattr(workflow, "detect_chart_from_array", lambda *_args, **_kwargs: detection)
+
+    result = workflow._collect_chart_samples(
+        chart_files=[chart],
+        recipe=Recipe(),
+        reference=ReferenceCatalog(
+            {
+                "chart_name": "unit",
+                "chart_version": "1",
+                "illuminant": "D50",
+                "patches": [{"patch_id": "P01", "reference_lab": [50, 0, 0]}],
+            }
+        ),
+        chart_type="colorchecker24",
+        min_confidence=0.0,
+        allow_fallback_detection=False,
+        chart_dev_dir=tmp_path / "developed",
+        detect_dir=tmp_path / "detections",
+        sample_dir=tmp_path / "samples",
+        overlay_dir=tmp_path / "overlays",
+        pass_name="unit",
+        workers=1,
+        artifacts="minimal",
+    )
+
+    assert result["accepted_samples"] == []
+    skipped = result["skipped"][0]
+    assert skipped["reason"] == "fallback_detection"
+    assert skipped["detection_mode"] == "fallback"
+    assert skipped["warnings"] == ["fallback geometrico no fiable"]
+    assert skipped["confidence"] == pytest.approx(0.05)
+
+
+def test_auto_generate_profile_error_includes_skipped_capture_details(tmp_path: Path, monkeypatch):
+    charts_dir = tmp_path / "charts"
+    work_dir = tmp_path / "work"
+    charts_dir.mkdir()
+    chart = charts_dir / "chart_01.tiff"
+    tifffile.imwrite(str(chart), np.zeros((10, 10, 3), dtype=np.uint16), photometric="rgb", metadata=None)
+
+    def fake_collect_chart_samples(**_kwargs):
+        return {
+            "accepted_samples": [],
+            "detections": {},
+            "skipped": [
+                {
+                    "capture": str(chart),
+                    "reason": "fallback_detection",
+                    "detection_mode": "fallback",
+                    "confidence": 0.05,
+                    "warnings": ["fallback geometrico no fiable"],
+                }
+            ],
+        }
+
+    monkeypatch.setattr(workflow, "_collect_chart_samples", fake_collect_chart_samples)
+
+    with pytest.raises(RuntimeError, match="fallback_detection.*confianza=0.050"):
+        auto_generate_profile_from_charts(
+            chart_captures_dir=charts_dir,
+            recipe=Recipe(),
+            reference=ReferenceCatalog(
+                {
+                    "chart_name": "unit",
+                    "chart_version": "1",
+                    "illuminant": "D50",
+                    "patches": [{"patch_id": "P01", "reference_lab": [50, 0, 0]}],
+                }
+            ),
+            profile_out=tmp_path / "profile.icc",
+            profile_report_out=tmp_path / "profile_report.json",
+            work_dir=work_dir,
+        )
+
+
 def test_auto_generate_profile_from_charts_only(tmp_path: Path, monkeypatch):
     def fake_build_profile_with_argyll(
         out_icc: Path,

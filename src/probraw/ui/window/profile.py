@@ -594,10 +594,6 @@ class ProfileWorkflowMixin:
         source = self._selected_file.expanduser().resolve()
         if not self._manual_chart_points_match_selected_file():
             return None
-        if chart_files:
-            selected = {str(p.expanduser().resolve()) for p in chart_files}
-            if str(source) not in selected:
-                return None
 
         if str(source) in self._manual_chart_detections:
             return None
@@ -608,6 +604,21 @@ class ProfileWorkflowMixin:
             "points_preview": list(self._manual_chart_points),
             "preview_shape": (int(preview_h), int(preview_w)),
         }
+
+    def _profile_chart_files_with_pending_manual_detection(
+        self,
+        chart_files: list[Path] | None,
+        pending_manual_detection: dict[str, Any] | None,
+    ) -> list[Path] | None:
+        if pending_manual_detection is None:
+            return chart_files
+        source = Path(str(pending_manual_detection["source"])).expanduser().resolve()
+        if source.suffix.lower() not in PROFILE_CHART_EXTENSIONS:
+            return chart_files
+        files = list(chart_files or [])
+        source_key = self._normalized_path_key(source)
+        kept = [p for p in files if self._normalized_path_key(p) != source_key]
+        return [source, *kept]
 
     def _manual_chart_point_space_shape(self) -> tuple[int, int]:
         panels = []
@@ -698,6 +709,19 @@ class ProfileWorkflowMixin:
         self._ensure_session_output_controls()
         charts = Path(self.profile_charts_dir.text().strip())
         chart_capture_files = self._infer_profile_chart_files()
+        pending_manual_detection = self._pending_manual_detection_request(chart_capture_files)
+        chart_capture_files = self._profile_chart_files_with_pending_manual_detection(
+            chart_capture_files,
+            pending_manual_detection,
+        )
+        if pending_manual_detection is not None and chart_capture_files:
+            source = Path(str(pending_manual_detection["source"])).expanduser().resolve()
+            self._selected_chart_files = list(chart_capture_files)
+            self.profile_charts_dir.setText(str(source.parent))
+            charts = source.parent
+            self._sync_profile_chart_selection_label()
+            self._refresh_color_reference_thumbnail_markers()
+            self._set_status(self.tr("Referencia colorimetrica tomada del marcado manual:") + f" {source.name}")
         if chart_capture_files is None:
             reason = self._profile_reference_rejection_reason(charts)
             if reason is not None:
@@ -731,7 +755,6 @@ class ProfileWorkflowMixin:
                 )
                 return
         manual_detections = self._manual_detections_for_profile(chart_capture_files)
-        pending_manual_detection = self._pending_manual_detection_request(chart_capture_files)
         reference_path = Path(self.path_reference.text().strip())
         requested_profile_out = Path(self.profile_out_path_edit.text().strip())
         ext = self.combo_profile_format.currentText().strip().lower() or ".icc"

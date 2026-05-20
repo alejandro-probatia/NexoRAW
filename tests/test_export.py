@@ -20,6 +20,7 @@ from probraw.profile.export import (
 from probraw.profile.generic import ensure_generic_output_profile
 from probraw.provenance.c2pa import C2PASignConfig
 from probraw.provenance.probraw_proof import ProbRawProofConfig, generate_ed25519_identity, verify_probraw_proof
+from probraw.sidecar import load_raw_sidecar
 
 
 class FakeC2PAClient:
@@ -396,6 +397,42 @@ def test_batch_develop_writes_true_linear_audit_before_output_adjustments(tmp_pa
 
     assert np.allclose(audit_linear, source_linear, atol=1 / 65535)
     assert not np.allclose(rendered, audit_linear, atol=1e-3)
+
+
+def test_batch_develop_keeps_scene_linear_audit_for_standard_raw_output(tmp_path: Path, monkeypatch):
+    _fake_standard_profiles(tmp_path, monkeypatch)
+    raws = tmp_path / "inputs"
+    out_dir = tmp_path / "out"
+    raws.mkdir()
+    raw = raws / "capture_01.nef"
+    raw.write_bytes(b"fake raw bytes")
+    calls: list[str] = []
+
+    def fake_develop_scene_linear_array(_path, _recipe, cache_dir=None):
+        calls.append("scene")
+        return np.full((4, 5, 3), 0.2, dtype=np.float32)
+
+    def fake_develop_standard_linear_array(_path, _recipe, cache_dir=None):
+        calls.append("standard")
+        return np.full((4, 5, 3), 0.8, dtype=np.float32)
+
+    monkeypatch.setattr(export_module, "develop_scene_linear_array", fake_develop_scene_linear_array)
+    monkeypatch.setattr(export_module, "develop_standard_linear_array", fake_develop_standard_linear_array)
+
+    manifest = batch_develop(
+        raws_dir=raws,
+        recipe=Recipe(output_space="srgb", output_linear=False, tone_curve="linear"),
+        profile_path=None,
+        out_dir=out_dir,
+        proof_config=_proof_config(tmp_path),
+    )
+
+    assert calls == ["scene", "standard"]
+    assert np.allclose(read_image(Path(manifest.entries[0].linear_audit_tiff or "")), 0.2, atol=1 / 65535)
+    assert np.allclose(read_image(out_dir / "capture_01.tiff"), 0.8, atol=1 / 65535)
+    sidecar = load_raw_sidecar(raw)
+    assert sidecar["raw_processing"]["output_color_space"] == "srgb"
+    assert sidecar["raw_processing"]["postprocess_kwargs"]
 
 
 def test_batch_develop_can_sign_with_probraw_proof_without_c2pa(tmp_path: Path):

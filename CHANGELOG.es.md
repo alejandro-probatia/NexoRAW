@@ -18,7 +18,39 @@ Para mantener trazabilidad completa, cada cambio debe:
 
 ## [Unreleased]
 
-Sin entradas todavia.
+### Fixed
+
+- Corregida la generacion de perfiles ICC desde una carta marcada manualmente
+  cuando la seleccion previa de capturas seguia apuntando a otra imagen: la GUI
+  prioriza ahora la captura activa y conserva la seleccion anterior solo como
+  capturas adicionales.
+- Corregida la activacion/creacion de sesiones para que el explorador, las
+  referencias, la entrada RAW, las exportaciones TIFF y los artefactos de
+  perfilado se alineen con la raiz del proyecto activo en vez de heredar rutas
+  de otros proyectos.
+- Los errores de perfilado ICC explican ahora por que se descartaron capturas
+  de carta, incluyendo modo de deteccion, confianza, umbral y avisos
+  relevantes.
+
+### Changed
+
+- El TIFF lineal de auditoria se escribe antes de conversiones de salida,
+  curvas tonales o codificacion final, y el sidecar conserva los parametros
+  efectivos de procesado RAW usados para exportar.
+- Las muestras de carta registran los parametros de muestreo usados
+  (`strategy`, `trim_percent`, `reject_saturated`) para mejorar trazabilidad y
+  reproducibilidad.
+- La validacion del backend RAW rechaza configuraciones no soportadas en lugar
+  de aplicar sustituciones silenciosas.
+
+### Tests
+
+- Anadida cobertura de regresion para sesiones que arrastran rutas de proyectos
+  antiguos, marcado manual de carta pendiente, TIFF lineal de auditoria,
+  metadatos RAW en sidecar y detalle de errores de perfilado.
+- Validado con `pytest -q tests/test_gui_session_paths.py -k "session"`,
+  pruebas GUI puntuales de marcado manual, `pytest -q tests
+  --ignore=tests/test_gui_session_paths.py` y `git diff --check`.
 
 ## [0.3.19] - 2026-05-11
 

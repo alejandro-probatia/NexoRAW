@@ -145,6 +145,7 @@ class PatchSample:
     excluded_pixel_ratio: float
     saturated_pixel_ratio: float
     sample_center: list[float] | None = None
+    sampling_parameters: dict[str, Any] | None = None
 
 
 @dataclass

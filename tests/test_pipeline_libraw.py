@@ -22,6 +22,7 @@ from probraw.raw.pipeline import (
     develop_controlled,
     libraw_demosaic_value,
     suppress_false_color,
+    validate_raw_backend_recipe,
 )
 
 
@@ -253,6 +254,40 @@ def test_develop_controlled_writes_audit_before_output_adjustments(tmp_path: Pat
 
     assert np.allclose(audit_linear, source_linear, atol=1 / 65535)
     assert not np.allclose(rendered, audit_linear, atol=1e-3)
+
+
+def test_develop_controlled_writes_scene_linear_audit_before_standard_raw_conversion(tmp_path: Path, monkeypatch):
+    raw = tmp_path / "capture.nef"
+    raw.write_bytes(b"fake raw bytes")
+    out = tmp_path / "out.tiff"
+    audit = tmp_path / "audit_linear.tiff"
+    calls: list[str] = []
+
+    def fake_develop_with_libraw(_path, _recipe, *, half_size=False, output_color_space="camera_raw"):
+        calls.append(output_color_space)
+        value = 0.2 if output_color_space == "camera_raw" else 0.8
+        return np.full((4, 5, 3), value, dtype=np.float32)
+
+    monkeypatch.setattr(pipeline, "raw_info", pipeline._fake_metadata)
+    monkeypatch.setattr(pipeline, "develop_with_libraw", fake_develop_with_libraw)
+
+    develop_controlled(
+        raw,
+        Recipe(output_space="srgb", output_linear=False, tone_curve="linear"),
+        out,
+        audit,
+    )
+
+    assert calls == ["camera_raw", "srgb"]
+    assert np.allclose(read_image(audit), 0.2, atol=1 / 65535)
+    assert np.allclose(read_image(out), 0.8, atol=1 / 65535)
+
+
+def test_validate_raw_backend_recipe_rejects_declared_unsupported_option(monkeypatch):
+    monkeypatch.setattr(pipeline, "rawpy_postprocess_parameter_supported", lambda _name: False)
+
+    with pytest.raises(RuntimeError, match="four_color_rgb"):
+        validate_raw_backend_recipe(Recipe(four_color_rgb=True))
 
 
 def test_develop_image_array_matches_develop_controlled_output(tmp_path: Path):

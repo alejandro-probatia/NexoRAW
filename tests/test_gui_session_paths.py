@@ -156,6 +156,13 @@ def test_create_session_does_not_inherit_previous_project_images_or_profiles(tmp
     old_raw.mkdir(parents=True)
     old_image = old_raw / "old_capture.tif"
     Image.new("RGB", (16, 16), (80, 120, 160)).save(old_image)
+    old_exports = old_root / "02_DRV"
+    old_profiles = old_root / "00_configuraciones" / "profiles"
+    old_config = old_root / "00_configuraciones"
+    old_work = old_config / "work" / "profile_generation"
+    old_exports.mkdir(parents=True)
+    old_profiles.mkdir(parents=True)
+    old_work.mkdir(parents=True)
 
     old_payload = create_session(
         old_root,
@@ -164,6 +171,12 @@ def test_create_session_does_not_inherit_previous_project_images_or_profiles(tmp
             "profile_charts_dir": str(old_raw),
             "profile_chart_files": [str(old_image)],
             "batch_input_dir": str(old_raw),
+            "batch_output_dir": str(old_exports),
+            "profile_output_path": str(old_profiles / "old.icc"),
+            "profile_report_path": str(old_config / "profile_report.json"),
+            "profile_workdir": str(old_work),
+            "development_profile_path": str(old_config / "development_profile.json"),
+            "calibrated_recipe_path": str(old_config / "recipe_calibrated.yml"),
             "development_profiles": [{"id": "old-profile", "name": "Old profile"}],
             "active_development_profile_id": "old-profile",
         },
@@ -190,6 +203,15 @@ def test_create_session_does_not_inherit_previous_project_images_or_profiles(tmp
         assert window.file_list.count() == 0
         assert window.profile_charts_dir.text() == str(new_paths["charts"])
         assert window.batch_input_dir.text() == str(new_paths["raw"])
+        new_defaults = window._session_default_outputs(paths=new_paths, session_name="new")
+        assert window.batch_out_dir.text() == str(new_defaults["tiff_dir"])
+        assert window.profile_out_path_edit.text() == str(new_defaults["profile_out"])
+        assert window.path_profile_out.text() == str(new_defaults["profile_out"])
+        assert window.profile_report_out.text() == str(new_defaults["profile_report"])
+        assert window.profile_workdir.text() == str(new_defaults["workdir"])
+        assert window.develop_profile_out.text() == str(new_defaults["development_profile"])
+        assert window.calibrated_recipe_out.text() == str(new_defaults["calibrated_recipe"])
+        assert window.path_preview_png.text() == str(new_defaults["preview"])
         assert window._selected_chart_files == []
         assert window._develop_queue == []
         assert window._development_profiles == []
@@ -204,6 +226,20 @@ def test_activate_session_rejects_existing_state_paths_outside_project_root(tmp_
     old_raw.mkdir(parents=True)
     old_image = old_raw / "old_chart.tif"
     Image.new("RGB", (16, 16), (80, 120, 160)).save(old_image)
+    old_exports = old_root / "02_DRV"
+    old_config = old_root / "00_configuraciones"
+    old_profiles = old_config / "profiles"
+    old_work = old_config / "work" / "profile_generation"
+    for folder in (old_exports, old_config, old_profiles, old_work):
+        folder.mkdir(parents=True, exist_ok=True)
+    old_profile = old_profiles / "old.icc"
+    old_report = old_config / "profile_report.json"
+    old_development = old_config / "development_profile.json"
+    old_recipe = old_config / "recipe.yml"
+    old_calibrated = old_config / "recipe_calibrated.yml"
+    old_preview = old_exports / "preview.png"
+    for file_path in (old_profile, old_report, old_development, old_recipe, old_calibrated, old_preview):
+        file_path.write_text("old", encoding="utf-8")
 
     new_root = tmp_path / "new_session"
     window = ICCRawMainWindow()
@@ -215,17 +251,52 @@ def test_activate_session_rejects_existing_state_paths_outside_project_root(tmp_
             "profile_charts_dir": str(old_raw),
             "profile_chart_files": [str(old_image)],
             "batch_input_dir": str(old_raw),
+            "batch_output_dir": str(old_exports),
+            "profile_output_path": str(old_profile),
+            "profile_report_path": str(old_report),
+            "profile_workdir": str(old_work),
+            "development_profile_path": str(old_development),
+            "calibrated_recipe_path": str(old_calibrated),
+            "recipe_path": str(old_recipe),
+            "preview_png_path": str(old_preview),
         },
+    )
+    payload["directories"].update(
+        {
+            "raw": str(old_raw),
+            "charts": str(old_raw),
+            "exports": str(old_exports),
+            "profiles": str(old_profiles),
+            "config": str(old_config),
+            "work": str(old_config / "work"),
+        }
     )
 
     try:
         window._activate_session(new_root, payload)
+        defaults = window._session_default_outputs(paths=paths, session_name="new")
 
         assert window._current_dir == paths["raw"]
         assert window.file_list.count() == 0
+        assert window.session_dir_raw.text() == str(paths["raw"])
+        assert window.session_dir_charts.text() == str(paths["charts"])
+        assert window.session_dir_exports.text() == str(paths["exports"])
+        assert window.session_dir_profiles.text() == str(paths["profiles"])
+        assert window.session_dir_config.text() == str(paths["config"])
+        assert window.session_dir_work.text() == str(paths["work"])
         assert window.profile_charts_dir.text() == str(paths["charts"])
         assert window.batch_input_dir.text() == str(paths["raw"])
+        assert window.batch_out_dir.text() == str(defaults["tiff_dir"])
+        assert window.profile_out_path_edit.text() == str(defaults["profile_out"])
+        assert window.path_profile_out.text() == str(defaults["profile_out"])
+        assert window.profile_report_out.text() == str(defaults["profile_report"])
+        assert window.profile_workdir.text() == str(defaults["workdir"])
+        assert window.develop_profile_out.text() == str(defaults["development_profile"])
+        assert window.calibrated_recipe_out.text() == str(defaults["calibrated_recipe"])
+        assert window.path_recipe.text() == str(defaults["recipe"])
+        assert window.path_preview_png.text() == str(defaults["preview"])
         assert window._selected_chart_files == []
+        assert str(old_root) not in gui_module.json.dumps(load_session(new_root))
     finally:
         window.close()
 
@@ -3748,6 +3819,59 @@ def test_manual_chart_points_use_display_coordinate_space(tmp_path: Path, qapp):
         assert pending is not None
         assert pending["preview_shape"] == (500, 1000)
         assert window._preview_requires_max_quality()
+    finally:
+        window.close()
+
+
+def test_generate_profile_prefers_pending_manual_points_over_stale_chart_selection(tmp_path: Path, monkeypatch, qapp):
+    current = tmp_path / "current.NEF"
+    stale = tmp_path / "stale.NEF"
+    current.write_bytes(b"current raw")
+    stale.write_bytes(b"stale raw")
+    captured: dict[str, object] = {}
+
+    def fake_auto_generate_profile_from_charts(**kwargs):
+        captured.update(kwargs)
+        return {
+            "chart_captures_used": 1,
+            "training_captures_total": 1,
+            "profile_status": {"status": "draft"},
+            "profile": {"error_summary": {}, "patch_errors": []},
+        }
+
+    def run_task(_label, task, on_success):
+        on_success(task())
+
+    monkeypatch.setattr(gui_module.ReferenceCatalog, "from_path", staticmethod(lambda _path: object()))
+    monkeypatch.setattr(gui_module, "auto_generate_profile_from_charts", fake_auto_generate_profile_from_charts)
+
+    window = ICCRawMainWindow()
+    try:
+        window._start_background_task = run_task
+        window._selected_chart_files = [stale]
+        window.profile_charts_dir.setText(str(tmp_path))
+        window._selected_file = current
+        window._original_linear = gui_module.np.zeros((100, 200, 3), dtype=gui_module.np.float32)
+        window.image_result_single.set_rgb_u8_image(
+            gui_module.np.zeros((50, 100, 3), dtype=gui_module.np.uint8)
+        )
+        window._manual_chart_points_source = current.resolve()
+        window._manual_chart_points = [(10.0, 5.0), (90.0, 5.0), (90.0, 45.0), (10.0, 45.0)]
+        monkeypatch.setattr(
+            window,
+            "_build_pending_manual_detection",
+            lambda request, **_kwargs: (Path(str(request["source"])).resolve(), {"detection_mode": "manual"}),
+        )
+
+        window._on_generate_profile()
+
+        chart_files = captured["chart_capture_files"]
+        assert isinstance(chart_files, list)
+        assert Path(chart_files[0]) == current.resolve()
+        assert stale in chart_files
+        manual_detections = captured["manual_detections"]
+        assert isinstance(manual_detections, dict)
+        assert current.resolve() in manual_detections
     finally:
         window.close()
 

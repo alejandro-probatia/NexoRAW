@@ -154,6 +154,11 @@ def test_sample_chart_honors_trim_percent_and_saturation_rejection(tmp_path: Pat
     assert trimmed.samples[0].measured_rgb[0] < untrimmed.samples[0].measured_rgb[0]
     assert saturated_kept.samples[0].measured_rgb[0] > untrimmed.samples[0].measured_rgb[0]
     assert trimmed.samples[0].sample_center == [4.5, 4.5]
+    assert trimmed.samples[0].sampling_parameters == {
+        "strategy": "trimmed_mean",
+        "trim_percent": 0.25,
+        "reject_saturated": True,
+    }
     assert "trim_percent=0.25" in trimmed.strategy
     assert "reject_saturated=true" in trimmed.strategy
 

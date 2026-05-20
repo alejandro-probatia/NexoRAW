@@ -347,8 +347,12 @@ class SessionStateMixin:
         directories: dict[str, str],
         session_name: str,
     ) -> None:
+        raw_paths = {k: Path(v) for k, v in directories.items() if isinstance(v, str)}
+        session_root = raw_paths.get("root", self._active_session_root)
+        if session_root is not None:
+            directories = self._project_aligned_session_directories(directories, session_root)
         paths = {k: Path(v) for k, v in directories.items() if isinstance(v, str)}
-        session_root = paths.get("root", self._active_session_root)
+        session_root = paths.get("root", session_root)
         charts_dir = self._session_state_dir_or_default(
             state.get("profile_charts_dir"),
             paths.get("charts", Path.cwd()),
@@ -412,20 +416,39 @@ class SessionStateMixin:
         self._refresh_reference_catalog_combo()
         self._update_reference_status()
         self.profile_out_path_edit.setText(
-            str(self._session_output_path_or_default(state.get("profile_output_path"), defaults["profile_out"]))
+            str(
+                self._session_output_path_or_default(
+                    state.get("profile_output_path"),
+                    defaults["profile_out"],
+                    root=session_root,
+                )
+            )
         )
         self.path_profile_out.setText(self.profile_out_path_edit.text().strip())
         self.profile_report_out.setText(
-            str(self._session_output_path_or_default(state.get("profile_report_path"), defaults["profile_report"]))
+            str(
+                self._session_output_path_or_default(
+                    state.get("profile_report_path"),
+                    defaults["profile_report"],
+                    root=session_root,
+                )
+            )
         )
         self.profile_workdir.setText(
-            str(self._session_output_path_or_default(state.get("profile_workdir"), defaults["workdir"]))
+            str(
+                self._session_output_path_or_default(
+                    state.get("profile_workdir"),
+                    defaults["workdir"],
+                    root=session_root,
+                )
+            )
         )
         self.develop_profile_out.setText(
             str(
                 self._session_output_path_or_default(
                     state.get("development_profile_path"),
                     defaults["development_profile"],
+                    root=session_root,
                 )
             )
         )
@@ -434,17 +457,26 @@ class SessionStateMixin:
                 self._session_output_path_or_default(
                     state.get("calibrated_recipe_path"),
                     defaults["calibrated_recipe"],
+                    root=session_root,
                 )
             )
         )
         self.batch_input_dir.setText(str(raw_dir))
         self.batch_out_dir.setText(
-            str(self._session_output_path_or_default(state.get("batch_output_dir"), defaults["tiff_dir"]))
+            str(
+                self._session_output_path_or_default(
+                    state.get("batch_output_dir"),
+                    defaults["tiff_dir"],
+                    root=session_root,
+                )
+            )
         )
         self.path_preview_png.setText(str(defaults["preview"]))
         recipe_path = state.get("recipe_path")
         recipe_default = defaults["calibrated_recipe"] if defaults["calibrated_recipe"].exists() else defaults["recipe"]
-        self.path_recipe.setText(str(self._session_state_path_or_default(recipe_path, recipe_default)))
+        self.path_recipe.setText(
+            str(self._session_state_path_or_default(recipe_path, recipe_default, root=session_root))
+        )
 
         profile_active = str(state.get("profile_active_path") or "").strip()
         active_candidate: Path | None = None
@@ -526,6 +558,13 @@ class SessionStateMixin:
         directories = payload.get("directories", {})
         state = payload.get("state", {})
         queue = payload.get("queue", [])
+        directories = self._project_aligned_session_directories(
+            directories if isinstance(directories, dict) else {},
+            self._active_session_root,
+        )
+        if isinstance(self._active_session_payload, dict):
+            self._active_session_payload = dict(self._active_session_payload)
+            self._active_session_payload["directories"] = directories
 
         session_name = str(metadata.get("name") or self._active_session_root.name)
         self.session_root_path.setText(str(self._active_session_root))

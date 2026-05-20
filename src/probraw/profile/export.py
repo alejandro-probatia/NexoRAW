@@ -46,6 +46,7 @@ from ..provenance.probraw_proof import (
 from ..raw.pipeline import (
     develop_scene_linear_array,
     develop_standard_linear_array,
+    effective_raw_processing_settings,
     render_recipe_output_array,
 )
 from ..session import cache_dir as session_cache_dir
@@ -332,16 +333,27 @@ def _process_batch_develop_job(
         tiff_compression,
         tiff_maxworkers,
     ) = job
-    if profile_path is None and is_generic_output_space(recipe.output_space):
-        linear = develop_standard_linear_array(raw, recipe, cache_dir=demosaic_cache_dir)
+    standard_without_input_profile = profile_path is None and is_generic_output_space(recipe.output_space)
+    raw_decode_output_space = "camera_raw"
+    if standard_without_input_profile and raw.suffix.lower() in RAW_EXTENSIONS:
+        linear_audit = develop_scene_linear_array(raw, recipe, cache_dir=demosaic_cache_dir)
+        render_linear = develop_standard_linear_array(raw, recipe, cache_dir=demosaic_cache_dir)
+        raw_decode_output_space = canonical_generic_output_space(recipe.output_space) or str(recipe.output_space)
     else:
-        linear = develop_scene_linear_array(raw, recipe, cache_dir=demosaic_cache_dir)
-    write_tiff16(out_linear, linear)
+        render_linear = (
+            develop_standard_linear_array(raw, recipe, cache_dir=demosaic_cache_dir)
+            if standard_without_input_profile
+            else develop_scene_linear_array(raw, recipe, cache_dir=demosaic_cache_dir)
+        )
+        linear_audit = render_linear
+        if standard_without_input_profile:
+            raw_decode_output_space = canonical_generic_output_space(recipe.output_space) or str(recipe.output_space)
+    write_tiff16(out_linear, linear_audit)
     generic_profile_dir = out_final.parent / "_profiles"
     # Render final output from the in-memory array to avoid a second TIFF
     # quantization/read cycle. The audit TIFF is still written and hashed in
     # the manifest, preserving the forensic artifact.
-    image = render_recipe_output_array(linear, recipe)
+    image = render_recipe_output_array(render_linear, recipe)
     write_mode, proof_result = write_signed_profiled_tiff(
         out_final,
         image,
@@ -361,6 +373,12 @@ def _process_batch_develop_job(
         color_management_mode=write_mode,
         generic_profile_dir=generic_profile_dir,
     )
+    raw_processing = None
+    if raw.suffix.lower() in RAW_EXTENSIONS:
+        raw_processing = effective_raw_processing_settings(
+            recipe,
+            output_color_space=raw_decode_output_space,
+        )
     if raw.suffix.lower() in RAW_EXTENSIONS:
         write_raw_sidecar(
             raw,
@@ -373,6 +391,7 @@ def _process_batch_develop_job(
             output_tiff=out_final,
             proof_path=Path(proof_result.proof_path),
             source_sha256=proof_result.raw_sha256,
+            raw_processing=raw_processing,
             status="rendered",
         )
     entry = BatchManifestEntry(

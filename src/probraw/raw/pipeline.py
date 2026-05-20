@@ -89,18 +89,25 @@ def develop_controlled(
     metadata = raw_info(input_path) if input_path.suffix.lower() in RAW_SUFFIXES else _fake_metadata(input_path)
     guard = scientific_guard(recipe)
 
-    image = (
-        develop_standard_linear_array(input_path, recipe, cache_dir=cache_dir)
-        if is_standard_output_space(recipe.output_space)
-        else develop_scene_linear_array(input_path, recipe, cache_dir=cache_dir)
-    )
+    is_raw_input = input_path.suffix.lower() in RAW_SUFFIXES
+    uses_standard_output = is_standard_output_space(recipe.output_space)
+    if uses_standard_output and is_raw_input:
+        audit_linear = develop_scene_linear_array(input_path, recipe, cache_dir=cache_dir)
+        render_linear = develop_standard_linear_array(input_path, recipe, cache_dir=cache_dir)
+    else:
+        render_linear = (
+            develop_standard_linear_array(input_path, recipe, cache_dir=cache_dir)
+            if uses_standard_output
+            else develop_scene_linear_array(input_path, recipe, cache_dir=cache_dir)
+        )
+        audit_linear = render_linear
 
     audit_path_str: str | None = None
     if audit_linear_tiff is not None:
-        write_tiff16(audit_linear_tiff, image)
+        write_tiff16(audit_linear_tiff, audit_linear)
         audit_path_str = str(audit_linear_tiff)
 
-    image = render_recipe_output_array(image, recipe)
+    image = render_recipe_output_array(render_linear, recipe)
 
     write_tiff16(out_tiff, image)
 
@@ -127,6 +134,7 @@ def develop_scene_linear_array(
     if input_path.suffix.lower() not in RAW_SUFFIXES:
         return read_image(input_path)
 
+    validate_raw_backend_recipe(recipe)
     developer = recipe.raw_developer.strip().lower()
     if developer not in {"", "libraw", "rawpy"}:
         raise RuntimeError(f"raw_developer no soportado: {recipe.raw_developer}. Usa 'libraw'.")
@@ -156,6 +164,7 @@ def develop_standard_linear_array(
     if input_path.suffix.lower() not in RAW_SUFFIXES:
         return read_image(input_path)
 
+    validate_raw_backend_recipe(recipe, output_color_space=output_space)
     developer = recipe.raw_developer.strip().lower()
     if developer not in {"", "libraw", "rawpy"}:
         raise RuntimeError(f"raw_developer no soportado: {recipe.raw_developer}. Usa 'libraw'.")
@@ -218,6 +227,7 @@ def develop_with_libraw(
     if rawpy is None:
         raise RuntimeError("No se puede revelar RAW: dependencia 'rawpy'/'LibRaw' no disponible.")
 
+    validate_raw_backend_recipe(recipe, output_color_space=output_color_space)
     kwargs = _build_libraw_postprocess_kwargs(recipe, half_size=half_size, output_color_space=output_color_space)
     try:
         with open_rawpy(input_path, unpack=True) as raw:
@@ -226,6 +236,126 @@ def develop_with_libraw(
         raise RuntimeError(f"Fallo de decodificacion RAW con LibRaw/rawpy: {exc}") from exc
     image_float = _postprocess_output_to_float(image)
     return apply_raw_demosaic_postprocess(image_float, recipe)
+
+
+def validate_raw_backend_recipe(recipe: Recipe, *, output_color_space: str = "camera_raw") -> None:
+    errors = unsupported_raw_backend_options(recipe, output_color_space=output_color_space)
+    if errors:
+        raise RuntimeError("Receta no ejecutable fielmente por LibRaw/rawpy: " + "; ".join(errors))
+
+
+def unsupported_raw_backend_options(recipe: Recipe, *, output_color_space: str = "camera_raw") -> list[str]:
+    errors: list[str] = []
+    developer = str(recipe.raw_developer or "").strip().lower()
+    if developer not in {"", "libraw", "rawpy"}:
+        errors.append(f"raw_developer no soportado: {recipe.raw_developer!r}")
+        return errors
+
+    if rawpy is None:
+        errors.append("dependencia 'rawpy'/'LibRaw' no disponible")
+        return errors
+
+    demosaic_reason = unavailable_demosaic_reason(recipe.demosaic_algorithm)
+    if demosaic_reason is not None:
+        errors.append(demosaic_reason)
+
+    try:
+        _libraw_output_color_value(output_color_space)
+    except Exception as exc:
+        errors.append(str(exc))
+
+    try:
+        _libraw_highlight_mode_value(getattr(recipe, "libraw_highlight_mode", "clip"))
+    except Exception as exc:
+        errors.append(str(exc))
+
+    if bool(getattr(recipe, "four_color_rgb", False)) and not rawpy_postprocess_parameter_supported("four_color_rgb"):
+        errors.append("four_color_rgb requiere soporte rawpy.Params(four_color_rgb=...)")
+
+    optional_checks = [
+        ("libraw_auto_bright_thr", 0.01, "auto_bright_thr"),
+        ("libraw_adjust_maximum_thr", 0.75, "adjust_maximum_thr"),
+        ("libraw_exp_shift", 1.0, "exp_shift"),
+        ("libraw_exp_preserve_highlights", 0.0, "exp_preserve_highlights"),
+    ]
+    for field_name, default, parameter in optional_checks:
+        if _float_recipe_option_changed(getattr(recipe, field_name, default), default) and not rawpy_postprocess_parameter_supported(parameter):
+            errors.append(f"{field_name} requiere soporte rawpy.Params({parameter}=...)")
+
+    if bool(getattr(recipe, "libraw_no_auto_scale", False)) and not rawpy_postprocess_parameter_supported("no_auto_scale"):
+        errors.append("libraw_no_auto_scale requiere soporte rawpy.Params(no_auto_scale=...)")
+
+    ca_red = getattr(recipe, "libraw_chromatic_aberration_red", 1.0)
+    ca_blue = getattr(recipe, "libraw_chromatic_aberration_blue", 1.0)
+    if (
+        _float_recipe_option_changed(ca_red, 1.0)
+        or _float_recipe_option_changed(ca_blue, 1.0)
+    ) and not rawpy_postprocess_parameter_supported("chromatic_aberration"):
+        errors.append("libraw_chromatic_aberration_* requiere soporte rawpy.Params(chromatic_aberration=...)")
+
+    return errors
+
+
+def effective_raw_processing_settings(
+    recipe: Recipe,
+    *,
+    output_color_space: str = "camera_raw",
+    half_size: bool = False,
+) -> dict[str, object]:
+    validate_raw_backend_recipe(recipe, output_color_space=output_color_space)
+    kwargs = _build_libraw_postprocess_kwargs(
+        recipe,
+        half_size=half_size,
+        output_color_space=output_color_space,
+    )
+    false_color_steps = max(0, int(getattr(recipe, "false_color_suppression_steps", 0) or 0))
+    if false_color_steps <= 0:
+        false_color_implementation = "none"
+    elif "median_filter_passes" in kwargs:
+        false_color_implementation = "libraw_median_filter_passes"
+    else:
+        false_color_implementation = "probraw_chroma_median"
+    return {
+        "backend": "LibRaw/rawpy",
+        "raw_developer": str(recipe.raw_developer or "libraw"),
+        "output_color_space": str(output_color_space),
+        "half_size": bool(half_size),
+        "postprocess_kwargs": {
+            key: _jsonable_libraw_value(value)
+            for key, value in sorted(kwargs.items(), key=lambda item: item[0])
+        },
+        "local_postprocess": {
+            "demosaic_edge_crop_pixels": max(0, int(getattr(recipe, "demosaic_edge_quality", 0) or 0)),
+            "false_color_suppression_steps": false_color_steps,
+            "false_color_suppression_implementation": false_color_implementation,
+        },
+        "rawpy": {
+            "version": str(getattr(rawpy, "__version__", "")) if rawpy is not None else "missing",
+            "libraw_version": str(getattr(rawpy, "libraw_version", "")) if rawpy is not None else "missing",
+            "feature_flags": rawpy_feature_flags(),
+        },
+    }
+
+
+def _float_recipe_option_changed(value: object, default: float) -> bool:
+    try:
+        parsed = float(value)
+    except Exception:
+        return False
+    return bool(np.isfinite(parsed) and abs(parsed - float(default)) > 1e-9)
+
+
+def _jsonable_libraw_value(value: object) -> object:
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, (list, tuple)):
+        return [_jsonable_libraw_value(item) for item in value]
+    if isinstance(value, dict):
+        return {str(key): _jsonable_libraw_value(item) for key, item in value.items()}
+    name = getattr(value, "name", None)
+    if name is not None:
+        return str(name)
+    return str(value)
 
 
 def _build_libraw_postprocess_kwargs(

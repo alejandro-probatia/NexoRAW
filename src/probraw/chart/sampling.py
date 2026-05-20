@@ -218,6 +218,7 @@ def sample_chart_from_array(
                 excluded_pixel_ratio=float(excluded_ratio),
                 saturated_pixel_ratio=float(sat_ratio),
                 sample_center=[float(center[0]), float(center[1])],
+                sampling_parameters=_sampling_parameters(strategy, trim_percent, reject_saturated),
             )
         )
 
@@ -288,6 +289,15 @@ def _strategy_label(strategy: str, trim_percent: float, reject_saturated: bool) 
         return f"median(reject_saturated={str(bool(reject_saturated)).lower()})"
     trim = float(np.clip(trim_percent, 0.0, 0.49))
     return f"{mode}(trim_percent={trim:.6g},reject_saturated={str(bool(reject_saturated)).lower()})"
+
+
+def _sampling_parameters(strategy: str, trim_percent: float, reject_saturated: bool) -> dict[str, object]:
+    mode = str(strategy or "trimmed_mean")
+    return {
+        "strategy": mode,
+        "trim_percent": float(np.clip(trim_percent, 0.0, 0.49)),
+        "reject_saturated": bool(reject_saturated),
+    }
 
 
 def chart_detection_from_json(path: Path) -> ChartDetectionResult:

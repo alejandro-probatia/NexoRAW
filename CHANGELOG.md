@@ -20,7 +20,36 @@ To maintain full traceability, each change must:
 
 ## [Unreleased]
 
-No entries yet.
+### Fixed
+
+- Fixed ICC profile generation from a manually marked chart when the previous
+  capture selection still pointed at another image: the GUI now prioritizes the
+  active capture and keeps the previous selection only as additional captures.
+- Fixed session activation/creation so the browser, references, RAW input, TIFF
+  exports and profiling artifacts align with the active project root instead of
+  inheriting paths from other projects.
+- ICC profiling errors now explain why chart captures were skipped, including
+  detection mode, confidence, threshold and relevant warnings.
+
+### Changed
+
+- The linear audit TIFF is written before output conversions, tone curves or
+  final encoding, and the sidecar preserves the effective RAW processing
+  settings used for export.
+- Chart samples record the sampling parameters used (`strategy`,
+  `trim_percent`, `reject_saturated`) to improve traceability and
+  reproducibility.
+- RAW backend validation rejects unsupported settings instead of applying
+  silent substitutions.
+
+### Tests
+
+- Added regression coverage for sessions carrying paths from old projects,
+  pending manual chart marking, linear audit TIFF output, RAW sidecar metadata
+  and detailed profiling errors.
+- Validated with `pytest -q tests/test_gui_session_paths.py -k "session"`,
+  focused manual-marking GUI tests, `pytest -q tests
+  --ignore=tests/test_gui_session_paths.py` and `git diff --check`.
 
 ## [0.3.19] - 2026-05-11
 

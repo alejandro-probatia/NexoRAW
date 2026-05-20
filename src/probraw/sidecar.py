@@ -48,6 +48,7 @@ def write_raw_sidecar(
     output_tiff: Path | None = None,
     proof_path: Path | None = None,
     source_sha256: str | None = None,
+    raw_processing: dict[str, Any] | None = None,
     status: str = "configured",
 ) -> Path:
     source_path = Path(source_path).expanduser()
@@ -57,6 +58,7 @@ def write_raw_sidecar(
 
     outputs = list(existing.get("outputs") or []) if isinstance(existing.get("outputs"), list) else []
     mtf_analysis = existing.get("mtf_analysis") if isinstance(existing.get("mtf_analysis"), dict) else None
+    existing_raw_processing = existing.get("raw_processing") if isinstance(existing.get("raw_processing"), dict) else None
     stored_adjustment_profiles = (
         adjustment_profiles
         if isinstance(adjustment_profiles, dict)
@@ -105,6 +107,10 @@ def write_raw_sidecar(
         ),
         "outputs": outputs,
     }
+    if isinstance(raw_processing, dict):
+        payload["raw_processing"] = raw_processing
+    elif existing_raw_processing is not None:
+        payload["raw_processing"] = existing_raw_processing
     if mtf_analysis is not None:
         payload["mtf_analysis"] = mtf_analysis
     write_json(sidecar_path, payload)

@@ -121,9 +121,12 @@ def auto_generate_profile_from_charts(
     skipped: list[dict[str, Any]] = list(initial_pass["skipped"])
 
     if not accepted_samples:
+        detail = _skipped_capture_summary(skipped)
+        suffix = f" Detalle: {detail}" if detail else ""
         raise RuntimeError(
             "No hubo capturas de carta válidas para construir perfil. "
             "Revisa exposición, encuadre de carta y min_confidence."
+            f"{suffix}"
         )
 
     aggregated_initial = _aggregate_samples(accepted_samples, strategy=profile_recipe.sampling_strategy)
@@ -172,9 +175,12 @@ def auto_generate_profile_from_charts(
         accepted_samples = calibrated_pass["accepted_samples"]
         skipped.extend(calibrated_pass["skipped"])
         if not accepted_samples:
+            detail = _skipped_capture_summary(skipped)
+            suffix = f" Detalle: {detail}" if detail else ""
             raise RuntimeError(
                 "No hubo capturas válidas tras aplicar el perfil de revelado. "
                 "Revisa el JSON de desarrollo y los overlays calibrados."
+                f"{suffix}"
             )
 
     aggregated_samples = _aggregate_samples(accepted_samples, strategy=profile_recipe.sampling_strategy)
@@ -948,6 +954,40 @@ def _sample_quality(samples: SampleSet) -> dict[str, Any]:
     }
 
 
+def _skipped_capture_summary(skipped: list[dict[str, Any]], *, limit: int = 5) -> str:
+    if not skipped:
+        return ""
+    parts: list[str] = []
+    for item in skipped[: max(1, int(limit))]:
+        if not isinstance(item, dict):
+            continue
+        capture = Path(str(item.get("capture") or "?")).name
+        reason = str(item.get("reason") or "omitida")
+        fields = [reason]
+        if item.get("detection_mode"):
+            fields.append(f"modo={item.get('detection_mode')}")
+        if item.get("confidence") is not None:
+            try:
+                fields.append(f"confianza={float(item['confidence']):.3f}")
+            except Exception:
+                fields.append(f"confianza={item.get('confidence')}")
+        if item.get("min_confidence") is not None:
+            try:
+                fields.append(f"min={float(item['min_confidence']):.3f}")
+            except Exception:
+                fields.append(f"min={item.get('min_confidence')}")
+        warnings = item.get("warnings") if isinstance(item.get("warnings"), list) else []
+        if warnings:
+            fields.append(f"aviso={str(warnings[0])}")
+        elif item.get("error"):
+            fields.append(f"error={item.get('error')}")
+        parts.append(f"{capture}: " + ", ".join(fields))
+    remaining = len(skipped) - len(parts)
+    if remaining > 0:
+        parts.append(f"+{remaining} capturas omitidas")
+    return " | ".join(parts)
+
+
 def _aggregate_samples(sample_sets: list[SampleSet], strategy: str) -> SampleSet:
     grouped: dict[str, list[PatchSample]] = defaultdict(list)
     for sset in sample_sets:
@@ -1137,6 +1177,8 @@ def _process_chart_sample_job(job: tuple[Any, ...]) -> dict[str, Any]:
                         "capture": str(chart_file),
                         "reason": "fallback_detection",
                         "confidence": float(detection.confidence_score),
+                        "detection_mode": str(detection.detection_mode),
+                        "warnings": [str(w) for w in detection.warnings],
                         "detection_json": str(detection_path),
                     }
                 ],
@@ -1155,6 +1197,8 @@ def _process_chart_sample_job(job: tuple[Any, ...]) -> dict[str, Any]:
                         "reason": "low_confidence",
                         "confidence": float(detection.confidence_score),
                         "min_confidence": float(min_confidence),
+                        "detection_mode": str(detection.detection_mode),
+                        "warnings": [str(w) for w in detection.warnings],
                         "detection_json": str(detection_path),
                     }
                 ],
@@ -1303,6 +1347,8 @@ def _collect_chart_geometries(
                         "capture": str(chart_file),
                         "reason": "fallback_detection",
                         "confidence": float(detection.confidence_score),
+                        "detection_mode": str(detection.detection_mode),
+                        "warnings": [str(w) for w in detection.warnings],
                         "detection_json": str(detection_path),
                     }
                 )
@@ -1316,6 +1362,8 @@ def _collect_chart_geometries(
                         "reason": "low_confidence",
                         "confidence": float(detection.confidence_score),
                         "min_confidence": float(min_confidence),
+                        "detection_mode": str(detection.detection_mode),
+                        "warnings": [str(w) for w in detection.warnings],
                         "detection_json": str(detection_path),
                     }
                 )

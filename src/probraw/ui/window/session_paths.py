@@ -31,6 +31,28 @@ class SessionPathsMixin:
         self.session_dir_config.setText(str(paths["config"]))
         self.session_dir_work.setText(str(paths["work"]))
 
+    def _project_aligned_session_directories(self, directories: dict[str, Any], root: Path | str) -> dict[str, str]:
+        root = Path(root).expanduser()
+        defaults = self._session_paths_from_root(root)
+        aligned = {key: str(path) for key, path in defaults.items()}
+        raw_dirs = directories if isinstance(directories, dict) else {}
+        for key, default in defaults.items():
+            if key == "root":
+                continue
+            raw_value = raw_dirs.get(key)
+            if not isinstance(raw_value, (str, Path)) or not str(raw_value).strip():
+                continue
+            candidate = Path(str(raw_value)).expanduser()
+            if not candidate.is_absolute() and not candidate.anchor:
+                candidate = defaults["root"] / candidate
+            if not self._path_is_inside(candidate, defaults["root"]):
+                continue
+            try:
+                aligned[key] = str(candidate.resolve(strict=False))
+            except Exception:
+                aligned[key] = str(default)
+        return aligned
+
     def _path_is_inside(self, path: Path, root: Path) -> bool:
         try:
             path.expanduser().resolve(strict=False).relative_to(root.expanduser().resolve(strict=False))
@@ -270,17 +292,29 @@ class SessionPathsMixin:
         except OSError:
             return False
 
-    def _session_state_path_or_default(self, value: Any, default: Path) -> Path:
+    def _session_state_path_or_default(
+        self,
+        value: Any,
+        default: Path,
+        *,
+        root: Path | None = None,
+    ) -> Path:
         text = str(value or "").strip()
         default = default.expanduser()
         if not text or self._is_legacy_temp_output_path(text):
             return default
 
         candidate = Path(text).expanduser()
+        session_root = root or self._active_session_root
+        if session_root is not None and not candidate.is_absolute() and not candidate.anchor:
+            candidate = session_root / candidate
         try:
             if candidate.resolve(strict=False) == Path.home().resolve(strict=False):
                 return default
         except Exception:
+            return default
+
+        if session_root is not None and not self._path_is_inside(candidate, session_root):
             return default
 
         if not candidate.exists() and default.exists():
@@ -314,17 +348,28 @@ class SessionPathsMixin:
             pass
         return candidate.name in LEGACY_TEMP_OUTPUT_NAMES
 
-    def _session_output_path_or_default(self, value: Any, default: Path) -> Path:
+    def _session_output_path_or_default(
+        self,
+        value: Any,
+        default: Path,
+        *,
+        root: Path | None = None,
+    ) -> Path:
         text = str(value or "").strip()
         default = default.expanduser()
         if not text or self._is_legacy_temp_output_path(text):
             return default
 
         candidate = Path(text).expanduser()
+        session_root = root or self._active_session_root
+        if session_root is not None and not candidate.is_absolute() and not candidate.anchor:
+            candidate = session_root / candidate
         try:
             if candidate.resolve(strict=False) == Path.home().resolve(strict=False):
                 return default
         except Exception:
+            return default
+        if session_root is not None and not self._path_is_inside(candidate, session_root):
             return default
         return candidate
 
@@ -350,6 +395,11 @@ class SessionPathsMixin:
                 paths = {}
 
         root = paths.get("root", self._active_session_root or Path.cwd())
+        paths = {
+            key: Path(value)
+            for key, value in self._project_aligned_session_directories(paths, root).items()
+        }
+        root = paths.get("root", root)
         exports_dir = paths.get("exports", root / "02_DRV")
         profiles_dir = paths.get("profiles", root / "00_configuraciones" / "profiles")
         config_dir = paths.get("config", root / "00_configuraciones")
@@ -382,13 +432,19 @@ class SessionPathsMixin:
         ]
         for widget, default in replacements:
             current = widget.text().strip()
-            if not current or self._is_legacy_temp_output_path(current):
-                widget.setText(str(default))
+            normalized = self._session_output_path_or_default(
+                current,
+                default,
+                root=self._active_session_root,
+            )
+            if str(normalized) != current:
+                widget.setText(str(normalized))
         if self.path_profile_out.text().strip() != self.profile_out_path_edit.text().strip():
             self.path_profile_out.setText(self.profile_out_path_edit.text().strip())
 
     def _preferred_session_start_directory(self, directories: dict[str, Any], state: dict[str, Any]) -> Path:
         root = self._active_session_root or Path.cwd()
+        directories = self._project_aligned_session_directories(directories, root)
         paths = {
             k: Path(str(v)).expanduser()
             for k, v in directories.items()
