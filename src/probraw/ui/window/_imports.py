@@ -49,6 +49,7 @@ from ...core.utils import (
     write_tiff16,
 )
 from ...display_color import (
+    cache_display_profile_bytes,
     detect_system_display_profile as _detect_system_display_profile,
     display_profile_label,
     prewarm_profiled_display_lut,

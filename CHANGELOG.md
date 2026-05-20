@@ -20,6 +20,10 @@ To maintain full traceability, each change must:
 
 ## [Unreleased]
 
+No entries yet.
+
+## [0.3.20] - 2026-05-20
+
 ### Fixed
 
 - Fixed ICC profile generation from a manually marked chart when the previous
@@ -30,6 +34,9 @@ To maintain full traceability, each change must:
   inheriting paths from other projects.
 - ICC profiling errors now explain why chart captures were skipped, including
   detection mode, confidence, threshold and relevant warnings.
+- Fixed the double-conversion risk in display preview: when ProbRAW already
+  converts preview pixels to the monitor ICC with LittleCMS, the `QImage` is
+  handed to Qt as untagged device RGB without an extra `QColorSpace` tag.
 
 ### Changed
 
@@ -41,6 +48,11 @@ To maintain full traceability, each change must:
   reproducibility.
 - RAW backend validation rejects unsupported settings instead of applying
   silent substitutions.
+- Monitor color management is documented as a display-only layer: exported
+  TIFFs keep the selected input ICC and do not use the monitor profile.
+- Active monitor ICC detection is cached by screen and settings, reducing
+  repeated system profile probes during previews, thumbnails and interactive
+  refreshes.
 
 ### Tests
 
@@ -50,6 +62,12 @@ To maintain full traceability, each change must:
 - Validated with `pytest -q tests/test_gui_session_paths.py -k "session"`,
   focused manual-marking GUI tests, `pytest -q tests
   --ignore=tests/test_gui_session_paths.py` and `git diff --check`.
+- Added coverage to ensure monitor-converted buffers are not tagged with a
+  `QColorSpace`, and to ensure monitor ICC conversion failures do not silently
+  fall back to unmanaged sRGB.
+- Release build validated with the full Windows installer workflow:
+  `473 passed, 2 warnings`, strict tool checks, packaged CLI/C2PA/AMaZE smoke
+  checks and `rawpy-demosaic 0.10.1`.
 
 ## [0.3.19] - 2026-05-11
 

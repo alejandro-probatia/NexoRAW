@@ -629,6 +629,25 @@ def test_image_panel_magnification_uses_pixel_exact_sampling(qapp):
         panel.close()
 
 
+def test_image_panel_does_not_tag_device_rgb_after_monitor_conversion(qapp):
+    if not hasattr(QtGui.QImage, "colorSpace"):
+        pytest.skip("Qt sin QImage.colorSpace")
+
+    panel = gui_module.ImagePanel("test", framed=False)
+    try:
+        image = gui_module.np.zeros((2, 2, 3), dtype=gui_module.np.uint8)
+
+        panel.set_rgb_u8_image(image, color_space="srgb")
+        assert isinstance(panel._base_pixmap, QtGui.QImage)
+        assert panel._base_pixmap.colorSpace().isValid()
+
+        panel.set_rgb_u8_image(image, color_space="device")
+        assert isinstance(panel._base_pixmap, QtGui.QImage)
+        assert not panel._base_pixmap.colorSpace().isValid()
+    finally:
+        panel.close()
+
+
 def test_image_panel_pixel_grid_appears_only_at_analysis_magnification(qapp):
     panel = gui_module.ImagePanel("test", framed=False)
     try:
@@ -2892,19 +2911,44 @@ def test_export_preview_color_parity_uses_icc_for_generic_profile(tmp_path: Path
         window.close()
 
 
+def test_display_u8_for_screen_passes_active_monitor_profile(monkeypatch, qapp):
+    # _display_u8_for_screen must forward whatever _active_display_profile_path() returns
+    # to srgb_to_display_u8. The conversion is always done by LittleCMS (source ICC -> monitor ICC),
+    # never by tagging pixels as sRGB and delegating the transform to Qt.
+    window = ICCRawMainWindow()
+    try:
+        profile = Path("monitor.icc")
+        calls: list[object] = []
+
+        def spy_srgb_to_display_u8(image_srgb, monitor_profile):
+            calls.append(monitor_profile)
+            return gui_module.np.zeros((2, 2, 3), dtype=gui_module.np.uint8)
+
+        monkeypatch.setattr(window, "_active_display_profile_path", lambda: profile)
+        monkeypatch.setattr(display_module, "srgb_to_display_u8", spy_srgb_to_display_u8)
+
+        window._display_u8_for_screen(gui_module.np.zeros((2, 2, 3), dtype=gui_module.np.float32))
+        assert len(calls) == 1
+        assert calls[0] == profile, (
+            f"_display_u8_for_screen must pass _active_display_profile_path() to srgb_to_display_u8; "
+            f"got {calls[0]!r}, expected {profile!r}"
+        )
+    finally:
+        window.close()
+
+
 def test_display_conversion_failure_does_not_fallback_to_unmanaged_srgb(tmp_path: Path, monkeypatch, qapp):
     window = ICCRawMainWindow()
     try:
         profile = tmp_path / "monitor.icc"
         profile.write_bytes(b"bad profile")
-        window.path_display_profile.setText(str(profile))
-        window.check_display_color_management.setChecked(True)
 
         def fail_srgb_to_display_u8(_image_srgb, monitor_profile):
-            if monitor_profile is not None:
+            if monitor_profile == profile:
                 raise RuntimeError("broken monitor profile")
             return gui_module.np.zeros((2, 2, 3), dtype=gui_module.np.uint8)
 
+        monkeypatch.setattr(window, "_active_display_profile_path", lambda: profile)
         monkeypatch.setattr(display_module, "srgb_to_display_u8", fail_srgb_to_display_u8)
 
         with pytest.raises(RuntimeError, match="Fallo de gestion ICC de monitor"):

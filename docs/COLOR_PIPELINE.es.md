@@ -105,7 +105,8 @@ Esta regla no es negociable en ProbRAW:
   estandar, nunca se convierte a sRGB para visualizar en pantalla.
 - La visualizacion gestionada convierte directamente desde el ICC fuente activo
   al ICC del monitor configurado por el sistema operativo o elegido
-  explicitamente por el usuario.
+  explicitamente por el usuario, y entrega despues la preview ya convertida a Qt
+  como RGB de dispositivo.
 - Los RGB de la imagen solo tienen significado colorimetrico objetivo cuando
   estan etiquetados por su ICC de entrada.
 - ProbRAW no inventa perfiles adicionales para el analisis objetivo de imagen.
@@ -146,7 +147,9 @@ La GUI distingue entre señal de análisis y señal de pantalla:
    o un ICC generico real de fallback como ProPhoto RGB.
 2. Los ajustes paramétricos se aplican antes de la visualizacion.
 3. Si hay un ICC fuente activo, los pixeles que llegan al widget se convierten
-   directamente desde ese ICC fuente al ICC del monitor configurado.
+   directamente desde ese ICC fuente al ICC del monitor configurado y se
+   entregan a Qt como RGB de dispositivo para que Qt/compositor no los convierta
+   una segunda vez.
 4. La senal sRGB interna queda limitada a histograma RGB, overlay de clipping y
    diagnostico; no sustituye la conversion directa al monitor cuando hay ICC
    fuente.

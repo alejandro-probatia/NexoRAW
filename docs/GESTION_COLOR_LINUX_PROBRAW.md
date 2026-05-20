@@ -206,10 +206,20 @@ should preferably come from the operating system:
 - distinguish monitor, camera, printer and generic RGB profiles;
 - never assume the first ICC found on disk is the active display profile.
 
-On Wayland, the compositor is part of the pipeline. The stable current mode is
-that ProbRAW converts preview pixels with LittleCMS2 when it manages display
-color. An experimental compositor-delegated mode should only be enabled after a
-validated Qt/KWin/Wayland test matrix exists.
+On Wayland, the compositor is part of the pipeline. ProbRAW must keep an
+explicit platform decision:
+
+- stable current mode: when an active monitor ICC exists, ProbRAW converts
+  preview pixels with LittleCMS2 to that monitor profile and hands the Qt image
+  over as device RGB, without an additional `QColorSpace` tag;
+- explicit fallback: when no monitor ICC is available, preview remains visual
+  sRGB and the Qt image is tagged as sRGB;
+- experimental compositor-delegated mode: tag the surface and delegate the final
+  conversion to the compositor only after a validated Qt/KWin/Wayland test
+  matrix exists;
+- the monitor ICC is never used for TIFF/export data, which stays tied to the
+  selected input ICC and export policy;
+- screenshots are not conclusive colorimetric proof.
 
 Multi-monitor support must eventually detect the active screen for the viewer,
 invalidate display LUTs when the window moves and record which output profile

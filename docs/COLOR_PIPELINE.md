@@ -102,7 +102,8 @@ This is a non-negotiable rule for ProbRAW:
 - The image/device profile, whether session-specific or generic standard, is
   never converted to sRGB for on-screen display.
 - Managed display converts directly from the active source ICC to the monitor
-  ICC configured by the operating system or explicitly selected by the user.
+  ICC configured by the operating system or explicitly selected by the user, and
+  then hands the already-converted preview to Qt as device RGB.
 - Image RGB values have objective colorimetric meaning only when tagged by their
   input ICC.
 - ProbRAW does not invent additional profiles for objective image analysis. Any
@@ -142,7 +143,8 @@ The GUI separates the analysis signal from the display signal:
    colorimetric references, or a real generic ICC fallback such as ProPhoto RGB.
 2. Parametric adjustments are applied before visualization.
 3. If a source ICC is active, pixels sent to the widget are converted directly
-   from that source ICC to the configured monitor ICC.
+   from that source ICC to the configured monitor ICC and handed to Qt as device
+   RGB so Qt/compositor color management does not convert them a second time.
 4. The internal sRGB signal is limited to RGB histogram, clipping overlay and
    diagnostics; it does not replace direct monitor conversion when a source ICC
    exists.

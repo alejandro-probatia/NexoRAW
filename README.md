@@ -10,7 +10,7 @@ Reproducible and auditable RAW/TIFF development for scientific, forensic and
 heritage photography, with session ICC profiling, per-file parametric settings
 and open AGPL traceability.
 
-![AGPL-3.0-or-later License](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue) ![CI](https://img.shields.io/badge/CI-pending-lightgrey) ![Version](https://img.shields.io/badge/version-v0.3.19-brightgreen) ![Python](https://img.shields.io/badge/python-3.11%2B-blue) ![Platforms](https://img.shields.io/badge/platforms-Linux%20%7C%20macOS%20%7C%20Windows-informational)
+![AGPL-3.0-or-later License](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue) ![CI](https://img.shields.io/badge/CI-pending-lightgrey) ![Version](https://img.shields.io/badge/version-v0.3.20-brightgreen) ![Python](https://img.shields.io/badge/python-3.11%2B-blue) ![Platforms](https://img.shields.io/badge/platforms-Linux%20%7C%20macOS%20%7C%20Windows-informational)
 
 ![ProbRAW main interface](docs/assets/screenshots/probraw-portada.png)
 
@@ -31,18 +31,19 @@ The current workflow is intentionally ICC-centered:
 
 ## Current Status
 
-ProbRAW 0.3.19 is suitable for controlled testing, method review and release
+ProbRAW 0.3.20 is suitable for controlled testing, method review and release
 candidate validation. It is not yet a certified scientific or forensic
 production system.
 
-The current version improves first preview loading, provisional RAW orientation
-and viewer geometry persistence, while preserving the signed TIFF output path
-and the MTF analysis guarantees.
+The current version tightens monitor color preview handling, aligns all default
+session working folders with the active project and fixes manual chart ICC
+generation, while preserving the signed TIFF output path and the MTF analysis
+guarantees.
 
 The latest packaging validation passed with:
 
 ```text
-Release validation is recorded in docs/releases/0.3.19.md.
+Release validation is recorded in docs/releases/0.3.20.md.
 CachyOS probraw 0.3.18-3: pacman -Qkk -> 18160 files, 0 altered; validate_cachyos_install -> OK
 ```
 

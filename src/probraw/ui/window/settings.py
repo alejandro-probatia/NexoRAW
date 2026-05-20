@@ -243,11 +243,13 @@ class SettingsMixin:
         self.spin_preview_max_side.setValue(0)
         self.spin_preview_max_side.hide()
 
-        self.check_display_color_management = QtWidgets.QCheckBox(self.tr("Gestion ICC del monitor del sistema"))
+        self.check_display_color_management = QtWidgets.QCheckBox(self.tr("Gestion de color del monitor (SO/Qt)"))
         self.check_display_color_management.setToolTip(
             self.tr(
-                "Siempre activo: usa automaticamente el perfil ICC configurado para el monitor "
-                "en el sistema. Puedes seleccionar un perfil manualmente para otro monitor o flujo."
+                "Siempre activo: ProbRAW obtiene el perfil ICC del monitor desde el SO/Qt "
+                "cuando esta disponible y convierte la preview con LittleCMS. "
+                "Los pixeles ya convertidos se entregan como RGB de dispositivo para evitar "
+                "una segunda conversion del compositor. El TIFF no usa este perfil."
             )
         )
         self.check_display_color_management.setChecked(True)
@@ -255,9 +257,24 @@ class SettingsMixin:
         self.check_display_color_management.toggled.connect(self._on_display_color_settings_changed)
         grid.addWidget(self.check_display_color_management, 3, 0, 1, 3)
 
-        self.path_display_profile = QtWidgets.QLineEdit(str(self._settings.value("display/monitor_profile") or ""))
+        self.check_manual_profile_override = QtWidgets.QCheckBox(
+            self.tr("Override manual: usar perfil ICC especifico")
+        )
+        self.check_manual_profile_override.setToolTip(
+            self.tr(
+                "Activa para usar este ICC como destino de monitor en LittleCMS. "
+                "Util para soft-proofing o cuando el SO no reporta el perfil correcto."
+            )
+        )
+        self.check_manual_profile_override.setChecked(
+            self._settings_bool("display/manual_override_enabled", False)
+        )
+        self.check_manual_profile_override.toggled.connect(self._on_display_color_settings_changed)
+        grid.addWidget(self.check_manual_profile_override, 4, 0, 1, 3)
+
+        self.path_display_profile = QtWidgets.QLineEdit(str(self._settings.value("display/monitor_profile") or ""), tab)
         self.path_display_profile.editingFinished.connect(self._on_display_color_settings_changed)
-        self._add_path_row(grid, 4, self.tr("Perfil ICC monitor"), self.path_display_profile, file_mode=True, save_mode=False, dir_mode=False)
+        self._add_path_row(grid, 5, self.tr("Perfil ICC monitor"), self.path_display_profile, file_mode=True, save_mode=False, dir_mode=False)
 
         display_row = QtWidgets.QHBoxLayout()
         display_row.addWidget(self._button(self.tr("Detectar"), self._detect_display_profile))
@@ -265,7 +282,7 @@ class SettingsMixin:
         self.display_profile_status.setWordWrap(True)
         self.display_profile_status.setStyleSheet("font-size: 12px; color: #6b7280;")
         display_row.addWidget(self.display_profile_status, 1)
-        grid.addLayout(display_row, 5, 0, 1, 3)
+        grid.addLayout(display_row, 6, 0, 1, 3)
         self._ensure_display_profile_if_enabled()
         self._update_display_profile_status()
 
@@ -278,14 +295,14 @@ class SettingsMixin:
         )
         self.preview_png_policy_label.setWordWrap(True)
         self.preview_png_policy_label.setStyleSheet("font-size: 12px; color: #9ca3af;")
-        grid.addWidget(self.preview_png_policy_label, 6, 0, 1, 3)
+        grid.addWidget(self.preview_png_policy_label, 7, 0, 1, 3)
 
         cache_row = QtWidgets.QHBoxLayout()
         cache_row.addWidget(self._button(self.tr("Limpiar cache"), self._on_clear_preview_caches))
         cache_row.addStretch(1)
-        grid.addLayout(cache_row, 7, 0, 1, 3)
+        grid.addLayout(cache_row, 8, 0, 1, 3)
 
-        grid.setRowStretch(8, 1)
+        grid.setRowStretch(9, 1)
         return tab
 
     def _migrate_display_color_settings(self) -> None:

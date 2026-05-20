@@ -18,6 +18,10 @@ Para mantener trazabilidad completa, cada cambio debe:
 
 ## [Unreleased]
 
+Sin entradas todavia.
+
+## [0.3.20] - 2026-05-20
+
 ### Fixed
 
 - Corregida la generacion de perfiles ICC desde una carta marcada manualmente
@@ -31,6 +35,9 @@ Para mantener trazabilidad completa, cada cambio debe:
 - Los errores de perfilado ICC explican ahora por que se descartaron capturas
   de carta, incluyendo modo de deteccion, confianza, umbral y avisos
   relevantes.
+- Corregido el riesgo de doble conversion en la visualizacion: cuando ProbRAW
+  ya convierte la preview al ICC del monitor con LittleCMS, el `QImage` se
+  entrega como RGB de dispositivo sin etiqueta `QColorSpace` adicional.
 
 ### Changed
 
@@ -42,6 +49,12 @@ Para mantener trazabilidad completa, cada cambio debe:
   reproducibilidad.
 - La validacion del backend RAW rechaza configuraciones no soportadas en lugar
   de aplicar sustituciones silenciosas.
+- La gestion de color de monitor queda documentada como una capa exclusiva de
+  visualizacion: el TIFF exportado conserva el ICC de entrada seleccionado y no
+  usa el perfil de monitor.
+- La deteccion del perfil ICC de monitor activo queda cacheada por pantalla y
+  ajustes, reduciendo consultas repetidas al sistema durante previews,
+  miniaturas y refrescos interactivos.
 
 ### Tests
 
@@ -51,6 +64,12 @@ Para mantener trazabilidad completa, cada cambio debe:
 - Validado con `pytest -q tests/test_gui_session_paths.py -k "session"`,
   pruebas GUI puntuales de marcado manual, `pytest -q tests
   --ignore=tests/test_gui_session_paths.py` y `git diff --check`.
+- Anadida cobertura para impedir que buffers ya convertidos a monitor queden
+  etiquetados como `QColorSpace`, y para garantizar que fallos de conversion ICC
+  de monitor no caen silenciosamente a sRGB sin gestionar.
+- Build de release validada con el flujo completo del instalador Windows:
+  `473 passed, 2 warnings`, checks estrictos de herramientas, smoke checks
+  empaquetados CLI/C2PA/AMaZE y `rawpy-demosaic 0.10.1`.
 
 ## [0.3.19] - 2026-05-11
 

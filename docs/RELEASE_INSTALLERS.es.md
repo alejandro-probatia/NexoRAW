@@ -152,6 +152,30 @@ pruebas.
 8. Si un asset publicado resulta defectuoso y GitHub no permite reemplazarlo,
    crear una revision nueva de la release y marcar la anterior con un aviso.
 
+## Release 0.3.20
+
+La release 0.3.20 consolida las correcciones de rutas de sesion y preview de
+monitor:
+
+- las sesiones nuevas alinean el navegador de archivos, la carpeta de
+  referencias de carta y la carpeta de exportacion TIFF derivada con el proyecto
+  activo,
+- el marcado manual de carta puede construir un perfil ICC aunque la deteccion
+  automatica no produjera candidatos utilizables,
+- la conversion ICC de monitor sigue siendo exclusiva de visualizacion: los TIFF
+  exportados conservan el ICC de entrada seleccionado,
+- los pixeles de preview ya convertidos al ICC de monitor con LittleCMS se
+  entregan a Qt como RGB de dispositivo, evitando una segunda conversion
+  `QColorSpace`.
+
+Artefactos esperados para la release Windows:
+
+- `ProbRAW-0.3.20-Setup.exe`
+- `ProbRAW-0.3.20-Setup.exe.sha256`
+- `probraw-0.3.20.tar.gz`
+- `probraw-0.3.20-py3-none-any.whl`
+- `probraw_0.3.20_python_artifacts.sha256`
+
 ## Release 0.3.19
 
 La release 0.3.19 consolida el trabajo posterior a 0.3.18 en empaquetado y

@@ -2414,17 +2414,23 @@ if QtWidgets is not None:
             value = str(color_space or "device").strip().lower()
             return "srgb" if value == "srgb" else "device"
 
-        @staticmethod
-        def _tag_qimage_color_space(qimg: QtGui.QImage, color_space: str) -> None:
+        def _tag_qimage_color_space(self, qimg: QtGui.QImage, color_space: str) -> None:
             if color_space != "srgb":
+                # Device RGB means ProbRAW already converted the pixels to the
+                # monitor profile with LittleCMS. Keep the QImage untagged so
+                # Qt/compositor does not run an additional color transform.
                 return
             try:
-                qimg.setColorSpace(QtGui.QColorSpace(QtGui.QColorSpace.NamedColorSpace.SRgb))
-            except Exception:
+                # Pixels are still sRGB when no monitor ICC conversion was
+                # applied, so tagging allows a color-managed compositor to do
+                # the final sRGB -> monitor transform.
                 try:
-                    qimg.setColorSpace(QtGui.QColorSpace(QtGui.QColorSpace.SRgb))
-                except Exception:
-                    pass
+                    srgb_cs = QtGui.QColorSpace(QtGui.QColorSpace.NamedColorSpace.SRgb)
+                except AttributeError:
+                    srgb_cs = QtGui.QColorSpace(QtGui.QColorSpace.SRgb)
+                qimg.setColorSpace(srgb_cs)
+            except Exception:
+                pass
 
         def image_size(self) -> tuple[int, int] | None:
             return self._image_size

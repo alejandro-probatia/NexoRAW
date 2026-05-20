@@ -257,12 +257,16 @@ grafico real.
 En Wayland el compositor forma parte activa del pipeline. ProbRAW debe mantener
 una decision explicita por plataforma:
 
-- modo actual estable: convertir pixeles de preview con LittleCMS hacia el ICC
-  de monitor cuando ProbRAW gestiona pantalla por si mismo;
-- modo experimental: etiquetar la superficie como sRGB y delegar la conversion
-  final en el compositor solo cuando Qt/KWin/Wayland lo soporten y este validado;
-- evitar doble conversion si la aplicacion convierte a monitor y el compositor
-  vuelve a convertir;
+- modo actual estable: cuando existe un ICC de monitor activo, ProbRAW convierte
+  pixeles de preview con LittleCMS hacia ese perfil de monitor y entrega la
+  imagen Qt como RGB de dispositivo, sin etiqueta `QColorSpace` adicional;
+- fallback explicito: cuando no hay ICC de monitor disponible, la preview queda
+  como sRGB visual y la imagen Qt se etiqueta como sRGB;
+- modo experimental delegado al compositor: etiquetar la superficie y delegar la
+  conversion final en el compositor solo cuando exista una matriz Qt/KWin/Wayland
+  validada;
+- el ICC de monitor nunca se usa para TIFF/exportacion, que siguen ligados al
+  ICC de entrada seleccionado y a la politica de exportacion;
 - no usar capturas de pantalla como prueba colorimetrica concluyente.
 
 La variable `PROBRAW_PREVIEW_SYSTEM_DISPLAY_COLOR_MANAGEMENT` debe considerarse

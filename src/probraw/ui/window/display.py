@@ -686,8 +686,6 @@ class DisplayControlsMixin:
         return srgb
 
     def _display_profile_stamp(self) -> str:
-        if self._system_display_color_management_enabled():
-            return "system-srgb"
         profile_path = self._active_display_profile_path()
         if profile_path is None:
             return "none"
@@ -801,10 +799,16 @@ class DisplayControlsMixin:
             return
         self._ensure_display_profile_if_enabled()
 
+        self._invalidate_active_display_profile_cache()
         self._settings.setValue(
             "display/color_management_enabled",
             bool(self.check_display_color_management.isChecked()),
         )
+        if hasattr(self, "check_manual_profile_override"):
+            self._settings.setValue(
+                "display/manual_override_enabled",
+                bool(self.check_manual_profile_override.isChecked()),
+            )
         self._settings.setValue("display/monitor_profile", self.path_display_profile.text().strip())
         self._display_color_error_key = None
         self._image_thumb_cache.clear()
@@ -817,30 +821,105 @@ class DisplayControlsMixin:
         if hasattr(self, "file_list"):
             self._queue_thumbnail_generation(self._file_list_paths(), delay_ms=0)
 
-    def _active_display_profile_path(self) -> Path | None:
-        if self._system_display_color_management_enabled():
-            return None
-        if not hasattr(self, "check_display_color_management"):
-            return None
-        if not self.check_display_color_management.isChecked():
-            return None
-        text = self.path_display_profile.text().strip()
-        if not text:
-            return None
-        return Path(text).expanduser()
+    def _invalidate_active_display_profile_cache(self) -> None:
+        self._active_display_profile_cached_key = None
+        self._active_display_profile_cache_value = None
 
-    def _system_display_color_management_enabled(self) -> bool:
-        if not bool(getattr(self, "_system_display_color_management", False)):
-            return False
+    def _display_screen_cache_key(self) -> str:
         try:
-            return bool(hasattr(QtGui.QImage, "setColorSpace") and hasattr(QtGui, "QColorSpace"))
+            screen = self.screen() if callable(getattr(self, "screen", None)) else None
+            if screen is None:
+                screen = QtWidgets.QApplication.primaryScreen()
+            if screen is None:
+                return "screen:none"
+            geometry = screen.geometry()
+            parts = [
+                str(screen.name() if hasattr(screen, "name") else ""),
+                str(geometry.x()),
+                str(geometry.y()),
+                str(geometry.width()),
+                str(geometry.height()),
+                f"{float(screen.devicePixelRatio()):.4f}" if hasattr(screen, "devicePixelRatio") else "",
+            ]
+            return "|".join(parts)
         except Exception:
+            return "screen:unknown"
+
+    def _active_display_profile_cache_key(self) -> tuple[object, ...]:
+        manual_enabled = bool(
+            hasattr(self, "check_manual_profile_override")
+            and self.check_manual_profile_override.isChecked()
+        )
+        manual_text = self.path_display_profile.text().strip() if hasattr(self, "path_display_profile") else ""
+        return (manual_enabled, manual_text, self._display_screen_cache_key())
+
+    def _monitor_profile_from_qt(self) -> Path | None:
+        """Obtiene el ICC del monitor activo via Qt (Windows ICM, macOS ColorSync, Wayland CM).
+
+        Usa QScreen::colorSpace().iccProfile(), que el SO provee a Qt automaticamente.
+        El ICC en bytes se escribe a disco para que LittleCMS pueda abrirlo.
+        """
+        try:
+            screen = self.screen() if callable(getattr(self, "screen", None)) else None
+            if screen is None:
+                screen = QtWidgets.QApplication.primaryScreen()
+            if screen is None:
+                return None
+            color_space = getattr(screen, "colorSpace", None)
+            if not callable(color_space):
+                return None
+            cs = color_space()
+            if not cs.isValid():
+                return None
+            icc_bytes = bytes(cs.iccProfile())
+            if len(icc_bytes) < 128:
+                return None
+            return cache_display_profile_bytes(icc_bytes, prefix="qt-screen")
+        except Exception:
+            return None
+
+    def _active_display_profile_path(self) -> Path | None:
+        """Devuelve la ruta ICC del monitor para la conversion LittleCMS (source ICC -> monitor ICC).
+
+        Prioridad:
+        1. Override manual explicitamente activado por el usuario.
+        2. Perfil ICC del monitor obtenido via Qt (Windows ICM, macOS ColorSync, Wayland).
+        3. Deteccion especifica de plataforma (ctypes/GDI32, CoreGraphics, colord).
+        4. None: sin perfil - la conversion LittleCMS destina a sRGB (fallback visual).
+        """
+        cache_key = self._active_display_profile_cache_key()
+        if getattr(self, "_active_display_profile_cached_key", None) == cache_key:
+            return getattr(self, "_active_display_profile_cache_value", None)
+        profile_path = self._resolve_active_display_profile_path()
+        self._active_display_profile_cached_key = cache_key
+        self._active_display_profile_cache_value = profile_path
+        return profile_path
+
+    def _resolve_active_display_profile_path(self) -> Path | None:
+        if self._manual_override_active():
+            if not hasattr(self, "path_display_profile"):
+                return None
+            text = self.path_display_profile.text().strip()
+            return Path(text).expanduser() if text else None
+        from_qt = self._monitor_profile_from_qt()
+        if from_qt is not None:
+            return from_qt
+        return detect_system_display_profile()
+
+    def _manual_override_active(self) -> bool:
+        if not hasattr(self, "check_manual_profile_override"):
             return False
+        if not self.check_manual_profile_override.isChecked():
+            return False
+        if not hasattr(self, "path_display_profile"):
+            return False
+        text = self.path_display_profile.text().strip()
+        return bool(text and Path(text).expanduser().exists())
 
     def _display_panel_color_space(self, *, bypass_profile: bool = False) -> str:
-        if bool(bypass_profile) or self._system_display_color_management_enabled():
+        if bypass_profile:
             return "srgb"
-        return "device"
+        return "device" if self._active_display_profile_path() is not None else "srgb"
 
     def _display_u8_for_screen(self, image_srgb: np.ndarray, *, bypass_profile: bool = False) -> np.ndarray:
         if bypass_profile:
@@ -1042,19 +1121,35 @@ class DisplayControlsMixin:
         if not hasattr(self, "display_profile_status"):
             return
         if error:
-            self.display_profile_status.setText(self.tr("Monitor: error de perfil; mostrando sRGB"))
+            self.display_profile_status.setText(self.tr("Monitor: error de perfil ICC; vista no actualizada"))
             return
-        profile_path = self._active_display_profile_path()
-        if self._system_display_color_management_enabled():
-            self.display_profile_status.setText(self.tr("Monitor: gestion de color del sistema (sRGB etiquetado)"))
+        if self._manual_override_active():
+            profile_path = self._active_display_profile_path()
+            if profile_path is None or not profile_path.exists():
+                self.display_profile_status.setText(self.tr("Monitor: override - perfil no encontrado"))
+                return
+            self.display_profile_status.setText(self.tr("Monitor: override ICC -") + f" {display_profile_label(profile_path)}")
             return
-        if profile_path is None:
-            if hasattr(self, "check_display_color_management") and not self.check_display_color_management.isChecked():
-                self.display_profile_status.setText(self.tr("Monitor: gestion ICC desactivada"))
-            else:
-                self.display_profile_status.setText(self.tr("Monitor: sRGB (sin perfil de sistema detectado)"))
+        # Auto: intentar Qt, luego ctypes, luego fallback sRGB
+        from_qt = self._monitor_profile_from_qt()
+        if from_qt is not None:
+            try:
+                screen = self.screen() if callable(getattr(self, "screen", None)) else None
+                if screen is None:
+                    screen = QtWidgets.QApplication.primaryScreen()
+                if screen is not None:
+                    cs = screen.colorSpace()
+                    if cs.isValid():
+                        desc = cs.description().strip() if hasattr(cs, "description") else ""
+                        label = desc or display_profile_label(from_qt)
+                        self.display_profile_status.setText(self.tr("Monitor: SO (Qt) -") + f" {label}")
+                        return
+            except Exception:
+                pass
+            self.display_profile_status.setText(self.tr("Monitor: SO (Qt) -") + f" {display_profile_label(from_qt)}")
             return
-        if not profile_path.exists():
-            self.display_profile_status.setText(self.tr("Monitor: perfil no encontrado") + f" ({profile_path.name})")
+        detected = detect_system_display_profile()
+        if detected is not None:
+            self.display_profile_status.setText(self.tr("Monitor: detectado -") + f" {display_profile_label(detected)}")
             return
-        self.display_profile_status.setText(self.tr("Monitor:") + f" {display_profile_label(profile_path)}")
+        self.display_profile_status.setText(self.tr("Monitor: sin perfil ICC (fallback sRGB visual)"))

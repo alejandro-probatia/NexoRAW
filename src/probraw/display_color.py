@@ -636,6 +636,11 @@ def _macos_main_display_icc_data() -> bytes | None:
             pass
 
 
+def cache_display_profile_bytes(data: bytes, *, prefix: str) -> Path | None:
+    """Escribe un ICC en bytes al cache de disco y devuelve la ruta. Interfaz publica."""
+    return _write_cached_display_profile(data, prefix=prefix)
+
+
 def _write_cached_display_profile(data: bytes, *, prefix: str) -> Path | None:
     if len(data) < 128:
         return None

@@ -146,6 +146,27 @@ zip.
 8. If a published asset turns out to be defective and GitHub does not allow it to be replaced,
    create a new revision of the release and mark the previous one with a warning.
 
+## Release 0.3.20
+
+Release 0.3.20 consolidates the session-path and monitor preview fixes:
+
+- new sessions align the file browser, chart reference folder and derivative
+  TIFF export folder with the active project,
+- manual chart marking can build an ICC profile even after automatic chart
+  detection produced no usable candidates,
+- monitor ICC conversion remains display-only: exported TIFF files keep the
+  selected input ICC,
+- preview pixels already converted to the monitor ICC with LittleCMS are handed
+  to Qt as device RGB, avoiding a second `QColorSpace` conversion.
+
+Expected artifacts for the Windows release:
+
+- `ProbRAW-0.3.20-Setup.exe`
+- `ProbRAW-0.3.20-Setup.exe.sha256`
+- `probraw-0.3.20.tar.gz`
+- `probraw-0.3.20-py3-none-any.whl`
+- `probraw_0.3.20_python_artifacts.sha256`
+
 ## Release 0.3.19
 
 Release 0.3.19 consolidates the post-0.3.18 packaging and preview work:
