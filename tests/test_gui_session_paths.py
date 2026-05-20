@@ -3751,6 +3751,66 @@ def test_loading_or_using_icc_profile_enables_apply_profile(tmp_path: Path, monk
         window.close()
 
 
+def test_manual_menu_load_allows_rejected_session_icc(tmp_path: Path, monkeypatch, qapp):
+    root = tmp_path / "session"
+    payload = create_session(root, name="Sesion perfiles")
+
+    window = ICCRawMainWindow()
+    try:
+        window._activate_session(root, payload)
+        profile = root / "00_configuraciones" / "profiles" / "loaded-rejected.icc"
+        profile.parent.mkdir(parents=True, exist_ok=True)
+        profile.write_bytes(b"fake profile" * 32)
+        profile.with_suffix(".profile.json").write_text('{"profile_status": "rejected"}', encoding="utf-8")
+        monkeypatch.setattr(
+            QtWidgets.QFileDialog,
+            "getOpenFileName",
+            lambda *_args, **_kwargs: (str(profile), "ICC Profiles (*.icc *.icm)"),
+        )
+        monkeypatch.setattr(
+            QtWidgets.QMessageBox,
+            "warning",
+            lambda *_args, **_kwargs: pytest.fail("No debe bloquear un ICC rejected elegido manualmente"),
+        )
+
+        window._menu_load_profile()
+
+        assert window.chk_apply_profile.isChecked()
+        assert window._active_session_icc_for_settings() == profile
+        assert window._active_icc_profile_id
+    finally:
+        window.close()
+
+
+def test_use_generated_profile_allows_rejected_manual_activation(tmp_path: Path, monkeypatch, qapp):
+    root = tmp_path / "session"
+    payload = create_session(root, name="Sesion perfiles")
+
+    window = ICCRawMainWindow()
+    try:
+        window._activate_session(root, payload)
+        profile = Path(window.profile_out_path_edit.text())
+        profile.parent.mkdir(parents=True, exist_ok=True)
+        profile.write_bytes(b"generated profile" * 32)
+        profile.with_suffix(".profile.json").write_text('{"profile_status": "rejected"}', encoding="utf-8")
+        monkeypatch.setattr(
+            QtWidgets.QMessageBox,
+            "warning",
+            lambda *_args, **_kwargs: pytest.fail("No debe bloquear un ICC generated rejected elegido manualmente"),
+        )
+
+        window._use_generated_profile_as_active()
+
+        assert window.chk_apply_profile.isChecked()
+        assert window._active_session_icc_for_settings() == profile
+        assert window._active_icc_profile_id
+        saved_state = load_session(root)["state"]
+        assert saved_state["profile_active_path"] == str(profile)
+        assert saved_state["active_icc_profile_id"] == window._active_icc_profile_id
+    finally:
+        window.close()
+
+
 def test_activate_session_loads_generated_icc_profile_catalog(tmp_path: Path, monkeypatch, qapp):
     root = tmp_path / "session"
     payload = create_session(
@@ -3894,6 +3954,150 @@ def test_profile_report_with_high_training_error_is_not_activable(tmp_path: Path
 
         assert window._profile_status_for_path(profile) == "rejected"
         assert not window._profile_can_be_active(profile)
+        assert window._profile_can_be_active(profile, allow_rejected=True)
+    finally:
+        window.close()
+
+
+def test_rejected_session_icc_remains_selectable_for_manual_activation(tmp_path: Path, qapp):
+    root = tmp_path / "session"
+    payload = create_session(root, name="perfil_manual")
+
+    window = ICCRawMainWindow()
+    try:
+        window._activate_session(root, payload)
+        profile = root / "00_configuraciones" / "profiles" / "perfil_manual.icc"
+        profile.parent.mkdir(parents=True, exist_ok=True)
+        profile.write_bytes(b"fake icc profile bytes" * 16)
+        profile.with_suffix(".profile.json").write_text('{"profile_status": "rejected"}', encoding="utf-8")
+
+        profile_id = window._register_icc_profile(
+            {
+                "name": "perfil_manual",
+                "source": "generated",
+                "path": str(profile),
+                "status": "rejected",
+            },
+            activate=False,
+        )
+
+        window.radio_icc_generic.setChecked(True)
+        window._on_icc_workflow_choice_changed()
+
+        assert window.icc_profile_combo.isEnabled()
+        assert not window._profile_can_be_active(profile)
+        assert window._profile_can_be_active(profile, allow_rejected=True)
+
+        index = window.icc_profile_combo.findData(profile_id)
+        assert index >= 0
+        window.icc_profile_combo.setCurrentIndex(index)
+
+        assert window.radio_icc_existing.isChecked()
+        assert window._paths_equivalent(Path(window.path_profile_active.text()), profile)
+        assert window._active_icc_profile_id == profile_id
+        assert window._active_session_icc_for_settings() == profile
+    finally:
+        window.close()
+
+
+def test_rejected_session_icc_requires_matching_active_id(tmp_path: Path, qapp):
+    root = tmp_path / "session"
+    payload = create_session(root, name="perfil_manual")
+
+    window = ICCRawMainWindow()
+    try:
+        window._activate_session(root, payload)
+        profile = root / "00_configuraciones" / "profiles" / "perfil_manual.icc"
+        profile.parent.mkdir(parents=True, exist_ok=True)
+        profile.write_bytes(b"fake icc profile bytes" * 16)
+        profile.with_suffix(".profile.json").write_text('{"profile_status": "rejected"}', encoding="utf-8")
+        window.path_profile_active.setText(str(profile))
+        window.chk_apply_profile.setChecked(True)
+        window._active_icc_profile_id = "stale-id"
+
+        assert window._active_session_icc_for_settings() is None
+        saved_state = window._session_state_snapshot()
+        assert saved_state["profile_active_path"] == ""
+        assert saved_state["active_icc_profile_id"] == ""
+    finally:
+        window.close()
+
+
+def test_rejected_session_icc_roundtrips_from_raw_sidecar_after_manual_activation(tmp_path: Path, qapp):
+    root = tmp_path / "session"
+    payload = create_session(root, name="perfil_manual")
+
+    window = ICCRawMainWindow()
+    try:
+        window._activate_session(root, payload)
+        raw = root / "01_ORG" / "capture.NEF"
+        raw.parent.mkdir(parents=True, exist_ok=True)
+        raw.write_bytes(b"raw bytes")
+        profile = root / "00_configuraciones" / "profiles" / "perfil_manual.icc"
+        profile.parent.mkdir(parents=True, exist_ok=True)
+        profile.write_bytes(b"fake icc profile bytes" * 16)
+        profile.with_suffix(".profile.json").write_text('{"profile_status": "rejected"}', encoding="utf-8")
+
+        profile_id = window._register_icc_profile(
+            {
+                "name": "perfil_manual",
+                "source": "generated",
+                "path": str(profile),
+                "status": "rejected",
+            },
+            activate=False,
+        )
+        assert window._activate_icc_profile_id(profile_id, allow_rejected=True)
+        assert window._assign_active_icc_profile_to_raw_files([raw]) == 1
+
+        window._clear_active_input_profile_for_unconfigured_file()
+        assert window._active_session_icc_for_settings() is None
+
+        assert window._apply_raw_sidecar_to_controls(raw)
+        assert window._paths_equivalent(Path(window.path_profile_active.text()), profile)
+        assert window._active_icc_profile_id == profile_id
+        assert window._active_session_icc_for_settings() == profile
+    finally:
+        window.close()
+
+
+def test_rejected_sidecar_icc_requires_matching_profile_id(tmp_path: Path, qapp):
+    root = tmp_path / "session"
+    payload = create_session(root, name="perfil_manual")
+
+    window = ICCRawMainWindow()
+    try:
+        window._activate_session(root, payload)
+        raw = root / "01_ORG" / "capture.NEF"
+        raw.parent.mkdir(parents=True, exist_ok=True)
+        raw.write_bytes(b"raw bytes")
+        rejected = root / "00_configuraciones" / "profiles" / "rejected.icc"
+        other = root / "00_configuraciones" / "profiles" / "other.icc"
+        rejected.parent.mkdir(parents=True, exist_ok=True)
+        rejected.write_bytes(b"rejected icc profile bytes" * 16)
+        other.write_bytes(b"other icc profile bytes" * 16)
+        rejected.with_suffix(".profile.json").write_text('{"profile_status": "rejected"}', encoding="utf-8")
+        other_id = window._register_icc_profile(
+            {
+                "name": "other",
+                "source": "generated",
+                "path": str(other),
+                "status": "validated",
+            },
+            activate=False,
+        )
+        write_raw_sidecar(
+            raw,
+            recipe=Recipe(output_space="scene_linear_camera_rgb"),
+            adjustment_profiles={"icc": {"id": other_id, "name": "other", "kind": "icc"}},
+            icc_profile_path=rejected,
+            color_management_mode="camera_rgb_with_input_icc",
+            session_root=root,
+        )
+
+        assert window._apply_raw_sidecar_to_controls(raw)
+        assert window._active_session_icc_for_settings() is None
+        assert window.path_profile_active.text() == ""
     finally:
         window.close()
 

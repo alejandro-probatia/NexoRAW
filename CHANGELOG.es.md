@@ -20,6 +20,38 @@ Para mantener trazabilidad completa, cada cambio debe:
 
 Sin entradas todavia.
 
+## [0.3.22] - 2026-05-20
+
+### Fixed
+
+- Corregida la seleccion manual de perfiles ICC de sesion generados con estado
+  QA `rejected`: siguen bloqueados para autoactivacion, pero pueden elegirse
+  explicitamente desde el combo de perfiles, desde el menu de carga manual o
+  desde "Usar ICC generado".
+- Corregida la persistencia por mochila RAW para estos perfiles: al asignarlos a
+  una imagen se guarda el identificador de perfil junto a la ruta ICC, y al
+  reabrir o cambiar de imagen solo se restaura si ambos coinciden.
+- Corregido el riesgo de que una ruta ICC `rejected` quedara activa por un ID
+  obsoleto o por una sesion reabierta sin seleccion explicita.
+
+### Changed
+
+- El combo de perfiles ICC de sesion permanece disponible cuando hay perfiles
+  registrados, aunque el modo activo sea un RGB estandar, para permitir cambiar
+  de forma explicita al perfil de sesion.
+- La UI informa en estado/log cuando un perfil `rejected` se activa
+  manualmente, manteniendo la trazabilidad sin impedir el flujo de trabajo.
+
+### Tests
+
+- Anadida cobertura de regresion para seleccion manual de ICC `rejected`,
+  carga por menu, uso de ICC generado, roundtrip en mochila RAW, reapertura de
+  sesion y rechazo de IDs de perfil incoherentes.
+- Validado con smoke real de ventana Qt en modo `offscreen`, suite completa
+  del build Windows (`489 passed, 2 warnings`), `check-amaze`,
+  `check-tools --strict`, `check-c2pa` y comprobacion del asistente de
+  actualizacion.
+
 ## [0.3.21] - 2026-05-20
 
 ### Fixed

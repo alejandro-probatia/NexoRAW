@@ -249,8 +249,15 @@ class SessionDevelopmentMixin:
         if not text:
             self._active_icc_profile_id = ""
             return
-        profile = self._icc_profile_by_path(Path(text).expanduser())
-        self._active_icc_profile_id = str(profile.get("id") or "") if profile else ""
+        path = Path(text).expanduser()
+        profile = self._icc_profile_by_path(path)
+        if profile is None:
+            self._active_icc_profile_id = ""
+            return
+        if self._profile_status_for_path(path) == "rejected" and not self._active_icc_profile_matches_path(path):
+            self._active_icc_profile_id = ""
+            return
+        self._active_icc_profile_id = str(profile.get("id") or "")
 
     def _session_icc_profiles_snapshot(self) -> list[dict[str, Any]]:
         return [dict(profile) for profile in self._icc_profiles]
@@ -386,7 +393,8 @@ class SessionDevelopmentMixin:
             raw_path = self.path_profile_active.text().strip()
             if raw_path:
                 path = Path(raw_path).expanduser()
-                has_active_icc = path.exists() and self._profile_can_be_active(path)
+                allow_rejected = self._active_icc_profile_matches_path(path)
+                has_active_icc = path.exists() and self._profile_can_be_active(path, allow_rejected=allow_rejected)
         generic.blockSignals(True)
         existing.blockSignals(True)
         generate.blockSignals(True)
@@ -403,15 +411,16 @@ class SessionDevelopmentMixin:
         generic = bool(getattr(getattr(self, "radio_icc_generic", None), "isChecked", lambda: True)())
         generate = bool(getattr(getattr(self, "radio_icc_generate", None), "isChecked", lambda: False)())
         existing = bool(getattr(getattr(self, "radio_icc_existing", None), "isChecked", lambda: False)())
+        has_session_profiles = bool(getattr(self, "_icc_profiles", []) or [])
         combo = getattr(self, "combo_generic_icc_space", None)
         if combo is not None:
             combo.setEnabled(generic)
         session_combo = getattr(self, "icc_profile_combo", None)
         if session_combo is not None:
-            session_combo.setEnabled(existing)
+            session_combo.setEnabled(existing or has_session_profiles)
         status_label = getattr(self, "icc_profile_status_label", None)
         if status_label is not None:
-            status_label.setEnabled(existing)
+            status_label.setEnabled(existing or has_session_profiles)
         generation_section = getattr(self, "_icc_profile_generation_section", None)
         if generation_section is not None:
             generation_section.setEnabled(generate)
@@ -461,12 +470,26 @@ class SessionDevelopmentMixin:
         existing = getattr(self, "radio_icc_existing", None)
         if existing is not None and not existing.isChecked():
             existing.setChecked(True)
-        if not self._activate_icc_profile_id(profile_id, save=True, refresh_preview=True):
+        if not self._activate_icc_profile_id(profile_id, save=True, refresh_preview=True, allow_rejected=True):
             self._refresh_icc_profile_combo()
             return
         self._auto_apply_current_icc_choice_to_selected_image()
         profile = self._icc_profile_by_id(profile_id)
-        self._set_status(self.tr("Perfil ICC de sesion activo:") + f" {self._icc_profile_combo_label(profile) if profile else profile_id}")
+        path = self._session_stored_path(profile.get("path")) if profile else None
+        status = self._profile_status_for_path(path) if path is not None else ""
+        if status == "rejected":
+            self._log_preview(
+                self.tr("Perfil ICC activado manualmente pese a estado QA rejected:") + f" {path}"
+            )
+            self._set_status(
+                self.tr("Perfil ICC de sesion activo manualmente (QA rejected):")
+                + f" {self._icc_profile_combo_label(profile) if profile else profile_id}"
+            )
+        else:
+            self._set_status(
+                self.tr("Perfil ICC de sesion activo:")
+                + f" {self._icc_profile_combo_label(profile) if profile else profile_id}"
+            )
 
     def _apply_generic_icc_workflow_to_controls(self) -> None:
         combo = getattr(self, "combo_generic_icc_space", None)
@@ -548,7 +571,14 @@ class SessionDevelopmentMixin:
         self._refresh_icc_profile_combo()
         self._refresh_gamut_profile_combos()
 
-    def _register_icc_profile(self, descriptor: dict[str, Any], *, activate: bool, save: bool = True) -> str:
+    def _register_icc_profile(
+        self,
+        descriptor: dict[str, Any],
+        *,
+        activate: bool,
+        save: bool = True,
+        allow_rejected: bool = False,
+    ) -> str:
         normalized = self._normalize_icc_profile_descriptor(descriptor)
         if normalized is None:
             return ""
@@ -577,7 +607,12 @@ class SessionDevelopmentMixin:
             self._icc_profiles.append(normalized)
         self._sort_icc_profiles()
         if activate:
-            self._activate_icc_profile_id(profile_id, save=False, refresh_preview=False)
+            self._activate_icc_profile_id(
+                profile_id,
+                save=False,
+                refresh_preview=False,
+                allow_rejected=allow_rejected,
+            )
         else:
             self._refresh_profile_management_views()
         if save:
@@ -590,6 +625,7 @@ class SessionDevelopmentMixin:
         *,
         save: bool = True,
         refresh_preview: bool = True,
+        allow_rejected: bool = False,
     ) -> bool:
         if not profile_id:
             self._active_icc_profile_id = ""
@@ -605,7 +641,12 @@ class SessionDevelopmentMixin:
 
         profile = self._icc_profile_by_id(profile_id)
         path = self._session_stored_path(profile.get("path")) if profile else None
-        if profile is None or path is None or not path.exists() or not self._profile_can_be_active(path):
+        if (
+            profile is None
+            or path is None
+            or not path.exists()
+            or not self._profile_can_be_active(path, allow_rejected=allow_rejected)
+        ):
             return False
         self._active_icc_profile_id = profile_id
         self.path_profile_active.setText(str(path))
@@ -628,7 +669,12 @@ class SessionDevelopmentMixin:
             return
         profile = self._icc_profile_by_id(profile_id)
         path = self._session_stored_path(profile.get("path")) if profile else None
-        if profile is None or path is None or not path.exists() or not self._profile_can_be_active(path):
+        if (
+            profile is None
+            or path is None
+            or not path.exists()
+            or not self._profile_can_be_active(path, allow_rejected=True)
+        ):
             status = self._profile_status_for_path(path) if path is not None else self.tr("no disponible")
             QtWidgets.QMessageBox.warning(
                 self,
@@ -637,7 +683,7 @@ class SessionDevelopmentMixin:
             )
             self._refresh_icc_profile_combo()
             return
-        self._activate_icc_profile_id(profile_id, save=True)
+        self._activate_icc_profile_id(profile_id, save=True, allow_rejected=True)
         self._set_status(self.tr("Perfil activo:") + f" {path}")
 
     def _strip_version_suffix(self, stem: str) -> str:
@@ -1761,7 +1807,8 @@ class SessionDevelopmentMixin:
         path = Path(text).expanduser()
         if not path.exists():
             return None
-        return path if self._profile_can_be_active(path) else None
+        allow_rejected = self._active_icc_profile_matches_path(path)
+        return path if self._profile_can_be_active(path, allow_rejected=allow_rejected) else None
 
     def _write_current_development_settings_to_raw(
         self,
@@ -2541,12 +2588,22 @@ class SessionDevelopmentMixin:
         color = payload.get("color_management") if isinstance(payload.get("color_management"), dict) else {}
         icc_path = self._session_stored_path(color.get("icc_profile_path")) if color else None
         icc_role = str(color.get("icc_profile_role") or "") if color else ""
+        adjustment_profiles = payload.get("adjustment_profiles") if isinstance(payload.get("adjustment_profiles"), dict) else {}
+        icc_profile_payload = adjustment_profiles.get("icc") if isinstance(adjustment_profiles, dict) else {}
+        icc_profile_id = str(icc_profile_payload.get("id") or "") if isinstance(icc_profile_payload, dict) else ""
+        registered_icc_profile = self._icc_profile_by_id(icc_profile_id) if icc_profile_id else None
+        registered_icc_path = self._session_stored_path(registered_icc_profile.get("path")) if registered_icc_profile else None
+        allow_rejected_icc = bool(
+            icc_path is not None
+            and registered_icc_path is not None
+            and self._paths_equivalent(registered_icc_path, icc_path)
+        )
         input_profile_for_recipe = (
             icc_path
             if icc_role == "session_input_icc"
             and icc_path is not None
             and icc_path.exists()
-            and self._profile_can_be_active(icc_path)
+            and self._profile_can_be_active(icc_path, allow_rejected=allow_rejected_icc)
             else None
         )
         recipe = self._recipe_from_payload(payload.get("recipe")) or self._default_unconfigured_recipe()
@@ -2576,7 +2633,6 @@ class SessionDevelopmentMixin:
             self._active_development_profile_id = ""
             self._refresh_development_profile_combo()
 
-        adjustment_profiles = payload.get("adjustment_profiles") if isinstance(payload.get("adjustment_profiles"), dict) else {}
         for category in ("color_contrast", "detail", "raw_export"):
             category_payload = adjustment_profiles.get(category) if isinstance(adjustment_profiles, dict) else {}
             category_id = str(category_payload.get("id") or "") if isinstance(category_payload, dict) else ""
@@ -2586,10 +2642,17 @@ class SessionDevelopmentMixin:
                 self._set_active_named_adjustment_profile_id(category, "")
         self._refresh_named_adjustment_profile_combos()
 
-        if icc_role == "session_input_icc" and icc_path is not None and icc_path.exists() and self._profile_can_be_active(icc_path):
+        if (
+            icc_role == "session_input_icc"
+            and icc_path is not None
+            and icc_path.exists()
+            and self._profile_can_be_active(icc_path, allow_rejected=allow_rejected_icc)
+        ):
             self.path_profile_active.setText(str(icc_path))
             self.chk_apply_profile.setChecked(True)
-            self._sync_active_icc_profile_id_from_path()
+            self._active_icc_profile_id = icc_profile_id
+            if not self._active_icc_profile_id:
+                self._sync_active_icc_profile_id_from_path()
             self._refresh_profile_management_views()
         else:
             self._clear_active_input_profile_for_unconfigured_file()
@@ -2744,7 +2807,11 @@ class SessionDevelopmentMixin:
         self._apply_render_adjustment_state(settings["render_adjustments"])
         self._apply_output_space_defaults_to_controls(recipe.output_space)
         icc_path = settings.get("icc_profile_path")
-        if isinstance(icc_path, Path) and icc_path.exists() and self._profile_can_be_active(icc_path):
+        if (
+            isinstance(icc_path, Path)
+            and icc_path.exists()
+            and self._profile_can_be_active(icc_path, allow_rejected=bool(profile_id))
+        ):
             self.path_profile_active.setText(str(icc_path))
             self.chk_apply_profile.setChecked(True)
             self._sync_active_icc_profile_id_from_path()

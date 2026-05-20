@@ -234,11 +234,33 @@ class SessionPathsMixin:
             return True
         return mean_de > mean_limit or max_de > max_limit
 
-    def _profile_can_be_active(self, profile_path: Path) -> bool:
+    def _profile_can_be_active(self, profile_path: Path, *, allow_rejected: bool = False) -> bool:
         if not profile_path.exists():
             return False
         status = self._profile_status_for_path(profile_path)
-        return status not in {"rejected", "expired"}
+        if status == "rejected":
+            return bool(allow_rejected)
+        return status != "expired"
+
+    def _paths_equivalent(self, left: Path, right: Path) -> bool:
+        try:
+            return left.expanduser().resolve(strict=False) == right.expanduser().resolve(strict=False)
+        except Exception:
+            return str(left) == str(right)
+
+    def _active_icc_profile_matches_path(self, profile_path: Path | None) -> bool:
+        if profile_path is None:
+            return False
+        profile_id = str(getattr(self, "_active_icc_profile_id", "") or "").strip()
+        if not profile_id or not hasattr(self, "_icc_profile_by_id"):
+            return False
+        profile = self._icc_profile_by_id(profile_id)
+        if profile is None:
+            return False
+        registered_path = self._session_stored_path(profile.get("path"))
+        if registered_path is None:
+            return False
+        return self._paths_equivalent(registered_path, profile_path)
 
     def _filter_profile_reference_files(
         self,

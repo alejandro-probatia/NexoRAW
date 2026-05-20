@@ -439,8 +439,8 @@ class BatchWorkflowMixin:
         if not p.exists():
             QtWidgets.QMessageBox.information(self, self.tr("Info"), "El perfil ICC de entrada aún no existe.")
             return
-        if not self._profile_can_be_active(p):
-            status = self._profile_status_for_path(p) or self.tr("no disponible")
+        status = self._profile_status_for_path(p) or self.tr("no disponible")
+        if not self._profile_can_be_active(p, allow_rejected=True):
             QtWidgets.QMessageBox.warning(
                 self,
                 self.tr("Perfil no activable"),
@@ -451,6 +451,8 @@ class BatchWorkflowMixin:
             self.chk_apply_profile.setChecked(False)
             self._save_active_session(silent=True)
             return
+        if status == "rejected":
+            self._log_preview(self.tr("Perfil ICC generado activado manualmente pese a estado QA rejected:") + f" {p}")
         self.path_profile_active.setText(str(p))
         recipe_path = Path(self.calibrated_recipe_out.text().strip())
         if recipe_path.exists():
@@ -470,8 +472,12 @@ class BatchWorkflowMixin:
             },
             activate=True,
             save=False,
+            allow_rejected=status == "rejected",
         )
         self._invalidate_preview_cache()
         self._schedule_preview_refresh()
-        self._set_status(self.tr("Perfil activo:") + f" {p}")
+        if status == "rejected":
+            self._set_status(self.tr("Perfil activo manualmente (QA rejected):") + f" {p}")
+        else:
+            self._set_status(self.tr("Perfil activo:") + f" {p}")
         self._save_active_session(silent=True)

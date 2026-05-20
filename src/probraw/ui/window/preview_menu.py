@@ -481,8 +481,8 @@ class PreviewMenuMixin:
         if not path:
             return
         profile_path = Path(path).expanduser()
-        if not self._profile_can_be_active(profile_path):
-            status = self._profile_status_for_path(profile_path) or self.tr("no disponible")
+        status = self._profile_status_for_path(profile_path) or self.tr("no disponible")
+        if not self._profile_can_be_active(profile_path, allow_rejected=True):
             QtWidgets.QMessageBox.warning(
                 self,
                 self.tr("Perfil no activable"),
@@ -490,6 +490,8 @@ class PreviewMenuMixin:
                 + self.tr("Regenera el perfil con referencias RAW/DNG originales."),
             )
             return
+        if status == "rejected":
+            self._log_preview(self.tr("Perfil ICC cargado manualmente pese a estado QA rejected:") + f" {profile_path}")
         self.path_profile_active.setText(path)
         self.chk_apply_profile.setChecked(True)
         profile_id = self._register_icc_profile(
@@ -501,11 +503,15 @@ class PreviewMenuMixin:
             },
             activate=True,
             save=False,
+            allow_rejected=status == "rejected",
         )
         if profile_id:
             self._active_icc_profile_id = profile_id
             self._refresh_profile_management_views()
-        self._set_status(self.tr("Perfil activo:") + f" {path}")
+        if status == "rejected":
+            self._set_status(self.tr("Perfil activo manualmente (QA rejected):") + f" {path}")
+        else:
+            self._set_status(self.tr("Perfil activo:") + f" {path}")
         self._refresh_preview()
         self._save_active_session(silent=True)
 

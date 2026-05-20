@@ -22,6 +22,37 @@ To maintain full traceability, each change must:
 
 No entries yet.
 
+## [0.3.22] - 2026-05-20
+
+### Fixed
+
+- Fixed manual selection of generated session ICC profiles with QA status
+  `rejected`: they remain blocked for automatic activation, but can be
+  explicitly selected from the session-profile combo, the manual load menu or
+  "Use generated ICC".
+- Fixed RAW sidecar persistence for those profiles: assigning them to an image
+  now stores the profile identifier together with the ICC path, and reloads only
+  when both match.
+- Fixed the risk of a `rejected` ICC path becoming active through a stale ID or
+  through a reopened session without an explicit selection.
+
+### Changed
+
+- The session ICC profile combo remains available when profiles are registered,
+  even if the active mode is a standard RGB space, so the operator can
+  explicitly switch to a session profile.
+- The UI logs/statuses manual activation of `rejected` profiles, preserving
+  traceability without blocking the workflow.
+
+### Tests
+
+- Added regression coverage for manual `rejected` ICC selection, menu loading,
+  use of generated ICC, RAW sidecar roundtrip, session reopen and rejection of
+  inconsistent profile IDs.
+- Validated with a real Qt window smoke test in `offscreen` mode, the full
+  Windows-build suite (`489 passed, 2 warnings`), `check-amaze`,
+  `check-tools --strict`, `check-c2pa` and the update assistant check.
+
 ## [0.3.21] - 2026-05-20
 
 ### Fixed

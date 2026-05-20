@@ -182,7 +182,11 @@ class SessionStateMixin:
         chart_files, _rejected_chart_files = self._filter_profile_reference_files(self._selected_chart_files)
         active_profile = self.path_profile_active.text().strip()
         active_profile_path = Path(active_profile).expanduser() if active_profile else None
-        active_profile_valid = active_profile_path is not None and self._profile_can_be_active(active_profile_path)
+        allow_rejected = self._active_icc_profile_matches_path(active_profile_path)
+        active_profile_valid = (
+            active_profile_path is not None
+            and self._profile_can_be_active(active_profile_path, allow_rejected=allow_rejected)
+        )
         if not active_profile_valid:
             self._active_icc_profile_id = ""
         return {
@@ -493,7 +497,11 @@ class SessionStateMixin:
         elif defaults["profile_out"].exists():
             active_candidate = defaults["profile_out"]
 
-        if active_candidate is not None and self._profile_can_be_active(active_candidate):
+        allow_rejected_active = active_descriptor_path is not None
+        if active_candidate is not None and self._profile_can_be_active(
+            active_candidate,
+            allow_rejected=allow_rejected_active,
+        ):
             self.path_profile_active.setText(str(active_candidate))
         else:
             self.path_profile_active.clear()

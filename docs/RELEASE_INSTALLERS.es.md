@@ -152,6 +152,25 @@ pruebas.
 8. Si un asset publicado resulta defectuoso y GitHub no permite reemplazarlo,
    crear una revision nueva de la release y marcar la anterior con un aviso.
 
+## Release 0.3.22
+
+La release 0.3.22 corrige el flujo de seleccion de perfiles ICC generados en la
+sesion:
+
+- los perfiles `rejected` siguen sin autoactivarse,
+- la seleccion manual desde combo, menu o "Usar ICC generado" queda permitida,
+- la mochila RAW conserva ruta e identificador del ICC y solo restaura perfiles
+  `rejected` cuando ambos coinciden,
+- cambiar a una imagen sin mochila o con ID incoherente limpia el ICC activo.
+
+Artefactos esperados para la release Windows:
+
+- `ProbRAW-0.3.22-Setup.exe`
+- `ProbRAW-0.3.22-Setup.exe.sha256`
+- `probraw-0.3.22.tar.gz`
+- `probraw-0.3.22-py3-none-any.whl`
+- `probraw_0.3.22_python_artifacts.sha256`
+
 ## Release 0.3.21
 
 La release 0.3.21 sustituye a la 0.3.20 por el fallo de generacion ICC con
