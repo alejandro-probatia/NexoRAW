@@ -152,6 +152,29 @@ pruebas.
 8. Si un asset publicado resulta defectuoso y GitHub no permite reemplazarlo,
    crear una revision nueva de la release y marcar la anterior con un aviso.
 
+## Release 0.3.21
+
+La release 0.3.21 sustituye a la 0.3.20 por el fallo de generacion ICC con
+carta marcada manualmente y capturas adicionales descartadas por deteccion
+fallback:
+
+- las detecciones manuales se mantienen como entrenamiento antes de reservar
+  capturas para validacion,
+- la ausencia de validacion independiente deja el ICC como `draft` utilizable,
+  no como error bloqueante,
+- el histograma de curva se calcula en segundo plano durante el arrastre y
+  refleja los ajustes tonales aplicados,
+- la preview con ICC de entrada generado evita compensaciones visuales de camara
+  que producian dominantes azules.
+
+Artefactos esperados para la release Windows:
+
+- `ProbRAW-0.3.21-Setup.exe`
+- `ProbRAW-0.3.21-Setup.exe.sha256`
+- `probraw-0.3.21.tar.gz`
+- `probraw-0.3.21-py3-none-any.whl`
+- `probraw_0.3.21_python_artifacts.sha256`
+
 ## Release 0.3.20
 
 La release 0.3.20 consolida las correcciones de rutas de sesion y preview de

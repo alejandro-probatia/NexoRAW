@@ -928,6 +928,7 @@ class ProfileWorkflowMixin:
         profile_status = payload.get("profile_status") if isinstance(payload.get("profile_status"), dict) else {}
         validation = payload.get("validation") if isinstance(payload.get("validation"), dict) else {}
         qa = validation.get("qa_report") if isinstance(validation.get("qa_report"), dict) else {}
+        metadata = profile.get("metadata") if isinstance(profile.get("metadata"), dict) else {}
         errors = profile.get("patch_errors") if isinstance(profile.get("patch_errors"), list) else []
         worst = sorted(
             [e for e in errors if isinstance(e, dict)],
@@ -953,6 +954,8 @@ class ProfileWorkflowMixin:
             "profile_report_path": payload.get("profile_report_path"),
             "qa_report_path": payload.get("qa_report_path"),
             "profile_status": profile_status,
+            "neutral_axis_error": metadata.get("neutral_axis_error"),
+            "workflow_recommendations": payload.get("workflow_recommendations", []),
             "error_summary": profile.get("error_summary"),
             "worst_patch_errors": worst,
             "validation_status": qa.get("status"),
@@ -1400,6 +1403,11 @@ class ProfileWorkflowMixin:
         ]
         if isinstance(de00, (int, float)) and isinstance(max_de00, (int, float)):
             parts.append(f"DeltaE2000 entrenamiento: media {float(de00):.2f}, max {float(max_de00):.2f}")
+        metadata = profile.get("metadata") if isinstance(profile.get("metadata"), dict) else {}
+        neutral_error = metadata.get("neutral_axis_error") if isinstance(metadata.get("neutral_axis_error"), dict) else {}
+        max_ab = neutral_error.get("max_ab_residual")
+        if isinstance(max_ab, (int, float)):
+            parts.append(f"Fila neutra: residuo a*/b* max {float(max_ab):.2f}")
         validation = payload.get("validation") if isinstance(payload.get("validation"), dict) else None
         if validation:
             qa = validation.get("qa_report") if isinstance(validation.get("qa_report"), dict) else {}
@@ -1423,6 +1431,14 @@ class ProfileWorkflowMixin:
             ]
             if failed_warnings:
                 parts.append(f"QA captura: {len(failed_warnings)} avisos ({', '.join(failed_warnings[:3])})")
+        recommendations = payload.get("workflow_recommendations") if isinstance(payload.get("workflow_recommendations"), list) else []
+        warning_recs = [
+            str(item.get("id"))
+            for item in recommendations
+            if isinstance(item, dict) and item.get("severity") == "warning"
+        ]
+        if warning_recs:
+            parts.append(f"Recomendaciones: {len(warning_recs)} avisos ({', '.join(warning_recs[:3])})")
         skipped = payload.get("chart_captures_skipped")
         if isinstance(skipped, list) and skipped:
             parts.append(f"Avisos/omisiones: {len(skipped)}")

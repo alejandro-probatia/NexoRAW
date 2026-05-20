@@ -40,6 +40,15 @@ LOW_SIGNAL_BRIGHT_NEUTRAL_MIN = 0.25
 LOW_SIGNAL_MEDIAN_LUMA_MIN = 0.05
 NEUTRAL_DENSITY_SPREAD_EV_MAX = 0.35
 NEUTRAL_ILLUMINATION_GRADIENT_EV_MAX = 0.25
+NEUTRAL_AB_RESIDUAL_WARN = 3.0
+PROFILE_MODEL_FLAGS = {
+    "-as": "shaper+matrix",
+    "-ag": "gamma+matrix",
+    "-am": "matrix",
+    "-al": "Lab cLUT",
+    "-ax": "XYZ cLUT",
+}
+CLUT_PROFILE_FLAGS = {"-al", "-ax"}
 PROFILE_STATUS_DRAFT = "draft"
 PROFILE_STATUS_VALIDATED = "validated"
 PROFILE_STATUS_REJECTED = "rejected"
@@ -97,7 +106,11 @@ def auto_generate_profile_from_charts(
         source = "la selección explícita" if chart_capture_files is not None else str(chart_captures_dir)
         raise RuntimeError(f"No se encontraron capturas de carta en: {source}")
     manual_detection_map = _normalize_detection_map(manual_detections)
-    training_files, validation_files = _split_training_validation_files(chart_files, validation_holdout_count)
+    training_files, validation_files = _split_training_validation_files(
+        chart_files,
+        validation_holdout_count,
+        preferred_training_files=list(manual_detection_map.keys()) if manual_detection_map else None,
+    )
 
     initial_pass = _collect_chart_samples(
         chart_files=training_files,
@@ -195,6 +208,9 @@ def auto_generate_profile_from_charts(
         camera_model=camera_model,
         lens_model=lens_model,
     )
+    training_neutral_axis_error = _neutral_axis_error_summary(profile_result.patch_errors)
+    if training_neutral_axis_error is not None:
+        profile_result.metadata["neutral_axis_error"] = training_neutral_axis_error
 
     validation_payload: dict[str, Any] | None = None
     qa_report_path: str | None = None
@@ -279,8 +295,18 @@ def auto_generate_profile_from_charts(
         qa_mean_delta_e2000_max=qa_mean_delta_e2000_max,
         qa_max_delta_e2000_max=qa_max_delta_e2000_max,
     )
+    workflow_recommendations = _profile_workflow_recommendations(
+        chart_type=chart_type,
+        reference=reference,
+        recipe=profile_recipe,
+        chart_files=chart_files,
+        validation_files=validation_files,
+        validation_payload=validation_payload,
+        training_neutral_axis_error=training_neutral_axis_error,
+    )
     profile_result.metadata["session_profile_status"] = profile_status
     profile_result.metadata["profile_status"] = profile_status["status"]
+    profile_result.metadata["workflow_recommendations"] = workflow_recommendations
     profile_result.metadata["recipe_profiling_normalizations"] = recipe_normalizations
     profile_result.metadata["requested_recipe"] = asdict(requested_recipe)
     profile_result.metadata["profile_recipe"] = asdict(profile_recipe)
@@ -309,6 +335,7 @@ def auto_generate_profile_from_charts(
         "render_recipe_path": calibrated_recipe_path,
         "validation": validation_payload,
         "qa_report_path": qa_report_path,
+        "workflow_recommendations": workflow_recommendations,
         "recipe_profiling_normalizations": recipe_normalizations,
     }
 
@@ -578,13 +605,54 @@ def _parse_iso_datetime(value: str) -> datetime:
     return parsed.astimezone(timezone.utc)
 
 
-def _split_training_validation_files(chart_files: list[Path], validation_holdout_count: int) -> tuple[list[Path], list[Path]]:
+def _split_training_validation_files(
+    chart_files: list[Path],
+    validation_holdout_count: int,
+    *,
+    preferred_training_files: list[Path] | None = None,
+) -> tuple[list[Path], list[Path]]:
+    files = list(chart_files)
     holdout = max(0, int(validation_holdout_count))
-    if holdout <= 0 or len(chart_files) < 2:
-        return list(chart_files), []
+    if holdout <= 0 or len(files) < 2:
+        return files, []
 
-    holdout = min(holdout, len(chart_files) - 1)
-    return list(chart_files[:-holdout]), list(chart_files[-holdout:])
+    holdout = min(holdout, len(files) - 1)
+    preferred_keys = {
+        str(Path(path).expanduser().resolve())
+        for path in list(preferred_training_files or [])
+    }
+    if not preferred_keys:
+        return list(files[:-holdout]), list(files[-holdout:])
+
+    validation: list[Path] = []
+    validation_keys: set[str] = set()
+    for path in reversed(files):
+        key = str(Path(path).expanduser().resolve())
+        if key in preferred_keys:
+            continue
+        validation.append(path)
+        validation_keys.add(key)
+        if len(validation) >= holdout:
+            break
+
+    if len(validation) < holdout:
+        for path in reversed(files):
+            key = str(Path(path).expanduser().resolve())
+            if key in validation_keys:
+                continue
+            validation.append(path)
+            validation_keys.add(key)
+            if len(validation) >= holdout:
+                break
+
+    training = [
+        path
+        for path in files
+        if str(Path(path).expanduser().resolve()) not in validation_keys
+    ]
+    if not training:
+        return files, []
+    return training, [path for path in files if str(Path(path).expanduser().resolve()) in validation_keys]
 
 
 def _build_session_qa_report(
@@ -608,9 +676,13 @@ def _build_session_qa_report(
     checks.append(
         {
             "id": "validation_samples_available",
-            "severity": "error",
+            "severity": "warning",
             "passed": validation_result is not None,
-            "message": "hay muestras independientes de validacion" if validation_result else "no hay muestras independientes validas",
+            "message": (
+                "hay muestras independientes de validacion"
+                if validation_result
+                else "no hay muestras independientes validas; el ICC se conserva como draft utilizable"
+            ),
         }
     )
 
@@ -642,6 +714,8 @@ def _build_session_qa_report(
     validation_worst_patches = _rank_patch_errors(validation_result.get("patch_errors", [])) if validation_result else []
     training_patch_outliers = _patch_error_outliers(training_worst_patches, qa_max_delta_e2000_max)
     validation_patch_outliers = _patch_error_outliers(validation_worst_patches, qa_max_delta_e2000_max)
+    training_neutral_axis_error = _neutral_axis_error_summary(getattr(training_profile_result, "patch_errors", []))
+    validation_neutral_axis_error = _neutral_axis_error_summary(validation_result.get("patch_errors", [])) if validation_result else None
     training_capture_quality = _capture_quality_summary(training_capture_samples)
     validation_capture_quality = _capture_quality_summary(validation_capture_samples) if validation_capture_samples else None
     for label, quality in (("training", training_quality), ("validation", validation_quality)):
@@ -677,8 +751,26 @@ def _build_session_qa_report(
             }
         )
 
+    for label, neutral_error in (
+        ("training", training_neutral_axis_error),
+        ("validation", validation_neutral_axis_error),
+    ):
+        if not neutral_error:
+            continue
+        max_residual = float(neutral_error.get("max_ab_residual", 0.0))
+        checks.append(
+            {
+                "id": f"{label}_neutral_axis_residual",
+                "severity": "warning",
+                "value": max_residual,
+                "limit": NEUTRAL_AB_RESIDUAL_WARN,
+                "passed": max_residual <= NEUTRAL_AB_RESIDUAL_WARN,
+                "message": "deriva a*/b* en fila neutra; aviso de dominantes sin bloquear la generacion",
+            }
+        )
+
     hard_failures = [check for check in checks if check["severity"] == "error" and not check["passed"]]
-    if not validation_files:
+    if validation_result is None:
         status = "not_validated"
     elif hard_failures:
         status = "rejected"
@@ -703,9 +795,173 @@ def _build_session_qa_report(
         "validation_worst_patches": validation_worst_patches[:8],
         "training_patch_outliers": training_patch_outliers,
         "validation_patch_outliers": validation_patch_outliers,
+        "training_neutral_axis_error": training_neutral_axis_error,
+        "validation_neutral_axis_error": validation_neutral_axis_error,
         "validation_skipped": validation_skipped,
         "checks": checks,
     }
+
+
+def _profile_workflow_recommendations(
+    *,
+    chart_type: str,
+    reference: ReferenceCatalog,
+    recipe: Recipe,
+    chart_files: list[Path],
+    validation_files: list[Path],
+    validation_payload: dict[str, Any] | None,
+    training_neutral_axis_error: dict[str, Any] | None,
+) -> list[dict[str, Any]]:
+    recommendations: list[dict[str, Any]] = []
+    validation_usable = bool(
+        validation_payload
+        and int(validation_payload.get("validation_captures_used") or 0) > 0
+        and isinstance(validation_payload.get("validation_result"), dict)
+    )
+
+    if len(chart_files) < 2:
+        recommendations.append(
+            {
+                "id": "repeat_chart_capture_recommended",
+                "severity": "info",
+                "blocking": False,
+                "message": (
+                    "El perfil se ha generado con una sola captura de carta. "
+                    "Cuando sea posible, captura otra carta equivalente para validar o promediar la sesion."
+                ),
+            }
+        )
+    elif not validation_files or not validation_usable:
+        recommendations.append(
+            {
+                "id": "independent_validation_recommended",
+                "severity": "info",
+                "blocking": False,
+                "message": (
+                    "Hay suficientes capturas para trabajar, pero no hay validacion independiente utilizable. "
+                    "El ICC queda como draft y puede activarse manualmente si el operador acepta el riesgo."
+                ),
+            }
+        )
+
+    model_flag = _colprof_profile_model_flag(recipe.argyll_colprof_args)
+    if str(chart_type or "").strip().lower() == "colorchecker24" and model_flag in CLUT_PROFILE_FLAGS:
+        recommendations.append(
+            {
+                "id": "colorchecker24_clut_overfit_risk",
+                "severity": "warning",
+                "blocking": False,
+                "message": (
+                    "Con ColorChecker 24, los perfiles cLUT pueden sobreajustar. "
+                    "Para flujo rapido se permite, pero shaper+matrix (-as) es la opcion conservadora."
+                ),
+            }
+        )
+
+    if _reference_is_generic_colorchecker(reference):
+        recommendations.append(
+            {
+                "id": "measured_chart_reference_recommended",
+                "severity": "info",
+                "blocking": False,
+                "message": (
+                    "La referencia de carta parece generica. Para trabajos criticos, importa una medicion "
+                    "Lab D50 de la carta fisica usada y registra serie, fecha e instrumento."
+                ),
+            }
+        )
+
+    if training_neutral_axis_error:
+        max_residual = float(training_neutral_axis_error.get("max_ab_residual", 0.0))
+        if max_residual > NEUTRAL_AB_RESIDUAL_WARN:
+            recommendations.append(
+                {
+                    "id": "neutral_axis_review_recommended",
+                    "severity": "warning",
+                    "blocking": False,
+                    "message": (
+                        "La fila neutra muestra deriva a*/b*. Revisa iluminacion, exposicion, balance "
+                        "y encuadre antes de usar el perfil en trabajo critico."
+                    ),
+                }
+            )
+
+    return recommendations
+
+
+def _colprof_profile_model_flag(args: list[str] | None) -> str:
+    raw_args = list(args or [])
+    for arg in raw_args:
+        if str(arg) in PROFILE_MODEL_FLAGS:
+            return str(arg)
+    return "-as"
+
+
+def _reference_is_generic_colorchecker(reference: ReferenceCatalog) -> bool:
+    text = " ".join(
+        [
+            str(reference.chart_name or ""),
+            str(reference.chart_version or ""),
+            str(reference.reference_source or ""),
+        ]
+    ).lower()
+    if "colorchecker" not in text:
+        return False
+    custom_markers = ("personalizada", "medicion personalizada", "medición personalizada", "measured", "spectro")
+    return not any(marker in text for marker in custom_markers)
+
+
+def _neutral_axis_error_summary(errors: Any) -> dict[str, Any] | None:
+    records: list[dict[str, Any]] = []
+    for item in errors if isinstance(errors, list) else []:
+        data = asdict(item) if hasattr(item, "__dataclass_fields__") else item if isinstance(item, dict) else None
+        if not isinstance(data, dict):
+            continue
+        patch_id = str(data.get("patch_id") or "").strip()
+        if patch_id not in NEUTRAL_PATCH_IDS:
+            continue
+        reference_lab = _coerce_lab(data.get("reference_lab"))
+        profile_lab = _coerce_lab(data.get("profile_lab"))
+        if reference_lab is None or profile_lab is None:
+            continue
+        delta_l = float(profile_lab[0] - reference_lab[0])
+        delta_a = float(profile_lab[1] - reference_lab[1])
+        delta_b = float(profile_lab[2] - reference_lab[2])
+        records.append(
+            {
+                "patch_id": patch_id,
+                "delta_l": delta_l,
+                "delta_a": delta_a,
+                "delta_b": delta_b,
+                "ab_residual": float((delta_a**2 + delta_b**2) ** 0.5),
+            }
+        )
+
+    if not records:
+        return None
+
+    residuals = np.asarray([float(item["ab_residual"]) for item in records], dtype=np.float64)
+    delta_a_values = np.asarray([float(item["delta_a"]) for item in records], dtype=np.float64)
+    delta_b_values = np.asarray([float(item["delta_b"]) for item in records], dtype=np.float64)
+    return {
+        "patch_count": len(records),
+        "mean_ab_residual": float(np.mean(residuals)),
+        "max_ab_residual": float(np.max(residuals)),
+        "mean_delta_a": float(np.mean(delta_a_values)),
+        "mean_delta_b": float(np.mean(delta_b_values)),
+        "max_abs_delta_a": float(np.max(np.abs(delta_a_values))),
+        "max_abs_delta_b": float(np.max(np.abs(delta_b_values))),
+        "patches": records,
+    }
+
+
+def _coerce_lab(value: Any) -> np.ndarray | None:
+    if not isinstance(value, (list, tuple)) or len(value) < 3:
+        return None
+    try:
+        return np.asarray([float(value[0]), float(value[1]), float(value[2])], dtype=np.float64)
+    except (TypeError, ValueError):
+        return None
 
 
 def _rank_patch_errors(errors: Any) -> list[dict[str, Any]]:

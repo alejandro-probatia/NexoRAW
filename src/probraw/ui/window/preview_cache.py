@@ -469,6 +469,8 @@ class PreviewCacheMixin:
         self._loaded_preview_max_side_request = None
         self._loaded_preview_source_profile_path = None
         self._tone_curve_histogram_key = None
+        self._tone_curve_histogram_expected_key = None
+        self._tone_curve_histogram_pending_request = None
         self._preview_load_pending_request = None
         self._profile_preview_pending_request = None
         self._profile_preview_expected_key = None

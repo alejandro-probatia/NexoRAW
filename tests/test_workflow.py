@@ -8,7 +8,20 @@ import tifffile
 
 from probraw.chart.detection import detect_chart_from_corners
 from probraw.chart.sampling import ReferenceCatalog
-from probraw.core.models import BatchManifest, ChartDetectionResult, ErrorSummary, PatchDetection, PatchError, Point2, Recipe, ValidationResult, read_json
+from probraw.core.models import (
+    BatchManifest,
+    ChartDetectionResult,
+    ErrorSummary,
+    PatchDetection,
+    PatchError,
+    PatchSample,
+    Point2,
+    ProfileBuildResult,
+    Recipe,
+    SampleSet,
+    ValidationResult,
+    read_json,
+)
 from probraw.core.recipe import load_recipe
 from probraw.provenance.c2pa import C2PASignConfig
 from probraw.provenance.probraw_proof import ProbRawProofConfig, generate_ed25519_identity
@@ -254,6 +267,20 @@ def test_auto_generate_profile_error_includes_skipped_capture_details(tmp_path: 
         )
 
 
+def test_split_training_validation_keeps_manual_detection_in_training(tmp_path: Path):
+    fallback_capture = tmp_path / "_DSC3632.NEF"
+    manual_capture = tmp_path / "_DSC3633.NEF"
+
+    training, validation = workflow._split_training_validation_files(
+        [fallback_capture, manual_capture],
+        1,
+        preferred_training_files=[manual_capture],
+    )
+
+    assert training == [manual_capture]
+    assert validation == [fallback_capture]
+
+
 def test_auto_generate_profile_from_charts_only(tmp_path: Path, monkeypatch):
     def fake_build_profile_with_argyll(
         out_icc: Path,
@@ -308,7 +335,9 @@ def test_auto_generate_profile_from_charts_only(tmp_path: Path, monkeypatch):
     assert result["chart_captures_used"] >= 1
     assert "profile" in result
     assert result["profile_status"]["status"] == "draft"
+    assert any(item["id"] == "independent_validation_recommended" for item in result["workflow_recommendations"])
     assert read_json(profile_report)["metadata"]["profile_status"] == "draft"
+    assert read_json(profile_report)["metadata"]["workflow_recommendations"] == result["workflow_recommendations"]
 
 
 def test_auto_generate_profile_from_explicit_chart_files(tmp_path: Path, monkeypatch):
@@ -511,6 +540,74 @@ def test_auto_generate_profile_writes_holdout_qa_report(tmp_path: Path, monkeypa
     assert qa["training_capture_quality"]["captures"][0]["brightest_neutral_luma"] > 0.0
     assert qa["training_sample_quality"]["median_patch_luma"] > 0.0
     assert (work_dir / "samples_aggregated_validation.json").exists()
+
+
+def test_qa_report_keeps_missing_validation_non_blocking(tmp_path: Path):
+    samples = SampleSet(
+        chart_name="ColorChecker 24",
+        chart_version="2005",
+        illuminant="D50",
+        strategy="trimmed_mean",
+        samples=[
+            PatchSample(
+                patch_id="P19",
+                measured_rgb=[0.65, 0.65, 0.65],
+                reference_rgb=None,
+                reference_lab=[96.5, 0.0, 0.0],
+                excluded_pixel_ratio=0.0,
+                saturated_pixel_ratio=0.0,
+                sample_center=[10.0, 10.0],
+            )
+        ],
+        missing_reference_patches=[],
+    )
+    profile_result = ProfileBuildResult(
+        output_icc=str(tmp_path / "draft.icc"),
+        output_profile_json=str(tmp_path / "draft.profile.json"),
+        model="matrix3x3",
+        matrix_camera_to_xyz=np.eye(3).tolist(),
+        trc_gamma=1.0,
+        error_summary=ErrorSummary(
+            mean_delta_e76=1.0,
+            median_delta_e76=1.0,
+            p95_delta_e76=1.0,
+            max_delta_e76=1.0,
+            mean_delta_e2000=1.0,
+            median_delta_e2000=1.0,
+            p95_delta_e2000=1.0,
+            max_delta_e2000=1.0,
+        ),
+        patch_errors=[
+            PatchError(
+                patch_id="P19",
+                delta_e76=1.0,
+                delta_e2000=1.0,
+                reference_lab=[96.5, 0.0, 0.0],
+                profile_lab=[96.3, 0.7, -0.6],
+            )
+        ],
+        metadata={},
+    )
+
+    qa = workflow._build_session_qa_report(
+        training_files=[tmp_path / "training.tiff"],
+        validation_files=[tmp_path / "validation.tiff"],
+        training_samples=samples,
+        validation_samples=None,
+        training_capture_samples=[samples],
+        validation_capture_samples=[],
+        training_profile_result=profile_result,
+        validation_result=None,
+        validation_skipped=[{"capture": str(tmp_path / "validation.tiff"), "reason": "sin muestras"}],
+        qa_mean_delta_e2000_max=5.0,
+        qa_max_delta_e2000_max=10.0,
+    )
+
+    assert qa["status"] == "not_validated"
+    availability = next(check for check in qa["checks"] if check["id"] == "validation_samples_available")
+    assert availability["severity"] == "warning"
+    assert availability["passed"] is False
+    assert qa["training_neutral_axis_error"]["max_ab_residual"] > 0.0
 
 
 def test_auto_profile_batch_refuses_rejected_session_profile(tmp_path: Path, monkeypatch):

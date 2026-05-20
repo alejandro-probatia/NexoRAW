@@ -6,6 +6,13 @@ This document includes the practical policy of performance measurement in
 ProbRAW. Optimizations that affect canonical flow must preserve the
 bytes of the signed TIFF unless documented as a reproducibility change.
 
+Colorimetric precision rule: a performance improvement must not change preview
+appearance, the `source ICC -> monitor ICC` route, the precision of displayed
+RGB values or canonical output bytes. Acceptable optimizations remove redundant
+work, reduce allocations, reuse caches or move work away from the UI thread, but
+they must not replace colorimetric calculations with approximations that alter
+the image.
+
 ## Tools
 
 Granular profile of actual commands:

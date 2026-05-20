@@ -1803,7 +1803,7 @@ def test_generic_output_preview_loads_bounded_with_recipe_demosaic(tmp_path: Pat
     try:
         window._selected_file = raw_path
         window._set_combo_text(window.combo_output_space, "prophoto_rgb")
-        window._set_combo_data(window.combo_demosaic, "amaze")
+        window._set_combo_data(window.combo_demosaic, "ahd")
         window.chk_compare.setChecked(False)
 
         window._on_load_selected(show_message=False)
@@ -1811,7 +1811,7 @@ def test_generic_output_preview_loads_bounded_with_recipe_demosaic(tmp_path: Pat
         assert len(calls) == 1
         assert calls[0]["fast_raw"] is False
         assert calls[0]["max_preview_side"] == gui_module.PREVIEW_AUTO_BASE_MAX_SIDE
-        assert calls[0]["demosaic"] == "amaze"
+        assert calls[0]["demosaic"] == "ahd"
         assert calls[0]["output_space"] == "prophoto_rgb"
         assert calls[0]["input_profile_path"] is None
         assert window._loaded_preview_source_profile_path is not None
@@ -2140,6 +2140,45 @@ def test_interactive_refresh_uses_bounded_source_without_real_viewport(qapp, mon
         assert request[13] is None
         assert request[14] is True
         assert request[15] is True
+    finally:
+        window.slider_brightness.setSliderDown(False)
+        window.close()
+
+
+def test_interactive_refresh_queues_tone_curve_histogram_without_blocking_when_curve_disabled(qapp, monkeypatch):
+    window = ICCRawMainWindow()
+    try:
+        values = gui_module.np.linspace(0.0, 0.8, 900 * 1400, dtype=gui_module.np.float32).reshape((900, 1400, 1))
+        image = gui_module.np.repeat(values, 3, axis=2)
+        captured: dict[str, object] = {}
+        histogram_requests: list[tuple[str, gui_module.np.ndarray, dict[str, object], str]] = []
+        window._original_linear = image
+        window._last_loaded_preview_key = "live-histogram-source"
+        window.slider_brightness.blockSignals(True)
+        window.slider_brightness.setValue(100)
+        window.slider_brightness.blockSignals(False)
+        window.slider_brightness.setSliderDown(True)
+        window.check_tone_curve_enabled.setChecked(False)
+
+        monkeypatch.setattr(window, "_queue_interactive_preview_request", lambda request: captured.setdefault("request", request))
+        monkeypatch.setattr(window, "_queue_tone_curve_histogram_request", lambda request: histogram_requests.append(request))
+        monkeypatch.setattr(
+            preview_render_module,
+            "apply_render_adjustments",
+            lambda *_args, **_kwargs: pytest.fail("interactive histogram must not render synchronously"),
+        )
+
+        window._refresh_preview()
+
+        assert "request" in captured
+        assert len(histogram_requests) == 1
+        key, source, render_kwargs, channel = histogram_requests[0]
+        assert source.shape[0] <= PREVIEW_INTERACTIVE_TONAL_MAX_SIDE
+        assert source.shape[1] <= PREVIEW_INTERACTIVE_TONAL_MAX_SIDE
+        assert render_kwargs["brightness_ev"] == pytest.approx(1.0)
+        assert channel == "luminance"
+        assert "bright=1.0000" in key
+        assert f"source_max_side={PREVIEW_INTERACTIVE_TONAL_MAX_SIDE}" in key
     finally:
         window.slider_brightness.setSliderDown(False)
         window.close()
@@ -2604,6 +2643,47 @@ def test_deferred_full_final_refresh_is_opt_in(qapp, monkeypatch):
         window._schedule_deferred_final_preview_refresh(delay_ms=50)
         assert window._preview_final_refresh_timer.isActive()
         window._preview_final_refresh_timer.stop()
+    finally:
+        window.close()
+
+
+def test_histogram_reuses_full_colorimetric_preview_patch(qapp, monkeypatch):
+    window = ICCRawMainWindow()
+    try:
+        patch = gui_module.np.asarray(
+            [
+                [[0, 0, 0], [255, 255, 255]],
+                [[255, 0, 0], [0, 255, 0]],
+            ],
+            dtype=gui_module.np.uint8,
+        )
+        calls: list[str] = []
+        monkeypatch.setattr(
+            window,
+            "_render_viewer_histogram_u8",
+            lambda *_args, **_kwargs: calls.append("recomputed") or None,
+        )
+
+        histogram = window._histogram_u8_from_colorimetric_preview_patch(patch)
+
+        assert gui_module.np.array_equal(histogram, patch)
+        assert calls == []
+    finally:
+        window.close()
+
+
+def test_histogram_reuse_still_updates_for_each_adjustment(qapp):
+    window = ICCRawMainWindow()
+    try:
+        first = gui_module.np.zeros((2, 2, 3), dtype=gui_module.np.uint8)
+        second = gui_module.np.full((2, 2, 3), 255, dtype=gui_module.np.uint8)
+
+        hist_first = window._histogram_u8_from_colorimetric_preview_patch(first)
+        hist_second = window._histogram_u8_from_colorimetric_preview_patch(second)
+
+        assert gui_module.np.array_equal(hist_first, first)
+        assert gui_module.np.array_equal(hist_second, second)
+        assert not gui_module.np.array_equal(hist_first, hist_second)
     finally:
         window.close()
 
@@ -3088,7 +3168,7 @@ def test_tone_curve_release_runs_single_preview_update(qapp, monkeypatch):
     window = ICCRawMainWindow()
     try:
         refreshes: list[bool] = []
-        histograms: list[bool] = []
+        histograms: list[tuple[bool, bool]] = []
         window._original_linear = gui_module.np.zeros((120, 160, 3), dtype=gui_module.np.float32)
         window.check_tone_curve_enabled.setChecked(True)
         window._set_tone_curve_controls_enabled(True)
@@ -3096,14 +3176,14 @@ def test_tone_curve_release_runs_single_preview_update(qapp, monkeypatch):
         monkeypatch.setattr(
             window,
             "_update_tone_curve_histogram_for_current_controls",
-            lambda *, force=False, **_kwargs: histograms.append(bool(force)),
+            lambda *, force=False, async_update=False, **_kwargs: histograms.append((bool(force), bool(async_update))),
         )
         monkeypatch.setattr(window, "_schedule_deferred_final_preview_refresh", lambda **_kwargs: None)
 
         window.tone_curve_editor.set_points([(0.0, 0.0), (0.5, 0.58), (1.0, 1.0)], emit=False)
         window._on_tone_curve_interaction_finished()
 
-        assert histograms == [True]
+        assert histograms == [(True, True)]
         assert refreshes == [True]
     finally:
         window.close()
@@ -3179,7 +3259,7 @@ def test_tone_curve_range_slider_release_consolidates_once(qapp, monkeypatch):
     window = ICCRawMainWindow()
     try:
         refreshes: list[bool] = []
-        histograms: list[bool] = []
+        histograms: list[tuple[bool, bool]] = []
         syncs: list[bool] = []
         exact_histogram_calls: list[tuple[int, bool]] = []
         exact_preview_delays: list[int] = []
@@ -3191,7 +3271,7 @@ def test_tone_curve_range_slider_release_consolidates_once(qapp, monkeypatch):
         monkeypatch.setattr(
             window,
             "_update_tone_curve_histogram_for_current_controls",
-            lambda *, force=False, **_kwargs: histograms.append(bool(force)),
+            lambda *, force=False, async_update=False, **_kwargs: histograms.append((bool(force), bool(async_update))),
         )
         monkeypatch.setattr(
             window,
@@ -3209,7 +3289,7 @@ def test_tone_curve_range_slider_release_consolidates_once(qapp, monkeypatch):
         window.slider_tone_curve_white.setSliderDown(False)
 
         assert syncs == [True]
-        assert histograms == [True]
+        assert histograms == [(True, True)]
         assert refreshes == [True]
         assert exact_histogram_calls == [(80, False), (80, True)]
         assert exact_preview_delays == [260]
@@ -3476,7 +3556,46 @@ def test_tone_curve_histogram_follows_brightness_adjustment(qapp):
         window.close()
 
 
-def test_tone_curve_histogram_stays_as_curve_input_after_curve_points_change(qapp):
+def test_tone_curve_histogram_initializes_when_curve_is_disabled(qapp):
+    window = ICCRawMainWindow()
+    try:
+        values = gui_module.np.linspace(0.01, 0.72, 80 * 100, dtype=gui_module.np.float32).reshape((80, 100, 1))
+        image = gui_module.np.concatenate((values, values**1.4, gui_module.np.sqrt(values)), axis=2)
+        window._original_linear = image
+        window._last_loaded_preview_key = "disabled-curve-histogram"
+        window.check_tone_curve_enabled.setChecked(False)
+
+        window._update_tone_curve_histogram_for_current_controls()
+
+        assert window.tone_curve_editor._histogram is not None
+        assert window.tone_curve_editor._histogram_luminance is not None
+        assert "curve_stage=output" in window._tone_curve_histogram_key
+    finally:
+        window.close()
+
+
+def test_tone_curve_histogram_async_queue_keeps_latest_pending_request(qapp, monkeypatch):
+    window = ICCRawMainWindow()
+    try:
+        image = gui_module.np.zeros((12, 16, 3), dtype=gui_module.np.float32)
+        started: list[tuple[str, gui_module.np.ndarray, dict[str, object], str]] = []
+        monkeypatch.setattr(window, "_start_tone_curve_histogram_task", lambda request: started.append(request))
+
+        first = ("hist-1", image, {"brightness_ev": 0.0}, "luminance")
+        second = ("hist-2", image, {"brightness_ev": 0.5}, "luminance")
+
+        window._tone_curve_histogram_task_active = True
+        window._queue_tone_curve_histogram_request(first)
+        window._queue_tone_curve_histogram_request(second)
+
+        assert started == []
+        assert window._tone_curve_histogram_expected_key == "hist-2"
+        assert window._tone_curve_histogram_pending_request == second
+    finally:
+        window.close()
+
+
+def test_tone_curve_histogram_follows_curve_points_change(qapp):
     window = ICCRawMainWindow()
     try:
         values = gui_module.np.linspace(0.02, 0.82, 90 * 120, dtype=gui_module.np.float32).reshape((90, 120, 1))
@@ -3504,18 +3623,18 @@ def test_tone_curve_histogram_stays_as_curve_input_after_curve_points_change(qap
         after = window.tone_curve_editor._histogram.copy()
 
         assert before.shape == after.shape
-        assert gui_module.np.allclose(before, after)
+        assert not gui_module.np.allclose(before, after)
         assert window.tone_curve_editor._histogram_luminance is not None
         assert window.tone_curve_editor._histogram_r is not None
         assert window.tone_curve_editor._histogram_g is not None
         assert window.tone_curve_editor._histogram_b is not None
-        assert "curve_stage=input" in window._tone_curve_histogram_key
-        assert "curve=0.0000:0.0000,0.3200:0.7800,1.0000:1.0000" not in window._tone_curve_histogram_key
+        assert "curve_stage=output" in window._tone_curve_histogram_key
+        assert "curve=0.0000:0.0000,0.3200:0.7800,1.0000:1.0000" in window._tone_curve_histogram_key
     finally:
         window.close()
 
 
-def test_tone_curve_histogram_stays_as_curve_input_after_range_change(qapp):
+def test_tone_curve_histogram_follows_curve_range_change(qapp):
     window = ICCRawMainWindow()
     try:
         values = gui_module.np.linspace(0.02, 0.92, 90 * 120, dtype=gui_module.np.float32).reshape((90, 120, 1))
@@ -3538,9 +3657,9 @@ def test_tone_curve_histogram_stays_as_curve_input_after_range_change(qapp):
         after = window.tone_curve_editor._histogram.copy()
 
         assert before.shape == after.shape
-        assert gui_module.np.allclose(before, after)
-        assert "curve_stage=input" in window._tone_curve_histogram_key
-        assert "curve_white=0.8770" not in window._tone_curve_histogram_key
+        assert not gui_module.np.allclose(before, after)
+        assert "curve_stage=output" in window._tone_curve_histogram_key
+        assert "curve_white=0.8770" in window._tone_curve_histogram_key
     finally:
         window.close()
 

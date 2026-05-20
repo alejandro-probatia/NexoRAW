@@ -19,6 +19,13 @@ decisiones colorimétricas con decisiones de apariencia.
   https://rawpedia.rawtherapee.com/Color_Management
 - RawTherapee, `ICC Profile Creator`:
   https://rawpedia.rawtherapee.com/ICC_Profile_Creator
+- International Color Consortium, `ICC.1:2022`:
+  https://www.color.org/specification/ICC.1-2022-05.pdf
+- ISO 17321-1:2012, caracterización de color de cámaras digitales.
+- Sharma, Wu y Dalal, `The CIEDE2000 color-difference formula` (2005).
+- Danny Pascale, `RGB coordinates of the Macbeth ColorChecker` (2006).
+- Rong, Fleming y Sharma, `Quantitative analysis of ICC profile quality for
+  scanners` (2004).
 
 ## Criterio Conceptual
 
@@ -115,6 +122,39 @@ Cuando existe una captura válida de carta:
 
 El perfil avanzado puede copiarse a imágenes tomadas bajo condiciones
 comparables de cámara, óptica, iluminante, exposición base y receta.
+
+## Criterios de Mejora No Bloqueantes
+
+ProbRAW debe permitir generar perfiles aunque el caso de trabajo no sea ideal.
+Las comprobaciones metodológicas se tratan como estado, aviso o recomendación,
+no como impedimento, salvo cuando no hay muestras de carta válidas o cuando una
+validación independiente disponible demuestra un error colorimétrico fuera de
+umbral.
+
+Recomendaciones operativas:
+
+- si existe más de una captura de carta, reservar una para validación
+  independiente cuando sea posible;
+- si solo hay una captura, generar el ICC como `draft` y registrar que falta
+  validación independiente;
+- con ColorChecker 24, usar por defecto `shaper+matrix (-as)`; los perfiles
+  cLUT se permiten como opción avanzada, pero se documentan como riesgo de
+  sobreajuste si no hay una carta con muchos más parches;
+- revisar de forma separada la fila neutra: residuos a*/b*, dominantes,
+  exposición y uniformidad de iluminación pueden revelar problemas que una
+  media DeltaE no muestra;
+- para trabajos críticos, preferir una referencia Lab D50 medida de la carta
+  física utilizada, con serie, fecha e instrumento, en vez de una referencia
+  genérica de ColorChecker.
+
+Estados:
+
+- `validated`: hay validación independiente utilizable y supera los umbrales;
+- `draft`: el perfil se ha generado, pero falta validación independiente o esta
+  no es concluyente; puede activarse manualmente bajo criterio del operador;
+- `rejected`: una validación disponible o el entrenamiento superan los umbrales
+  de error definidos;
+- `expired`: el perfil validado ha superado su ventana de vigencia configurada.
 
 ## Flujo Sin Carta de Color
 

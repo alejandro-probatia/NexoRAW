@@ -22,6 +22,41 @@ To maintain full traceability, each change must:
 
 No entries yet.
 
+## [0.3.21] - 2026-05-20
+
+### Fixed
+
+- Fixed the ICC generation failure in release 0.3.20 when a manually marked
+  chart was reserved as validation and the remaining capture was rejected as
+  `fallback_detection`: manual detections are now kept in training, while
+  invalid automatic captures become validation/skipped entries without blocking
+  generation when useful samples exist.
+- Fixed the blue cast in previews using a generated input ICC: the camera RGB
+  display-balance compensation is no longer applied when an input ICC profile is
+  active.
+- The tone-curve histogram now initializes even when the curve effect is
+  disabled and recalculates from all tonal and curve adjustments instead of only
+  the curve input.
+- Curve edits no longer block the interface: the tonal histogram is calculated
+  in the background while dragging and only the latest valid result is painted.
+
+### Changed
+
+- Profiling QA keeps the ICC as a usable `draft` when independent validation is
+  missing instead of treating that condition as a blocking error.
+- Profiling reports include neutral-row a*/b* residuals and non-blocking
+  workflow recommendations for lighting, chart reference, profile model and
+  validation review.
+- The viewer histogram reuses the same already-computed colorimetric preview
+  patch when available, reducing repeated work without changing the
+  `input ICC -> monitor ICC` path.
+
+### Tests
+
+- Added regression coverage for training/validation splitting with manual
+  detections, asynchronous tone-curve histogram queuing, tonal changes that
+  modify the histogram and colorimetric preview patch reuse.
+
 ## [0.3.20] - 2026-05-20
 
 ### Fixed

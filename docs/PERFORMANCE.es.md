@@ -4,6 +4,13 @@ Este documento recoge la politica practica de medicion de rendimiento en
 ProbRAW. Las optimizaciones que afecten al flujo canonico deben conservar los
 bytes del TIFF firmado salvo que se documenten como cambio de reproducibilidad.
 
+Regla de precision colorimetrica: una mejora de rendimiento no puede cambiar la
+apariencia de la previsualizacion, la ruta `ICC fuente -> ICC monitor`, la
+precision de los valores RGB mostrados ni los bytes de salida canonica. Las
+optimizaciones aceptables eliminan trabajo redundante, reducen asignaciones,
+reutilizan caches o mueven trabajo fuera del hilo de interfaz, pero no sustituyen
+calculos colorimetricos por aproximaciones que alteren la imagen.
+
 ## Herramientas
 
 Perfil granular de comandos reales:

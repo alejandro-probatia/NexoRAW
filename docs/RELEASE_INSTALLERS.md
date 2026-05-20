@@ -146,6 +146,28 @@ zip.
 8. If a published asset turns out to be defective and GitHub does not allow it to be replaced,
    create a new revision of the release and mark the previous one with a warning.
 
+## Release 0.3.21
+
+Release 0.3.21 replaces 0.3.20 because of the ICC generation failure with a
+manually marked chart and additional captures rejected by fallback detection:
+
+- manual detections are kept as training data before reserving captures for
+  validation,
+- missing independent validation leaves the ICC as a usable `draft`, not a
+  blocking error,
+- the tone-curve histogram is calculated in the background during dragging and
+  reflects the applied tonal adjustments,
+- preview with a generated input ICC avoids camera display-balance compensation
+  that caused blue casts.
+
+Expected artifacts for the Windows release:
+
+- `ProbRAW-0.3.21-Setup.exe`
+- `ProbRAW-0.3.21-Setup.exe.sha256`
+- `probraw-0.3.21.tar.gz`
+- `probraw-0.3.21-py3-none-any.whl`
+- `probraw_0.3.21_python_artifacts.sha256`
+
 ## Release 0.3.20
 
 Release 0.3.20 consolidates the session-path and monitor preview fixes:

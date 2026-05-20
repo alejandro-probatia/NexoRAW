@@ -335,6 +335,13 @@ Buenas prácticas:
 - documenta la fuente de medición en `Fuente`;
 - pulsa `Validar` antes de generar el perfil.
 
+Las comprobaciones QA no impiden generar el ICC salvo que no existan muestras de
+carta válidas. Si falta validación independiente, ProbRAW registra el perfil como
+`draft` y muestra recomendaciones; el operador puede activarlo manualmente cuando
+el contexto de trabajo lo justifique. En ColorChecker 24, `shaper+matrix (-as)`
+es la opción conservadora; los modos cLUT siguen disponibles como opción avanzada
+y se documentan como posible sobreajuste si no hay una carta con más parches.
+
 ### Datos de carta, perfiles ICC de sesión y comparación Gamut 3D
 
 Cada perfil ICC generado queda registrado en la sesión con nombre, ruta, estado y

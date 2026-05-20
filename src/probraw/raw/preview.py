@@ -63,7 +63,11 @@ def load_image_for_preview(
             cache_dir=cache_dir,
         )
         image = _downscale_for_preview(image, max_preview_side=max_preview_side)
-        image = _camera_rgb_display_balance_if_needed(image, recipe)
+        image = _camera_rgb_display_balance_if_needed(
+            image,
+            recipe,
+            input_profile_path=input_profile_path,
+        )
         return image, f"RAW previsualizado en modo rapido LibRaw: {input_path.name}"
 
     # Preview de alta calidad: mismo render que develop_controlled, sin TIFF temporal.
@@ -76,7 +80,11 @@ def load_image_for_preview(
         else develop_image_array(input_path, develop_recipe, half_size=half_size_hq, cache_dir=develop_cache_dir)
     )
     image = _downscale_for_preview(image, max_preview_side=max_preview_side)
-    image = _camera_rgb_display_balance_if_needed(image, recipe)
+    image = _camera_rgb_display_balance_if_needed(
+        image,
+        recipe,
+        input_profile_path=input_profile_path,
+    )
     if half_size_hq:
         return image, f"RAW previsualizado HQ optimizado (half-size): {input_path.name}"
     return image, f"RAW revelado completo para preview de alta calidad: {input_path.name}"
@@ -396,7 +404,15 @@ def _downscale_for_preview(image: np.ndarray, *, max_preview_side: int) -> np.nd
     return np.clip(resized, 0.0, 1.0).astype(np.float32)
 
 
-def _camera_rgb_display_balance_if_needed(image: np.ndarray, recipe: Recipe) -> np.ndarray:
+def _camera_rgb_display_balance_if_needed(
+    image: np.ndarray,
+    recipe: Recipe,
+    *,
+    input_profile_path: Path | None = None,
+) -> np.ndarray:
+    if input_profile_path is not None:
+        return image.astype(np.float32)
+
     output_space = str(recipe.output_space or "").strip().lower()
     if not recipe.profiling_mode and "camera_rgb" not in output_space:
         return image.astype(np.float32)
@@ -412,9 +428,9 @@ def _camera_rgb_display_balance_if_needed(image: np.ndarray, recipe: Recipe) -> 
     if float(np.max(means) / np.min(means)) < 1.35:
         return rgb
 
-    # Display-only neutralisation for camera-native profiling previews. The
-    # scientific render, manual detection geometry, sampling and exported TIFFs
-    # continue to use the unmodified recipe data.
+    # Display-only neutralisation for unprofiled camera-native previews. Once an
+    # input ICC is active, the preview must preserve the source RGB values
+    # exactly because the ICC maps that camera-neutral axis to display neutral.
     target = float(np.median(means))
     gains = np.clip(target / means, 0.35, 2.8).astype(np.float32)
     balanced = rgb.copy()

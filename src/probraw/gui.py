@@ -186,6 +186,9 @@ if QtWidgets is not None:
             self._interactive_preview_busy_started_at: float | None = None
             self._interactive_preview_global_visible = False
             self._interactive_preview_request_seq = 0
+            self._tone_curve_histogram_task_active = False
+            self._tone_curve_histogram_expected_key: str | None = None
+            self._tone_curve_histogram_pending_request: tuple[str, np.ndarray, dict[str, Any], str] | None = None
             self._preview_recent_interaction_until = 0.0
             self._interactive_histogram_last_started_at = 0.0
             self._interactive_worker_perf: dict[int, dict[int, float]] = {}

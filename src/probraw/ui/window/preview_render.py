@@ -693,6 +693,16 @@ class PreviewRenderMixin:
                     result_srgb[y0:y1] = srgb
         return result_srgb, display_u8
 
+    def _histogram_u8_from_colorimetric_preview_patch(self, patch: np.ndarray | None) -> np.ndarray | None:
+        if patch is None:
+            return None
+        array = np.asarray(patch)
+        if array.ndim != 3 or array.shape[2] < 3:
+            return None
+        if array.dtype == np.uint8:
+            return np.ascontiguousarray(array[..., :3])
+        return np.asarray(srgb_to_display_u8(array[..., :3], None), dtype=np.uint8)
+
     @staticmethod
     def _preview_candidate_to_float(candidate: np.ndarray | None) -> np.ndarray | None:
         if candidate is None:
@@ -795,12 +805,7 @@ class PreviewRenderMixin:
         return x, y, w, h
 
     def _tone_curve_histogram_render_kwargs(self, render_kwargs: dict[str, Any]) -> dict[str, Any]:
-        histogram_kwargs = dict(render_kwargs)
-        histogram_kwargs["tone_curve_points"] = None
-        histogram_kwargs["tone_curve_channel_points"] = None
-        histogram_kwargs["tone_curve_black_point"] = 0.0
-        histogram_kwargs["tone_curve_white_point"] = 1.0
-        return histogram_kwargs
+        return dict(render_kwargs)
 
     def _tone_curve_points_signature(self, points: Any) -> str:
         if not isinstance(points, (list, tuple)):
@@ -822,10 +827,17 @@ class PreviewRenderMixin:
             parts.append(f"{channel}={self._tone_curve_points_signature(channel_points.get(channel))}")
         return ";".join(parts)
 
-    def _tone_curve_histogram_signature(self, source_key: str, render_kwargs: dict[str, Any]) -> str:
+    def _tone_curve_histogram_signature(
+        self,
+        source_key: str,
+        render_kwargs: dict[str, Any],
+        *,
+        max_side_limit: int,
+    ) -> str:
         return "|".join(
             [
                 str(source_key),
+                f"source_max_side={int(max_side_limit)}",
                 f"channel={self._tone_curve_channel_key()}",
                 f"tk={float(render_kwargs.get('temperature_kelvin', 5003.0)):.3f}",
                 f"tint={float(render_kwargs.get('tint', 0.0)):.3f}",
@@ -845,7 +857,11 @@ class PreviewRenderMixin:
                 f"grade_highlights={float(render_kwargs.get('grade_highlights_hue', 50.0)):.2f}:{float(render_kwargs.get('grade_highlights_saturation', 0.0)):.4f}",
                 f"grade_blending={float(render_kwargs.get('grade_blending', 0.5)):.4f}",
                 f"grade_balance={float(render_kwargs.get('grade_balance', 0.0)):.4f}",
-                "curve_stage=input",
+                f"curve_black={float(render_kwargs.get('tone_curve_black_point', 0.0)):.4f}",
+                f"curve_white={float(render_kwargs.get('tone_curve_white_point', 1.0)):.4f}",
+                f"curve={self._tone_curve_points_signature(render_kwargs.get('tone_curve_points'))}",
+                f"curve_channels={self._tone_curve_channel_points_signature(render_kwargs.get('tone_curve_channel_points'))}",
+                "curve_stage=output",
             ]
         )
 
@@ -855,12 +871,28 @@ class PreviewRenderMixin:
         render_kwargs: dict[str, Any],
         *,
         source_key: str,
+        max_side_limit: int,
+        async_update: bool = False,
         force: bool = False,
     ) -> None:
         if not hasattr(self, "tone_curve_editor"):
             return
-        key = self._tone_curve_histogram_signature(source_key, render_kwargs)
+        key = self._tone_curve_histogram_signature(
+            source_key,
+            render_kwargs,
+            max_side_limit=int(max_side_limit),
+        )
         if not force and self._tone_curve_histogram_key == key:
+            return
+        if bool(async_update):
+            self._queue_tone_curve_histogram_request(
+                (
+                    key,
+                    np.asarray(source, dtype=np.float32),
+                    dict(render_kwargs),
+                    self._tone_curve_channel_key(),
+                )
+            )
             return
         try:
             histogram_source = apply_render_adjustments(
@@ -876,9 +908,75 @@ class PreviewRenderMixin:
             self._tone_curve_histogram_key = None
             self._log_preview(f"Aviso: no se pudo actualizar histograma de curva: {exc}")
 
+    def _queue_tone_curve_histogram_request(
+        self,
+        request: tuple[str, np.ndarray, dict[str, Any], str],
+    ) -> None:
+        request_key = request[0]
+        self._tone_curve_histogram_expected_key = request_key
+        if bool(getattr(self, "_tone_curve_histogram_task_active", False)):
+            self._tone_curve_histogram_pending_request = request
+            return
+        self._tone_curve_histogram_pending_request = None
+        self._start_tone_curve_histogram_task(request)
+
+    def _start_tone_curve_histogram_task(
+        self,
+        request: tuple[str, np.ndarray, dict[str, Any], str],
+    ) -> None:
+        request_key, source, render_kwargs, channel = request
+        self._tone_curve_histogram_task_active = True
+
+        def task():
+            histogram_source = apply_render_adjustments(
+                np.asarray(source, dtype=np.float32),
+                **self._tone_curve_histogram_render_kwargs(render_kwargs),
+            )
+            return request_key, histogram_source, channel
+
+        thread = TaskThread(task)
+        self._threads.append(thread)
+
+        def cleanup() -> None:
+            if thread in self._threads:
+                self._threads.remove(thread)
+            thread.deleteLater()
+            pending = getattr(self, "_tone_curve_histogram_pending_request", None)
+            self._tone_curve_histogram_pending_request = None
+            if pending is not None:
+                self._start_tone_curve_histogram_task(pending)
+                return
+            self._tone_curve_histogram_task_active = False
+
+        def ok(payload) -> None:
+            try:
+                key, histogram_source, payload_channel = payload
+                if key != getattr(self, "_tone_curve_histogram_expected_key", None):
+                    return
+                if not hasattr(self, "tone_curve_editor"):
+                    return
+                self.tone_curve_editor.set_histogram_from_image(
+                    histogram_source,
+                    channel=str(payload_channel or self._tone_curve_channel_key()),
+                )
+                self._tone_curve_histogram_key = key
+            finally:
+                cleanup()
+
+        def fail(trace: str) -> None:
+            try:
+                self._tone_curve_histogram_key = None
+                line = trace.strip().splitlines()[-1] if trace.strip() else "error desconocido"
+                self._log_preview(f"Aviso: no se pudo actualizar histograma de curva: {line}")
+            finally:
+                cleanup()
+
+        thread.succeeded.connect(ok)
+        thread.failed.connect(fail)
+        thread.start()
+
     def _tone_curve_histogram_enabled(self) -> bool:
-        checkbox = getattr(self, "check_tone_curve_enabled", None)
-        return bool(checkbox is not None and checkbox.isChecked() and hasattr(self, "tone_curve_editor"))
+        return bool(hasattr(self, "tone_curve_editor"))
 
     def _tone_curve_histogram_interaction_active(self) -> bool:
         if not self._tone_curve_histogram_enabled():
@@ -896,6 +994,7 @@ class PreviewRenderMixin:
         self,
         *,
         max_side_limit: int = 0,
+        async_update: bool = False,
         force: bool = False,
     ) -> None:
         if self._original_linear is None:
@@ -911,6 +1010,8 @@ class PreviewRenderMixin:
             source,
             self._render_adjustment_kwargs(),
             source_key=source_key,
+            max_side_limit=int(max_side_limit),
+            async_update=bool(async_update),
             force=force,
         )
 
@@ -1372,14 +1473,17 @@ class PreviewRenderMixin:
                         else None
                     )
             if bool(include_histogram):
-                histogram_u8 = self._render_viewer_histogram_u8(
-                    full_histogram_source,
-                    detail_kwargs,
-                    render_kwargs,
-                    apply_detail=bool(apply_detail),
-                    output_space=output_space,
-                    source_profile=source_profile,
-                )
+                if viewport_rect is None and result_srgb is not None:
+                    histogram_u8 = self._histogram_u8_from_colorimetric_preview_patch(result_srgb)
+                if histogram_u8 is None:
+                    histogram_u8 = self._render_viewer_histogram_u8(
+                        full_histogram_source,
+                        detail_kwargs,
+                        render_kwargs,
+                        apply_detail=bool(apply_detail),
+                        output_space=output_space,
+                        source_profile=source_profile,
+                    )
             analysis_text = preview_analysis_text(source, adjusted) if include_analysis else None
             return (
                 request_key,
@@ -1608,6 +1712,10 @@ class PreviewRenderMixin:
                         compare_enabled=compare_enabled,
                         bypass_profile=bypass_display_profile,
                     )
+                    self._update_tone_curve_histogram_for_current_controls(
+                        max_side_limit=PREVIEW_INTERACTIVE_TONAL_MAX_SIDE,
+                        async_update=False,
+                    )
                     self.preview_analysis.setPlainText(analysis_text)
                     return
             if interactive:
@@ -1644,6 +1752,10 @@ class PreviewRenderMixin:
                         if viewport_rect is None or overlay_enabled
                         else self._interactive_histogram_due()
                     )
+                self._update_tone_curve_histogram_for_current_controls(
+                    max_side_limit=PREVIEW_INTERACTIVE_TONAL_MAX_SIDE,
+                    async_update=True,
+                )
                 self._interactive_preview_request_seq += 1
                 request_key = f"{source_key}|interactive|{self._interactive_preview_request_seq}"
                 self._profile_preview_expected_key = None
@@ -1675,6 +1787,9 @@ class PreviewRenderMixin:
             self._set_interactive_preview_busy(False)
 
             if self._should_async_final_preview():
+                self._update_tone_curve_histogram_for_current_controls(
+                    max_side_limit=final_display_max_side,
+                )
                 self._interactive_preview_request_seq += 1
                 request_key = f"{source_key}|final|{self._interactive_preview_request_seq}"
                 self._queue_interactive_preview_request(

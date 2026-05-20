@@ -20,6 +20,42 @@ Para mantener trazabilidad completa, cada cambio debe:
 
 Sin entradas todavia.
 
+## [0.3.21] - 2026-05-20
+
+### Fixed
+
+- Corregido el fallo de generacion ICC de la release 0.3.20 cuando una carta
+  marcada manualmente quedaba reservada como validacion y la captura restante
+  era descartada por `fallback_detection`: las detecciones manuales se mantienen
+  ahora en entrenamiento y las capturas automaticas no validas quedan como
+  validacion/omision sin bloquear si hay muestras utiles.
+- Corregida la dominante azul en previews con ICC de entrada generado: la
+  compensacion visual de balance de camara ya no se aplica cuando la imagen se
+  esta visualizando con un perfil ICC de entrada activo.
+- El histograma de curva se inicializa aunque la curva este desactivada y se
+  recalcula con todos los ajustes tonales y de curva, no solo con la entrada de
+  la curva.
+- Los cambios de curva ya no bloquean la interfaz: el histograma tonal se
+  calcula en segundo plano durante el arrastre y solo se publica el ultimo
+  resultado valido.
+
+### Changed
+
+- La QA de perfilado conserva el ICC como `draft` utilizable cuando falta una
+  validacion independiente, en vez de tratarlo como error bloqueante.
+- Los informes de perfilado incluyen residuo a*/b* de la fila neutra y
+  recomendaciones no bloqueantes para revisar iluminacion, referencia de carta,
+  modelo de perfil y validacion.
+- El histograma del visor reutiliza la misma muestra colorimetrica ya calculada
+  para preview cuando esta disponible, reduciendo trabajo repetido sin cambiar
+  la ruta `ICC de entrada -> ICC de monitor`.
+
+### Tests
+
+- Anadida cobertura de regresion para reparto entrenamiento/validacion con
+  detecciones manuales, cola asincrona del histograma de curva, cambios tonales
+  que modifican el histograma y reutilizacion del parche colorimetrico.
+
 ## [0.3.20] - 2026-05-20
 
 ### Fixed

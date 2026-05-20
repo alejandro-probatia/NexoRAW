@@ -586,6 +586,8 @@ class PreviewRecipeMixin:
         if not enabled and hasattr(self.tone_curve_editor, "set_range_dragging"):
             self.tone_curve_editor.set_range_dragging(False)
         self._set_tone_curve_controls_enabled(enabled)
+        if self._original_linear is not None and hasattr(self, "_update_tone_curve_histogram_for_current_controls"):
+            self._update_tone_curve_histogram_for_current_controls(force=True)
         self._on_render_control_change()
 
     def _on_tone_curve_channel_changed(self, _index: int) -> None:
@@ -601,11 +603,7 @@ class PreviewRecipeMixin:
         if key != "custom":
             self.tone_curve_editor.set_points(self._tone_curve_preset_points(key), emit=False)
         self._save_visible_tone_curve_channel_state()
-        if (
-            self.check_tone_curve_enabled.isChecked()
-            and self._original_linear is not None
-            and hasattr(self, "_update_tone_curve_histogram_for_current_controls")
-        ):
+        if self._original_linear is not None and hasattr(self, "_update_tone_curve_histogram_for_current_controls"):
             self._update_tone_curve_histogram_for_current_controls(force=True)
         self._on_render_control_change(preview=bool(self.check_tone_curve_enabled.isChecked()))
 
@@ -643,11 +641,7 @@ class PreviewRecipeMixin:
             if preview_enabled and self._original_linear is not None and hasattr(self, "_schedule_exact_histogram_refresh"):
                 self._schedule_exact_histogram_refresh(delay_ms=80, mark_pending=False)
             return
-        if (
-            preview_enabled
-            and self._original_linear is not None
-            and hasattr(self, "_update_tone_curve_histogram_for_current_controls")
-        ):
+        if self._original_linear is not None and hasattr(self, "_update_tone_curve_histogram_for_current_controls"):
             self._update_tone_curve_histogram_for_current_controls(force=True)
         self._on_render_control_change(preview=preview_enabled)
         if preview_enabled and self._original_linear is not None and hasattr(self, "_schedule_exact_histogram_refresh"):
@@ -661,12 +655,8 @@ class PreviewRecipeMixin:
             self.tone_curve_editor.set_range_dragging(False)
         self._sync_tone_curve_editor_channel_overlay()
         preview_enabled = bool(self.check_tone_curve_enabled.isChecked())
-        if (
-            preview_enabled
-            and self._original_linear is not None
-            and hasattr(self, "_update_tone_curve_histogram_for_current_controls")
-        ):
-            self._update_tone_curve_histogram_for_current_controls(force=True)
+        if self._original_linear is not None and hasattr(self, "_update_tone_curve_histogram_for_current_controls"):
+            self._update_tone_curve_histogram_for_current_controls(force=True, async_update=True)
         self._on_render_control_change(preview=preview_enabled)
         if preview_enabled and self._original_linear is not None and hasattr(self, "_schedule_post_interaction_exact_preview_refresh"):
             self._schedule_post_interaction_exact_preview_refresh(delay_ms=260)
@@ -683,8 +673,6 @@ class PreviewRecipeMixin:
         self._save_visible_tone_curve_channel_state(sync_editor=not dragging)
         preview_enabled = bool(self.check_tone_curve_enabled.isChecked())
         if (
-            preview_enabled
-            and
             not dragging
             and self._original_linear is not None
             and hasattr(self, "_update_tone_curve_histogram_for_current_controls")
@@ -701,12 +689,8 @@ class PreviewRecipeMixin:
         if timer is not None:
             timer.stop()
         self._save_visible_tone_curve_channel_state(sync_editor=True)
-        if (
-            self.check_tone_curve_enabled.isChecked()
-            and self._original_linear is not None
-            and hasattr(self, "_update_tone_curve_histogram_for_current_controls")
-        ):
-            self._update_tone_curve_histogram_for_current_controls(force=True)
+        if self._original_linear is not None and hasattr(self, "_update_tone_curve_histogram_for_current_controls"):
+            self._update_tone_curve_histogram_for_current_controls(force=True, async_update=True)
         self._on_render_control_change(preview=bool(self.check_tone_curve_enabled.isChecked()))
 
     def _on_render_control_change(self, *_args: object, preview: bool = True) -> None:

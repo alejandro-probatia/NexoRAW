@@ -21,6 +21,7 @@ from probraw.raw.preview import (
     estimate_temperature_tint_from_neutral_sample,
     extract_embedded_thumbnail,
     linear_to_srgb_display,
+    linear_to_srgb_display_u8,
     load_image_for_preview,
     normalize_tone_curve_points,
     preview_analysis_text,
@@ -254,6 +255,31 @@ def test_linear_to_srgb_display_range():
     assert out.shape == img.shape
     assert float(np.min(out)) >= 0.0
     assert float(np.max(out)) <= 1.0
+
+
+def test_linear_to_srgb_display_matches_reference_curve():
+    img = np.random.default_rng(18).uniform(-0.05, 1.05, size=(32, 37, 3)).astype(np.float32)
+    clipped = np.clip(img.astype(np.float64), 0.0, 1.0)
+    reference = np.where(
+        clipped <= 0.0031308,
+        12.92 * clipped,
+        1.055 * np.power(clipped, 1.0 / 2.4) - 0.055,
+    )
+
+    out = linear_to_srgb_display(img)
+
+    assert out.dtype == np.float32
+    assert np.max(np.abs(out.astype(np.float64) - reference)) < 1.2e-4
+
+
+def test_linear_to_srgb_display_u8_matches_float_path_quantization():
+    img = np.random.default_rng(19).uniform(-0.05, 1.05, size=(34, 35, 3)).astype(np.float32)
+    expected = np.rint(np.clip(linear_to_srgb_display(img), 0.0, 1.0) * 255.0).astype(np.uint8)
+
+    out = linear_to_srgb_display_u8(img)
+
+    assert out.dtype == np.uint8
+    assert np.array_equal(out, expected)
 
 
 def test_srgb_linear_roundtrip_stability():
@@ -574,7 +600,11 @@ def test_load_image_for_preview_input_profile_uses_camera_rgb_source(tmp_path: P
         assert cache_dir is None
         called["camera"] = True
         called["half_size"] = bool(half_size)
-        return np.full((120, 160, 3), 0.4, dtype=np.float32)
+        image = np.zeros((120, 160, 3), dtype=np.float32)
+        image[..., 0] = 0.40
+        image[..., 1] = 0.12
+        image[..., 2] = 0.04
+        return image
 
     monkeypatch.setattr(preview_module, "develop_standard_output_array", fail_standard)
     monkeypatch.setattr(preview_module, "develop_image_array", fake_camera_develop)
@@ -589,6 +619,7 @@ def test_load_image_for_preview_input_profile_uses_camera_rgb_source(tmp_path: P
 
     assert called == {"camera": True, "half_size": True}
     assert max(loaded.shape[0], loaded.shape[1]) <= 100
+    assert np.allclose(loaded[0, 0], [0.40, 0.12, 0.04], atol=1e-6)
 
 
 def test_load_image_for_preview_exact_enables_demosaic_cache(tmp_path: Path, monkeypatch):
@@ -654,3 +685,21 @@ def test_camera_rgb_preview_balance_is_display_only_for_strong_cast():
     means = np.mean(balanced, axis=(0, 1))
     assert float(np.max(means) / np.min(means)) < 1.05
     assert not np.shares_memory(balanced, image)
+
+
+def test_camera_rgb_preview_balance_is_disabled_when_input_icc_is_active(tmp_path: Path):
+    image = np.zeros((12, 16, 3), dtype=np.float32)
+    image[..., 0] = 0.15
+    image[..., 1] = 0.30
+    image[..., 2] = 0.05
+    recipe = Recipe(profiling_mode=True, output_space="scene_linear_camera_rgb")
+    profile_path = tmp_path / "camera.icc"
+    profile_path.write_bytes(b"profile")
+
+    balanced = _camera_rgb_display_balance_if_needed(
+        image,
+        recipe,
+        input_profile_path=profile_path,
+    )
+
+    assert np.allclose(balanced, image)
