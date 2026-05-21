@@ -279,3 +279,67 @@ def test_pick_asset_prefers_macos_zip_over_source_tarball(monkeypatch) -> None:
     assert checksum_name == "ProbRAW-0.3.18-macos-arm64.zip.sha256"
     assert checksum_url == "https://example.com/ProbRAW-0.3.18-macos-arm64.zip.sha256"
 
+
+def test_pick_asset_prefers_arch_package_over_python_source_tarball(monkeypatch) -> None:
+    monkeypatch.setattr(update_mod.sys, "platform", "linux")
+    assets = [
+        {
+            "name": "probraw-0.4.0-py3-none-any.whl",
+            "browser_download_url": "https://example.com/probraw-0.4.0-py3-none-any.whl",
+            "size": 10,
+        },
+        {
+            "name": "ProbRAW-0.4.0-Setup.exe",
+            "browser_download_url": "https://example.com/ProbRAW-0.4.0-Setup.exe",
+            "size": 20,
+        },
+        {
+            "name": "probraw-0.4.0.tar.gz",
+            "browser_download_url": "https://example.com/probraw-0.4.0.tar.gz",
+            "size": 30,
+        },
+        {
+            "name": "probraw-0.4.0-1-x86_64.pkg.tar.zst",
+            "browser_download_url": "https://example.com/probraw-0.4.0-1-x86_64.pkg.tar.zst",
+            "size": 123,
+        },
+        {
+            "name": "probraw-0.4.0-1-x86_64.pkg.tar.zst.sha256",
+            "browser_download_url": "https://example.com/probraw-0.4.0-1-x86_64.pkg.tar.zst.sha256",
+        },
+    ]
+
+    name, url, size, _digest, checksum_name, checksum_url = update_mod._pick_asset(assets)
+
+    assert name == "probraw-0.4.0-1-x86_64.pkg.tar.zst"
+    assert url == "https://example.com/probraw-0.4.0-1-x86_64.pkg.tar.zst"
+    assert size == 123
+    assert checksum_name == "probraw-0.4.0-1-x86_64.pkg.tar.zst.sha256"
+    assert checksum_url == "https://example.com/probraw-0.4.0-1-x86_64.pkg.tar.zst.sha256"
+
+
+def test_launch_installer_uses_pkexec_pacman_for_arch_package(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(update_mod.sys, "platform", "linux")
+    monkeypatch.setattr(update_mod.shutil, "which", lambda name: f"/usr/bin/{name}" if name in {"pacman", "pkexec"} else None)
+    monkeypatch.setattr(update_mod.os, "geteuid", lambda: 1000, raising=False)
+    calls = []
+    monkeypatch.setattr(update_mod.subprocess, "Popen", lambda args: calls.append(args))
+    package = tmp_path / "probraw-0.4.0-1-x86_64.pkg.tar.zst"
+    package.write_bytes(b"pkg")
+
+    update_mod.launch_installer(package, silent=True)
+
+    assert calls == [["/usr/bin/pkexec", "pacman", "-U", "--noconfirm", str(package.resolve())]]
+
+
+def test_launch_installer_runs_appimage_directly(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(update_mod.sys, "platform", "linux")
+    calls = []
+    monkeypatch.setattr(update_mod.subprocess, "Popen", lambda args: calls.append(args))
+    appimage = tmp_path / "ProbRAW.AppImage"
+    appimage.write_bytes(b"app")
+
+    update_mod.launch_installer(appimage)
+
+    assert calls == [[str(appimage.resolve())]]
+    assert appimage.stat().st_mode & 0o111

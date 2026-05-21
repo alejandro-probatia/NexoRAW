@@ -138,7 +138,7 @@ def _wanted_asset_extensions() -> list[str]:
         return [".exe", ".msi"]
     if sys.platform == "darwin":
         return [".dmg", ".pkg", ".zip", ".tar.gz"]
-    return [".deb", ".rpm", ".appimage", ".tar.gz"]
+    return [".deb", ".pkg.tar.zst", ".pkg.tar.xz", ".pkg.tar", ".rpm", ".appimage", ".tar.gz"]
 
 
 def check_latest_release(*, api_url: str | None = None, repository: str | None = None, timeout: float = 8.0) -> UpdateCheckResult:
@@ -278,6 +278,7 @@ def download_update_asset(
 def launch_installer(path: Path, *, silent: bool = True) -> None:
     installer = Path(path).expanduser().resolve()
     suffix = installer.suffix.lower()
+    name = installer.name.lower()
     if sys.platform == "win32":
         if suffix == ".msi":
             args = ["msiexec", "/i", str(installer)]
@@ -296,6 +297,20 @@ def launch_installer(path: Path, *, silent: bool = True) -> None:
     if sys.platform == "darwin":
         subprocess.Popen(["open", str(installer)])
         return
+    if name.endswith((".pkg.tar.zst", ".pkg.tar.xz", ".pkg.tar")) and shutil.which("pacman"):
+        args = ["pacman", "-U"]
+        if silent:
+            args.append("--noconfirm")
+        args.append(str(installer))
+        pkexec = shutil.which("pkexec")
+        if pkexec and hasattr(os, "geteuid") and os.geteuid() != 0:
+            args.insert(0, pkexec)
+        subprocess.Popen(args)
+        return
+    if suffix == ".appimage":
+        installer.chmod(installer.stat().st_mode | 0o111)
+        subprocess.Popen([str(installer)])
+        return
     subprocess.Popen(["xdg-open", str(installer)])
 
 
@@ -303,4 +318,3 @@ def auto_update(*, check: UpdateCheckResult, silent: bool = True, target_dir: Pa
     installer = download_update_asset(check, target_dir=target_dir)
     launch_installer(installer, silent=silent)
     return installer
-
