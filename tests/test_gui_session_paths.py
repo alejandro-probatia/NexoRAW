@@ -437,8 +437,16 @@ def test_raw_develop_layout_prioritizes_viewer_area(qapp):
         labels = [window.left_tabs.tabText(i) for i in range(window.left_tabs.count())]
         assert labels == ["Explorador", "Diagnóstico", "Metadatos", "Log"]
         analysis_labels = [window.analysis_tabs.tabText(i) for i in range(window.analysis_tabs.count())]
-        assert analysis_labels == ["Imagen", "Carta", "Gamut 3D"]
+        assert analysis_labels == ["Imagen", "Carta", "Gamut 3D", "Muestras"]
         assert isinstance(window.gamut_3d_widget, gui_module.Gamut3DWidget)
+        assert window.color_samples_table.columnCount() == 15
+        assert window.color_samples_table.horizontalHeader().sectionResizeMode(2) == QtWidgets.QHeaderView.Interactive
+        assert window._color_samples_table_user_resized is False
+        assert window.color_samples_table.columnWidth(6) >= 122
+        assert window.color_samples_view_combo.count() == 2
+        assert window.color_sample_group_table.columnCount() == 15
+        assert isinstance(window.color_sample_gamut_widget, gui_module.ColorSampleGamutWidget)
+        assert "perfiles genericos" in window.label_color_picker_precision.text()
         assert window.viewer_splitter.count() == 2
         assert window.viewer_splitter.widget(0) is window.viewer_area
         assert window.viewer_stack.parentWidget() is window.viewer_area
@@ -540,6 +548,22 @@ def test_gamut_widget_resets_camera_when_payload_changes(qapp):
         assert widget._azimuth == widget.DEFAULT_AZIMUTH
         assert widget._elevation == widget.DEFAULT_ELEVATION
         assert widget._zoom == widget.DEFAULT_ZOOM
+    finally:
+        widget.close()
+
+
+def test_gamut_widget_accepts_lab_xy_mode_with_l_slice(qapp):
+    widget = gui_module.Gamut3DWidget()
+    try:
+        widget.set_view_mode("lab_xy")
+        widget.set_l_slice(64)
+
+        assert widget._view_mode == "lab_xy"
+        assert widget._l_slice == 64.0
+
+        widget.set_view_mode("unknown")
+
+        assert widget._view_mode == "lab3d"
     finally:
         widget.close()
 
@@ -4428,6 +4452,232 @@ def test_gamut_refresh_populates_diagnostic_widget(tmp_path: Path, monkeypatch, 
         assert len(window.gamut_3d_widget._series) == 2
         assert "ICC generado en sRGB: 100.0% dentro" in window.gamut_status_label.text()
         assert window.analysis_tabs.tabText(window.analysis_tabs.currentIndex()) == "Gamut 3D"
+    finally:
+        window.close()
+
+
+def test_color_lab_picker_samples_pixel_and_reports_common_gamut(tmp_path: Path, monkeypatch, qapp):
+    profile = tmp_path / "source.icc"
+    profile.write_bytes(b"fake icc" * 32)
+    captured: dict[str, object] = {}
+
+    def fake_lookup_lab_with_icc(profile_path, rgb):
+        captured["profile_path"] = profile_path
+        captured["rgb"] = gui_module.np.asarray(rgb, dtype=gui_module.np.float64)
+        if float(captured["rgb"][0, 0]) > 0.3:
+            return gui_module.np.asarray([[52.0, 11.5, -10.0]], dtype=gui_module.np.float64)
+        return gui_module.np.asarray([[52.0, 8.5, -14.0]], dtype=gui_module.np.float64)
+
+    def fake_evaluate_lab_gamut_membership(lab, **kwargs):
+        captured["lab"] = gui_module.np.asarray(lab, dtype=gui_module.np.float64)
+        captured["membership_kwargs"] = kwargs
+        return {
+            "inside_a": gui_module.np.asarray([True]),
+            "inside_b": gui_module.np.asarray([False]),
+            "inside_common": gui_module.np.asarray([False]),
+            "label_a": "ICC imagen",
+            "label_b": "sRGB",
+        }
+
+    def run_task(_label, task, on_success):
+        on_success(task())
+
+    monkeypatch.setattr(gui_module, "lookup_lab_with_icc", fake_lookup_lab_with_icc)
+    monkeypatch.setattr(gui_module, "evaluate_lab_gamut_membership", fake_evaluate_lab_gamut_membership)
+
+    window = ICCRawMainWindow()
+    try:
+        window._start_background_task = run_task
+        window._original_linear = gui_module.np.zeros((3, 3, 3), dtype=gui_module.np.float32)
+        window._adjusted_linear = window._original_linear.copy()
+        window._adjusted_linear[1, 1] = gui_module.np.asarray([0.25, 0.5, 0.75], dtype=gui_module.np.float32)
+        window._loaded_preview_source_profile_path = profile
+        window.color_picker_matrix_combo.setCurrentIndex(0)
+        window._set_color_picker_active(True)
+        assert "orientativos" in window.label_color_picker_precision.text()
+        window.image_result_single.resize(120, 120)
+        window.image_result_single.set_rgb_u8_image(gui_module.np.zeros((3, 3, 3), dtype=gui_module.np.uint8))
+        window.image_result_single._update_sample_magnifier_from_widget_pos(QtCore.QPointF(60.0, 60.0))
+        assert window.image_result_single._sample_magnifier_image_pos is not None
+        assert window.image_result_single._sample_magnifier_radius == 0
+
+        window._on_result_image_click(1, 1)
+
+        assert captured["profile_path"] == profile
+        assert gui_module.np.allclose(captured["rgb"], [[0.25, 0.5, 0.75]])
+        assert gui_module.np.allclose(captured["lab"], [[52.0, 8.5, -14.0]])
+        assert "Lab 52.00, +8.50, -14.00" in window.label_color_picker.text()
+        assert "gama comun: no" in window.label_color_picker.text()
+        assert window.color_samples_table.rowCount() == 1
+        assert window.color_samples_table.item(0, 0).text() == "1"
+        assert window.color_samples_table.item(0, 1).text() == "Conjunto 1"
+        assert window.color_samples_table.item(0, 2).text() == "Muestra 1"
+        assert window.color_samples_table.item(0, 12).text() == "0.00"
+        assert window.color_samples_table.item(0, 13).text() == "0.00"
+        assert window.color_samples_table.item(0, 14).text() == "+0.00"
+        assert window.color_sample_group_table.rowCount() == 1
+        assert window.color_sample_group_table.item(0, 1).text() == "1"
+        assert window.color_sample_cards_layout.count() >= 2
+        assert window.image_result_single._sample_markers[0] == {
+            "x": 1,
+            "y": 1,
+            "index": 1,
+            "label": "1",
+            "color": "#88bae0",
+            "text_color": "#0f172a",
+        }
+        assert window.image_result_single._sample_magnifier_enabled is True
+
+        window._create_color_sample_group(name="Tinta variable")
+        assert window.color_sample_group_combo.currentData() == "Tinta variable"
+        window._adjusted_linear[2, 2] = gui_module.np.asarray([0.5, 0.5, 0.5], dtype=gui_module.np.float32)
+        window._on_result_image_click(2, 2)
+
+        assert window.color_samples_table.rowCount() == 2
+        assert window.color_samples_table.item(1, 1).text() == "Tinta variable"
+        assert window.color_samples_table.item(1, 12).text() == "5.00"
+        assert window.color_samples_table.item(1, 13).text() != "ref"
+        assert window.color_samples_table.item(1, 14).text().startswith("-")
+        assert window.color_sample_group_table.rowCount() == 2
+        assert window.color_sample_group_table.item(1, 1).text() == "1"
+        assert window.color_sample_group_table.item(1, 5).text() == "0.00"
+        assert window.color_sample_group_table.item(1, 6).text() == "0.00"
+        assert window.color_sample_group_table.item(1, 9).text() == "5.00"
+        assert window.color_sample_group_table.item(1, 11).text() != "--"
+        assert window.color_sample_gamut_widget._groups[1]["name"] == "Tinta variable"
+        assert window.color_sample_gamut_widget._groups[1]["points"].shape[0] == 1
+        window.color_samples_table.item(1, 2).setText("Rojo carta")
+        window.color_samples_table.item(1, 3).setText("zona saturada")
+        assert window._color_picker_samples[1]["name"] == "Rojo carta"
+        assert window._color_picker_samples[1]["note"] == "zona saturada"
+        assert window.image_result_single._sample_markers[-1]["x"] == 2
+        assert window.image_result_single._sample_markers[-1]["y"] == 2
+        assert window.image_result_single._sample_markers[-1]["color"] == "#bababa"
+        assert "DE76 ref 5.00" in window.label_color_picker.text()
+        assert "DC* ref" in window.label_color_picker.text()
+
+        window.color_samples_view_combo.setCurrentIndex(1)
+        assert window.color_samples_stack.currentIndex() == 1
+        window.color_samples_table.setColumnWidth(3, 211)
+        assert window._color_samples_table_user_resized is True
+        window._refresh_color_samples_table()
+        assert window.color_samples_table.columnWidth(3) == 211
+
+        window.color_samples_table.selectRow(1)
+        window._delete_selected_color_picker_sample()
+        assert window.color_samples_table.rowCount() == 1
+        assert len(window.image_result_single._sample_markers) == 1
+
+        window._edit_undo()
+        assert window.color_samples_table.rowCount() == 2
+        assert window.color_samples_table.item(1, 2).text() == "Rojo carta"
+        assert window.color_samples_table.item(1, 3).text() == "zona saturada"
+    finally:
+        window.close()
+
+
+def test_color_lab_picker_persists_samples_per_image(tmp_path: Path, monkeypatch, qapp):
+    image_a = tmp_path / "a.tiff"
+    image_b = tmp_path / "b.tiff"
+    image_a.write_bytes(b"a")
+    image_b.write_bytes(b"b")
+    profile = tmp_path / "source.icc"
+    profile.write_bytes(b"fake icc" * 32)
+
+    monkeypatch.setattr(
+        gui_module,
+        "lookup_lab_with_icc",
+        lambda _profile_path, _rgb: gui_module.np.asarray([[41.0, 3.0, -7.0]], dtype=gui_module.np.float64),
+    )
+    monkeypatch.setattr(
+        gui_module,
+        "evaluate_lab_gamut_membership",
+        lambda _lab, **_kwargs: {
+            "inside_a": gui_module.np.asarray([True]),
+            "inside_b": gui_module.np.asarray([True]),
+            "inside_common": gui_module.np.asarray([True]),
+            "label_a": "ICC imagen",
+            "label_b": "sRGB",
+        },
+    )
+
+    def run_task(_label, task, on_success):
+        on_success(task())
+
+    window = ICCRawMainWindow()
+    try:
+        window._start_background_task = run_task
+        window._selected_file = image_a
+        window._loaded_preview_source_profile_path = profile
+        window._loaded_preview_max_side_request = 0
+        window._loaded_preview_fast_raw = False
+        window._original_linear = gui_module.np.ones((4, 4, 3), dtype=gui_module.np.float32) * 0.25
+        window._adjusted_linear = window._original_linear.copy()
+        window.color_picker_matrix_combo.setCurrentIndex(0)
+        window._set_color_picker_active(True)
+
+        window._on_result_image_click(2, 1)
+        window.color_samples_table.item(0, 2).setText("Tinta")
+        window.color_samples_table.item(0, 3).setText("muestra persistida")
+
+        sidecar = load_raw_sidecar(image_a)
+        assert "reference_index" not in sidecar["color_samples"]
+        assert sidecar["color_samples"]["groups"] == ["Conjunto 1"]
+        assert sidecar["color_samples"]["active_group"] == "Conjunto 1"
+        assert sidecar["color_samples"]["group_reference"] == "Conjunto 1"
+        assert sidecar["color_samples"]["samples"][0]["x"] == 2
+        assert sidecar["color_samples"]["samples"][0]["y"] == 1
+        assert sidecar["color_samples"]["samples"][0]["image_size"] == [4, 4]
+        assert sidecar["color_samples"]["samples"][0]["group"] == "Conjunto 1"
+        assert sidecar["color_samples"]["samples"][0]["name"] == "Tinta"
+        assert sidecar["color_samples"]["samples"][0]["note"] == "muestra persistida"
+        assert sidecar["color_samples"]["samples"][0]["marker_color"].startswith("#")
+        write_raw_sidecar(image_a, recipe=Recipe())
+        assert load_raw_sidecar(image_a)["color_samples"]["samples"][0]["name"] == "Tinta"
+
+        window._load_color_picker_samples_for_selected(image_b)
+        assert window.color_samples_table.rowCount() == 0
+
+        window._load_color_picker_samples_for_selected(image_a)
+        assert window.color_samples_table.rowCount() == 1
+        assert window.color_samples_table.item(0, 1).text() == "Conjunto 1"
+        assert window.color_samples_table.item(0, 2).text() == "Tinta"
+        assert window.color_samples_table.item(0, 3).text() == "muestra persistida"
+        assert window.image_result_single._sample_markers[0]["x"] == 2
+        assert window.image_result_single._sample_markers[0]["y"] == 1
+        assert window.image_result_single._sample_markers[0]["label"] == "1"
+    finally:
+        window.close()
+
+
+def test_color_lab_picker_requires_real_pixel_source_before_sampling(tmp_path: Path, monkeypatch, qapp):
+    image_path = tmp_path / "proxy.tiff"
+    image_path.write_bytes(b"tiff")
+    profile = tmp_path / "source.icc"
+    profile.write_bytes(b"fake icc" * 32)
+
+    def fail_lookup(*_args, **_kwargs):
+        raise AssertionError("no debe calcular Lab desde una preview reducida")
+
+    monkeypatch.setattr(gui_module, "lookup_lab_with_icc", fail_lookup)
+
+    window = ICCRawMainWindow()
+    try:
+        calls: list[bool] = []
+        window._on_load_selected = lambda *args, **kwargs: calls.append(bool(kwargs.get("show_message", True)))
+        window._selected_file = image_path
+        window._loaded_preview_source_profile_path = profile
+        window._loaded_preview_max_side_request = gui_module.PREVIEW_AUTO_BASE_MAX_SIDE
+        window._loaded_preview_fast_raw = False
+        window._original_linear = gui_module.np.ones((8, 8, 3), dtype=gui_module.np.float32)
+        window._adjusted_linear = window._original_linear.copy()
+        window._set_color_picker_active(True)
+
+        window._apply_color_picker_at(3, 3)
+
+        assert calls
+        assert window._viewer_full_detail_requested is True
+        assert window.color_samples_table.rowCount() == 0
     finally:
         window.close()
 

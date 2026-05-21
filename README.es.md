@@ -10,7 +10,7 @@ Revelado RAW/TIFF reproducible y auditable para fotografía científica, forense
 patrimonial, con perfilado ICC por sesión, ajustes paramétricos por archivo y
 trazabilidad abierta AGPL.
 
-![Licencia AGPL-3.0-or-later](https://img.shields.io/badge/licencia-AGPL--3.0--or--later-blue) ![CI](https://img.shields.io/badge/CI-pendiente-lightgrey) ![Versión](https://img.shields.io/badge/version-v0.3.20-brightgreen) ![Python](https://img.shields.io/badge/python-3.11%2B-blue) ![Plataformas](https://img.shields.io/badge/plataformas-Linux%20%7C%20macOS%20%7C%20Windows-informational)
+![Licencia AGPL-3.0-or-later](https://img.shields.io/badge/licencia-AGPL--3.0--or--later-blue) ![CI](https://img.shields.io/badge/CI-pendiente-lightgrey) ![Versión](https://img.shields.io/badge/version-v0.4.0-brightgreen) ![Python](https://img.shields.io/badge/python-3.11%2B-blue) ![Plataformas](https://img.shields.io/badge/plataformas-Linux%20%7C%20macOS%20%7C%20Windows-informational)
 
 ![Interfaz principal de ProbRAW](docs/assets/screenshots/probraw-portada.png)
 
@@ -26,24 +26,26 @@ El flujo actual está centrado de forma deliberada en ICC:
   perfil ICC de entrada propio de la sesión;
 - sin carta, ProbRAW usa un perfil de ajuste manual y un ICC de entrada generico
   real (`sRGB`, `Adobe RGB (1998)` o `ProPhoto RGB`);
+- el panel de diagnóstico permite revisar carta, gamut 3D/Lab 2D y muestras Lab
+  agrupadas con comparación DeltaE entre conjuntos;
 - la gestión ICC del monitor afecta solo a la previsualización en pantalla;
 - el soporte DCP no es un objetivo activo de implementación en la línea 0.3.
 
 ## Estado Actual
 
-ProbRAW 0.3.20 es adecuado para pruebas controladas, revisión metodológica y
+ProbRAW 0.4.0 es adecuado para pruebas controladas, revisión metodológica y
 validación de candidata a release. Todavía no es un sistema certificado para
 producción científica o forense.
 
-La version actual refuerza la preview de color de monitor, alinea los
-directorios de trabajo predeterminados con el proyecto activo y corrige la
-generacion ICC desde cartas marcadas manualmente, preservando la ruta de TIFF
-firmado y las garantias del analisis MTF.
+La version actual anade diagnostico de muestras Lab: cuentagotas de pixel real,
+persistencia por imagen, conjuntos de muestras, comparacion DeltaE e inspeccion
+de gamut Lab 2D, preservando la ruta de TIFF firmado y las garantias del
+analisis MTF.
 
 La última validación de empaquetado pasó con:
 
 ```text
-La validacion de release esta documentada en docs/releases/0.3.20.es.md.
+La validacion de release esta documentada en docs/releases/0.4.0.es.md.
 CachyOS probraw 0.3.18-3: pacman -Qkk -> 18160 ficheros, 0 alterados; validate_cachyos_install -> OK
 ```
 
@@ -145,6 +147,14 @@ Carpetas de sesión:
 
 La lista completa de controles y flujos está en el
 [Manual de usuario](docs/MANUAL_USUARIO.es.md).
+
+## Capturas de diagnóstico
+
+![Diagnóstico de carta con DeltaE por parche](docs/assets/screenshots/probraw-diagnostico-carta.jpeg)
+
+![Comparación de gamut ICC en Lab 3D](docs/assets/screenshots/probraw-gamut-3d-comparacion-actual.jpeg)
+
+![Muestras Lab agrupadas con marcadores sobre la imagen](docs/assets/screenshots/probraw-muestras-lab-conjuntos.jpeg)
 
 ## Ejemplos CLI
 

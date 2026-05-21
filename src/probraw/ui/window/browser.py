@@ -146,6 +146,8 @@ class BrowserMetadataMixin:
         self._selected_file = None
         self._clear_manual_chart_points_for_file_change()
         self._clear_mtf_roi_for_file_change()
+        if hasattr(self, "_clear_color_picker_samples_for_file_change"):
+            self._clear_color_picker_samples_for_file_change()
         self._last_loaded_preview_key = None
         self._loaded_preview_source_profile_path = None
         self.selected_file_label.setText(self.tr("Sin archivo seleccionado"))
@@ -1057,6 +1059,8 @@ class BrowserMetadataMixin:
             self._selected_file = None
             self._clear_manual_chart_points_for_file_change()
             self._clear_mtf_roi_for_file_change()
+            if hasattr(self, "_clear_color_picker_samples_for_file_change"):
+                self._clear_color_picker_samples_for_file_change()
             self.selected_file_label.setText(self.tr("Sin archivo seleccionado"))
             self._selection_load_timer.stop()
             self._metadata_timer.stop()
@@ -1071,6 +1075,8 @@ class BrowserMetadataMixin:
             self._selected_file = None
             self._clear_manual_chart_points_for_file_change()
             self._clear_mtf_roi_for_file_change()
+            if hasattr(self, "_clear_color_picker_samples_for_file_change"):
+                self._clear_color_picker_samples_for_file_change()
             self._selection_load_timer.stop()
             self._metadata_timer.stop()
             self._clear_metadata_view()
@@ -1097,6 +1103,8 @@ class BrowserMetadataMixin:
         self.selected_file_label.setText(str(self._selected_file))
         if not self._apply_raw_sidecar_to_controls(self._selected_file):
             self._reset_development_controls_for_unconfigured_file()
+        if hasattr(self, "_load_color_picker_samples_for_selected"):
+            self._load_color_picker_samples_for_selected(self._selected_file)
         self._refresh_selected_icc_profile_info()
         self._queue_metadata_load(self._selected_file, include_c2pa=False)
         if self._selected_file.suffix.lower() in BROWSABLE_EXTENSIONS:

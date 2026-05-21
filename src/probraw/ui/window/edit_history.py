@@ -34,6 +34,9 @@ class EditHistoryMixin:
             "image_crop_base_size": list(crop_base_size) if isinstance(crop_base_size, tuple) else None,
             "image_crop_normalized_rect": list(crop_normalized) if isinstance(crop_normalized, tuple) else None,
             "viewer_rotation": float(getattr(self, "_viewer_rotation", 0.0) or 0.0),
+            "color_samples": self._color_picker_samples_state()
+            if hasattr(self, "_color_picker_samples_state")
+            else {},
         }
 
     def _edit_state_key(self, state: dict[str, Any]) -> str:
@@ -119,6 +122,12 @@ class EditHistoryMixin:
                 self._sync_image_tool_overlays()
             if hasattr(self, "_update_viewer_interaction_cursor"):
                 self._update_viewer_interaction_cursor()
+            if "color_samples" in state and hasattr(self, "_restore_color_picker_samples_state"):
+                sample_state = state.get("color_samples")
+                self._restore_color_picker_samples_state(
+                    sample_state if isinstance(sample_state, dict) else {},
+                    persist=True,
+                )
         finally:
             self._suspend_raw_export_autosave = raw_suspend
             self._suspend_render_adjustment_autosave = render_suspend

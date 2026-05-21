@@ -10,11 +10,12 @@ settings, profiles, hashes and audit artifacts.
 
 ![ProbRAW: main development and profiling interface](assets/screenshots/probraw-portada.png)
 
-This manual covers the complete ProbRAW 0.3.7 workflow: session creation, color
+This manual covers the complete ProbRAW 0.3.x workflow: session creation, color
 chart profiling, manual work without a chart, settings copy/paste, render queue,
-TIFF export, metadata, Proof, C2PA, 3D gamut diagnostics, chart reference
-management, session statistics, colorimetric histogram, MTF sharpness analysis,
-global settings and the meaning of every visible option in the interface.
+TIFF export, metadata, Proof, C2PA, 3D/Lab 2D gamut diagnostics, Lab eyedropper
+samples, comparative color sample sets, chart reference management, session
+statistics, colorimetric histogram, MTF sharpness analysis, global settings and
+the meaning of every visible option in the interface.
 
 ## 1. Installation and Startup
 
@@ -209,7 +210,8 @@ colorimetric references, use original RAW/DNG/TIFF captures, not derived outputs
 | `Imagen` | Technical linear preview analysis: ranges, clipping and useful measurements for checking whether adjustments are stable. |
 | `Carta` | Patch table with reference Lab, ICC-estimated Lab and DeltaE76/DeltaE2000. Filled after profile generation and restored from `profile_report.json` when reopening a session. |
 | Refresh button in `Carta` | Re-reads chart data from the active profile report or registered session reports. |
-| `Gamut 3D` | Pairwise visual comparison between session ICC, monitor, standard spaces or a custom ICC. |
+| `Gamut 3D` | Pairwise visual comparison between session ICC, monitor, standard spaces or a custom ICC. It can be viewed as Lab 3D or as a bidimensional Lab a*b* slice with a vertical L* selector. |
+| `Muestras` | Lab eyedropper for real-pixel measurements, per-image saved samples, sample groups and group comparison through averages, DeltaE and sample gamut. |
 
 ### Metadata
 
@@ -338,14 +340,61 @@ you reopen a session, ProbRAW searches for the `profile_report.json` associated
 with the active ICC or registered profiles and repopulates the table. The refresh
 button forces that lookup if reports were copied after the session was opened.
 
+![Chart diagnostics with per-patch DeltaE](assets/screenshots/probraw-diagnostico-carta.jpeg)
+
 The `Diagnóstico > Gamut 3D` tab always compares a pair of profiles, not every
 profile at once. Choose `Perfil A` and `Perfil B` from session profiles, the
-active ICC, the monitor, sRGB, Adobe RGB, ProPhoto RGB or a custom ICC. The solid
-surface represents the second profile and the wireframe represents the first one.
-The top text reports how much of profile A is inside profile B and warns when a
-generated ICC has extreme Lab coordinates.
+active ICC, the monitor, sRGB, Adobe RGB, ProPhoto RGB or a custom ICC. In
+`Lab 3D`, the solid surface represents the second profile and the wireframe
+represents the first one. In `Lab 2D`, ProbRAW shows a bidimensional a*b* slice;
+the vertical `L*` selector moves the lightness slice and helps inspect saturation
+differences and out-of-gamut areas without relying on 3D perspective. The top
+text reports how much of profile A is inside profile B and warns when a generated
+ICC has extreme Lab coordinates.
 
-![Pairwise 3D gamut comparison](assets/screenshots/probraw-gamut-3d-comparacion.png)
+![Pairwise 3D gamut comparison](assets/screenshots/probraw-gamut-3d-comparacion-actual.jpeg)
+
+### Lab Samples, Sets and Color Comparison
+
+The `Diagnóstico > Muestras` tab measures colors directly on the displayed image.
+Enable `Cuentagotas Lab`, choose the sampling matrix (`1x1`, `3x3`, `5x5`,
+`9x9` or `17x17`) and click in the viewer. While the tool is active, the viewer
+shows a magnifier with the real-pixel grid so the operator can choose the exact
+pixel or pixel group used for the measurement.
+
+![Grouped Lab samples and markers over the image](assets/screenshots/probraw-muestras-lab-conjuntos.jpeg)
+
+Each sample is numbered in the image and in the table. The marker background uses
+the sampled color so it is easy to connect the row with the measured area.
+Samples are saved in the image `RAW.probraw.json` backpack, so each file can keep
+its own measurement set.
+
+The sample table reports position, matrix, normalized RGB, Lab, C*, inside/outside
+state for the compared profiles, common-gamut state and `DE76 ref`, `DE00 ref`
+and `DC* ref` differences against the active reference set. The `Conjunto`,
+`Nombre` and `Nota` columns are editable: use `Conjunto` to group measurements
+that represent the same ink, area or material, and `Nombre`/`Nota` to document
+the sampling criterion. Columns auto-fit when the table is loaded, but can still
+be resized manually.
+
+The `Fichas` mode presents the same data as compact cards. The set table reports
+mean RGB, mean Lab, C*, internal `DE00` dispersion, internal max `DE00`,
+similarity percentage against the reference set and minimum, mean and maximum
+DeltaE values between sets. The lower graph draws each sample set gamut in Lab
+a*b*, with points and a visual hull when enough samples exist. There is no longer
+a primary sample inside a set: the comparative reference is chosen at set level.
+
+Colorimetric precision:
+
+- sample RGB comes from the full-size loaded image; if ProbRAW detects a reduced
+  preview, it requests a full-resolution reload before measuring;
+- Lab values and DeltaE are rigorous only when the image uses a ProbRAW-generated
+  session ICC for that camera, recipe and lighting;
+- with sRGB, Adobe RGB, ProPhoto RGB or another generic profile, Lab is an
+  informative reading of the assigned space, not a validated scene-color
+  measurement;
+- profile gamut comparison and sample-set comparison are diagnostic tools: they
+  do not modify recipes, pixels, active profiles or exports.
 
 ## 8. Complete Workflow Without a Color Chart
 
@@ -784,6 +833,22 @@ Use the no-chart workflow: a standard RGB ICC profile, parametric sidecar
 settings and, when useful, session profiles for reuse. It is traceable, but it
 does not replace the precision of a measured reference.
 
+### The Lab Eyedropper Reports Informative Values
+
+Check the image ICC status. For pixel Lab and DeltaE to be rigorous colorimetric
+measurements, the image must use a ProbRAW-generated ICC for the same camera,
+recipe and lighting. With generic profiles, ProbRAW can still calculate Lab
+mathematically inside the assigned space, but it reports the result as
+informative rather than validated scene color.
+
+### Samples Do Not Match the Expected Pixel
+
+Enable `Cuentagotas Lab`, check the pixel magnifier and choose a matrix that
+matches the material. A `1x1` matrix measures one exact pixel; larger matrices
+average an area and are more robust for inks, papers or textured surfaces. If
+the image is not loaded at real size, ProbRAW asks to load the full source before
+saving the sample.
+
 ### The Image Already Had an Exported TIFF
 
 ProbRAW does not overwrite existing outputs. It creates `_v002`, `_v003`, etc.
@@ -799,9 +864,12 @@ ProbRAW does not overwrite existing outputs. It creates `_v002`, `_v003`, etc.
 | Cache | Temporary preview, thumbnail or demosaic data that speeds up later work. |
 | Chart | Physical reference with known color patches used to measure deviations. |
 | Clipping | Shadow or highlight cut-off where signal becomes black or white without detail. |
+| Color sample set | Group of Lab samples associated with the same ink, area or material; compared through mean values, dispersion, DeltaE and its own gamut. |
 | DCP | Camera profile format used by some RAW developers. ProbRAW prioritizes a reproducible ICC workflow. |
 | DeltaE 2000 | Perceptual color-difference metric between measured and reference colors. |
 | Demosaic | Interpolation that converts the RAW Bayer/X-Trans mosaic into RGB. |
+| Lab | CIE L*a*b* space used as a perceptual reference. In ProbRAW, pixel Lab is rigorous when the image RGB is described by a valid session ICC. |
+| Sample gamut | Visual hull of a sample set in Lab a*b*. It is used to compare internal variation and similarity against another set. |
 | ICC | Color profile that describes how to interpret or convert color values. |
 | Input ICC | Profile describing the camera/session RGB generated from a chart. |
 | Standard ICC | Known profile such as sRGB, Adobe RGB or ProPhoto RGB. |

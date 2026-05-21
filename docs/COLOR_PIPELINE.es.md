@@ -34,6 +34,12 @@ objetiva a que color corresponde cada triplete RGB. La invencion de perfiles
 adicionales y las conversiones implicitas a espacios ajenos no forman parte del
 analisis objetivo.
 
+El analisis Lab por cuentagotas sigue el mismo criterio. ProbRAW puede convertir
+un RGB de imagen a Lab cuando existe un ICC asignado, pero la lectura solo es una
+medicion colorimetrica rigurosa si ese ICC es un perfil de sesion generado por
+ProbRAW para la misma camara, receta e iluminante. Con ICC genericos, el Lab y
+DeltaE son diagnosticos orientativos del espacio asignado.
+
 DCP no forma parte del pipeline activo de la serie 0.3.
 
 ## Modo Científico (`profiling_mode`)
@@ -91,11 +97,17 @@ registrados como perfiles de sesión activables.
     activo hacia el perfil ICC del monitor configurado.
 11. El histograma y el overlay de clipping de la GUI se calculan sobre la señal
     colorimétrica de preview antes de aplicar el ICC del monitor.
-12. El diagnóstico Gamut 3D es una comparación visual de perfiles; no modifica
-    recetas, píxeles, perfiles activos ni manifiestos.
+12. El diagnostico Gamut 3D/Lab 2D es una comparacion visual de perfiles; no
+    modifica recetas, pixeles, perfiles activos ni manifiestos.
 13. Ninguna preview ni imagen gestionada por la GUI puede quedar sin perfil de
     entrada: debe existir un ICC de sesion/imagen o un perfil generico estandar
     real que de significado colorimetrico a los valores RGB.
+14. El cuentagotas Lab y las comparaciones de muestras deben usar pixeles reales
+    de la imagen cargada a resolucion completa; no se aceptan medidas
+    colorimetricas desde miniaturas o previews reducidas.
+15. Las muestras se guardan por imagen en la mochila RAW y se comparan por
+    conjuntos. No existe una referencia primaria dentro de un conjunto; la
+    referencia comparativa es el conjunto de referencia activo.
 
 ## Contrato de Color para Pantalla
 
@@ -155,6 +167,8 @@ La GUI distingue entre señal de análisis y señal de pantalla:
    fuente.
 5. El ICC del monitor nunca se mezcla con los datos de analisis, recetas ni
    TIFF exportados.
+6. El muestreo Lab de pixel usa la misma separacion: RGB de imagen con ICC de
+   entrada para analisis, y conversion al monitor solo para visualizacion.
 
 Esto evita que un perfil de monitor estrecho, defectuoso o diferente entre
 equipos altere los datos de análisis. A la vez, exige que el usuario calibre el
@@ -166,12 +180,34 @@ apariencia visual de la preview sea fiable.
 Para evitar aplicar ICC sobre una preview embebida que no corresponde al RAW
 revelado, las vistas con ICC de sesion o perfil generico evitan la miniatura
 embebida y usan revelado LibRaw. La preview normal se mantiene acotada por
-`PREVIEW_AUTO_BASE_MAX_SIDE`; solo precision 1:1, comparar y marcado de carta
-fuerzan resolucion completa. En trabajo a 100%, las interacciones aplican los
-ajustes al recorte visible, actualizan regiones del visor y reutilizan caches de
-LUT ICC densas generadas por LittleCMS para no sacrificar precision
-colorimetrica. Las curvas reutilizan LUTs tonales y comparten la cuantizacion
-RGB previa a las conversiones `ICC fuente -> ICC monitor` e instrumentos.
+`PREVIEW_AUTO_BASE_MAX_SIDE`; precision 1:1, comparar, marcado de carta,
+muestreo Lab de pixel y mediciones MTF fuerzan resolucion completa cuando la
+medicion necesita coordenadas reales. En trabajo a 100%, las interacciones
+aplican los ajustes al recorte visible, actualizan regiones del visor y
+reutilizan caches de LUT ICC densas generadas por LittleCMS para no sacrificar
+precision colorimetrica. Las curvas reutilizan LUTs tonales y comparten la
+cuantizacion RGB previa a las conversiones `ICC fuente -> ICC monitor` e
+instrumentos.
+
+## Diagnostico Lab de Muestras
+
+La pestaña `Diagnostico > Muestras` es diagnostica y no altera el pipeline de
+revelado. Cada muestra registra coordenada real, matriz de muestreo, RGB
+normalizado, Lab, C*, pertenencia a gamut y el ICC usado para interpretar el RGB.
+Las muestras se agrupan por conjunto para representar variaciones internas de
+una tinta, papel, zona o material.
+
+Las comparaciones entre conjuntos usan:
+
+- medias RGB y Lab por conjunto;
+- dispersion interna `DE00` respecto al centro del conjunto;
+- DeltaE y diferencia de C* frente al conjunto de referencia activo;
+- similitud porcentual basada en vecinos cercanos `DE00 <= 3`;
+- gamut visual de las muestras en Lab a*b*.
+
+Estos datos son validos para auditoria comparativa cuando proceden de una imagen
+con ICC de sesion generado por ProbRAW. Con perfiles genericos, deben etiquetarse
+como diagnostico orientativo.
 
 ## Validez del Perfil
 

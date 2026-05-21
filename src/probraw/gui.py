@@ -34,6 +34,7 @@ from .gui_config import (
 from .raw.preview import apply_render_adjustments
 from .ui.widgets import (
     CollapsibleToolPanel,
+    ColorSampleGamutWidget,
     Gamut3DWidget,
     ImagePanel,
     MTFComparisonPlotWidget,
@@ -65,9 +66,11 @@ from .ui.window._imports import (
     build_gamut_pair_diagnostics,
     detect_system_display_profile,
     develop_image_array,
+    evaluate_lab_gamut_membership,
     extract_embedded_preview,
     extract_embedded_thumbnail,
     load_image_for_preview,
+    lookup_lab_with_icc,
     read_image,
     write_raw_mtf_analysis,
     write_raw_sidecar,
@@ -198,6 +201,11 @@ if QtWidgets is not None:
             self._manual_chart_points_source: Path | None = None
             self._manual_chart_marking_after_reload = False
             self._neutral_picker_active = False
+            self._color_picker_active = False
+            self._color_picker_samples: list[dict[str, Any]] = []
+            self._color_picker_groups: list[str] = ["Conjunto 1"]
+            self._color_picker_active_group = "Conjunto 1"
+            self._color_picker_group_reference = "Conjunto 1"
             self._mtf_roi_selection_active = False
             self._mtf_roi: tuple[int, int, int, int] | None = None
             self._image_crop_selection_active = False

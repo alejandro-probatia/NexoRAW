@@ -152,6 +152,26 @@ pruebas.
 8. Si un asset publicado resulta defectuoso y GitHub no permite reemplazarlo,
    crear una revision nueva de la release y marcar la anterior con un aviso.
 
+## Release 0.4.0
+
+La release 0.4.0 anade diagnostico de muestras Lab:
+
+- cuentagotas Lab de pixel real con matrices de muestreo y lupa en visor,
+- persistencia por imagen de muestras en `RAW.probraw.json`,
+- conjuntos de muestras con vistas tabla/fichas y campos editables de nombre y
+  nota,
+- comparacion por conjunto de DeltaE, C*, dispersion, similitud y gamut de
+  muestras,
+- cortes Lab 2D con selector vertical L* junto a la vista Lab 3D existente.
+
+Artefactos esperados para la release Windows:
+
+- `ProbRAW-0.4.0-Setup.exe`
+- `ProbRAW-0.4.0-Setup.exe.sha256`
+- `probraw-0.4.0.tar.gz`
+- `probraw-0.4.0-py3-none-any.whl`
+- `probraw_0.4.0_python_artifacts.sha256`
+
 ## Release 0.3.22
 
 La release 0.3.22 corrige el flujo de seleccion de perfiles ICC generados en la

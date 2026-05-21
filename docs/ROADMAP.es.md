@@ -22,8 +22,10 @@ paralelas de perfilado de color.
 - Catálogo persistente de perfiles ICC de sesión con varias versiones activables.
 - Referencias de carta gestionadas desde la interfaz, incluyendo editor tabular
   Lab para cartas personalizadas.
-- Diagnóstico Gamut 3D por pares para comparar perfiles de sesión, monitor,
-  espacios estándar e ICC personalizados.
+- Diagnóstico Gamut 3D/Lab 2D por pares para comparar perfiles de sesión,
+  monitor, espacios estándar e ICC personalizados.
+- Cuentagotas Lab con lupa de píxel real, muestras persistentes por imagen,
+  conjuntos de muestras y comparación DeltaE/gamut entre conjuntos.
 - Flujo con ICC estándar de salida para sesiones sin carta.
 - Gestión ICC del monitor limitada al preview.
 - Marcado manual de cuatro esquinas de carta en el visor.

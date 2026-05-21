@@ -10,12 +10,13 @@ perfiles, hashes y artefactos de auditoría.
 
 ![ProbRAW: interfaz principal de revelado y perfilado](assets/screenshots/probraw-portada.png)
 
-Este manual cubre el flujo completo de ProbRAW 0.3.7: creación de sesión,
+Este manual cubre el flujo completo de ProbRAW 0.3.x: creación de sesión,
 perfilado con carta, perfil manual sin carta, copia de ajustes, cola de revelado,
-exportación TIFF, metadatos, Proof, C2PA, diagnóstico Gamut 3D, gestión de
-referencias de carta, estadísticas de sesión, histograma colorimétrico,
-análisis MTF de nitidez, configuración global y significado de todas las
-opciones visibles en la interfaz.
+exportación TIFF, metadatos, Proof, C2PA, diagnóstico Gamut 3D/Lab 2D, muestras
+Lab con cuentagotas, conjuntos comparativos de color, gestión de referencias de
+carta, estadísticas de sesión, histograma colorimétrico, análisis MTF de nitidez,
+configuración global y significado de todas las opciones visibles en la
+interfaz.
 
 ## 1. Instalación y arranque
 
@@ -214,7 +215,8 @@ de salida.
 | `Imagen` | Análisis técnico lineal del preview: rangos, clipping y medidas útiles para revisar si los ajustes son estables. |
 | `Carta` | Tabla de parches Lab de referencia, Lab estimado por ICC y DeltaE76/DeltaE2000. Se rellena al generar perfil y se recupera desde `profile_report.json` al abrir la sesión. |
 | Botón actualizar en `Carta` | Relee datos de carta desde el reporte de perfil activo o los reportes registrados en la sesión. |
-| `Gamut 3D` | Comparación visual por pares entre ICC de sesión, monitor, espacios estándar o ICC personalizado. |
+| `Gamut 3D` | Comparación visual por pares entre ICC de sesión, monitor, espacios estándar o ICC personalizado. Puede verse como Lab 3D o como corte bidimensional Lab a*b* con selector vertical de L*. |
+| `Muestras` | Cuentagotas Lab para medir píxeles reales, guardar tomas por imagen, agruparlas en conjuntos y comparar grupos mediante medias, DeltaE y gamut de muestras. |
 
 ### Metadatos
 
@@ -357,14 +359,64 @@ ICC activo o a los perfiles registrados y vuelve a poblar la tabla. El botón de
 actualización fuerza esa lectura si has copiado reportes después de abrir la
 sesión.
 
+![Diagnóstico de carta con DeltaE por parche](assets/screenshots/probraw-diagnostico-carta.jpeg)
+
 La pestaña `Diagnóstico > Gamut 3D` compara siempre un par de perfiles, no todos
 a la vez. Elige `Perfil A` y `Perfil B` entre perfiles de sesión, el ICC activo,
-el monitor, sRGB, Adobe RGB, ProPhoto RGB o un ICC personalizado. La superficie
-sólida representa el segundo perfil y la malla el primero. El texto superior
-indica qué porcentaje del perfil A queda dentro del perfil B y avisa cuando el
-ICC generado tiene coordenadas Lab extremas.
+el monitor, sRGB, Adobe RGB, ProPhoto RGB o un ICC personalizado. En `Lab 3D`, la
+superficie sólida representa el segundo perfil y la malla el primero. En `Lab 2D`
+se muestra un corte bidimensional a*b*; el selector vertical `L*` desplaza el
+corte de luminosidad y ayuda a revisar diferencias de saturación y zonas fuera
+de gama sin depender de la perspectiva 3D. El texto superior indica qué
+porcentaje del perfil A queda dentro del perfil B y avisa cuando el ICC generado
+tiene coordenadas Lab extremas.
 
-![Comparador Gamut 3D por pares](assets/screenshots/probraw-gamut-3d-comparacion.png)
+![Comparador Gamut 3D por pares](assets/screenshots/probraw-gamut-3d-comparacion-actual.jpeg)
+
+### Muestras Lab, conjuntos y comparación de color
+
+La pestaña `Diagnóstico > Muestras` permite medir colores directamente sobre la
+imagen visualizada. Activa `Cuentagotas Lab`, elige la matriz de muestreo (`1x1`,
+`3x3`, `5x5`, `9x9` o `17x17`) y haz clic en el visor. Mientras la herramienta
+está activa, el visor muestra una lupa con la cuadrícula de píxeles reales para
+elegir con precisión el píxel o grupo de píxeles que se va a medir.
+
+![Muestras Lab agrupadas y marcadores sobre la imagen](assets/screenshots/probraw-muestras-lab-conjuntos.jpeg)
+
+Cada toma queda numerada en la imagen y en la tabla. El marcador usa como fondo
+el color obtenido para que sea fácil relacionar la fila con la zona medida. Las
+tomas se guardan en la mochila `RAW.probraw.json` de la imagen, de modo que cada
+archivo puede conservar su propio conjunto de mediciones.
+
+La tabla de muestras muestra posición, matriz, RGB normalizado, Lab, C*, estado
+dentro/fuera de los perfiles comparados, pertenencia a gama común y diferencias
+`DE76 ref`, `DE00 ref` y `DC* ref` frente al conjunto de referencia activo. Las
+columnas `Conjunto`, `Nombre` y `Nota` son editables: usa `Conjunto` para agrupar
+mediciones que representan una misma tinta, zona o material, y `Nombre`/`Nota`
+para documentar el criterio de toma. Las columnas se autoajustan al cargar la
+tabla, pero pueden redimensionarse manualmente.
+
+El modo `Fichas` muestra la misma información como tarjetas compactas. La tabla
+de conjuntos calcula RGB medio, Lab medio, C*, dispersión interna `DE00`, máximo
+interno `DE00`, similitud porcentual frente al conjunto de referencia y mínimos,
+medias y máximos de DeltaE entre conjuntos. El gráfico inferior dibuja el gamut
+de cada conjunto de muestras en Lab a*b*, con puntos y envolvente visual cuando
+hay suficientes tomas. No existe ya una muestra primaria dentro de un conjunto:
+la referencia comparativa se elige a nivel de conjunto.
+
+Precisión colorimétrica:
+
+- el RGB de la muestra procede de la imagen cargada a tamaño real; si ProbRAW
+  detecta que se está trabajando con una preview reducida, solicita recarga a
+  resolución completa antes de medir;
+- el valor Lab y los DeltaE solo son rigurosos cuando la imagen usa un ICC de
+  sesión generado por ProbRAW para esa cámara, receta e iluminación;
+- si se usa sRGB, Adobe RGB, ProPhoto RGB u otro perfil genérico, el resultado
+  Lab es una lectura orientativa del espacio asignado, no una medición
+  colorimétrica validada de la escena;
+- las comparaciones de gamut de perfiles y las comparaciones de conjuntos son
+  herramientas de diagnóstico: no modifican recetas, píxeles, perfiles activos
+  ni exportaciones.
 
 ## 8. Flujo completo sin carta de color
 
@@ -809,6 +861,22 @@ Usa el flujo sin carta: perfil ICC RGB estándar, ajustes paramétricos por
 mochila y, si conviene, perfiles de sesión para reutilizarlos. Es trazable, pero
 no sustituye la precisión de una referencia medida.
 
+### El cuentagotas Lab muestra valores orientativos
+
+Comprueba el estado ICC de la imagen. Para que el Lab de un píxel y sus DeltaE
+sean mediciones colorimétricas rigurosas, la imagen debe tener asignado un ICC
+generado por ProbRAW para la misma cámara, receta e iluminación. Con perfiles
+genéricos, ProbRAW puede calcular Lab matemáticamente dentro de ese espacio, pero
+lo advertirá como lectura orientativa.
+
+### Las muestras no coinciden con el píxel esperado
+
+Activa `Cuentagotas Lab`, revisa la lupa de píxeles y usa una matriz adecuada al
+material. Una matriz `1x1` mide un píxel exacto; matrices mayores promedian una
+zona y son más robustas para tintas, papeles o superficies con textura. Si la
+imagen no está a tamaño real, ProbRAW solicita cargar la fuente completa antes de
+guardar la muestra.
+
 ### La imagen ya tenía un TIFF exportado
 
 ProbRAW no sobrescribe salidas existentes. Crea sufijos `_v002`, `_v003`, etc.
@@ -823,13 +891,16 @@ ProbRAW no sobrescribe salidas existentes. Crea sufijos `_v002`, `_v003`, etc.
 | Caché | Datos temporales de previews, miniaturas o demosaico que aceleran trabajo posterior. |
 | Carta de color | Referencia física con parches de color conocidos usada para medir desviaciones. |
 | Clipping | Recorte de sombras o luces cuando la señal queda en negro o blanco sin detalle. |
+| Conjunto de muestras | Grupo de tomas Lab asociadas a una misma tinta, zona o material; se compara mediante media, dispersión, DeltaE y gamut propio. |
 | DCP | Perfil de cámara usado por algunos reveladores RAW. ProbRAW prioriza un flujo ICC reproducible. |
 | DeltaE 2000 | Métrica de diferencia perceptual entre colores medidos y de referencia. |
 | Demosaico | Interpolación que convierte el mosaico Bayer/X-Trans del RAW en RGB. |
+| Gamut de muestras | Envolvente visual de las tomas de un conjunto en Lab a*b*. Sirve para comparar variación interna y similitud frente a otro conjunto. |
 | ICC | Perfil de color que describe cómo interpretar o convertir valores de color. |
 | ICC de entrada | Perfil que describe el RGB de cámara/sesión generado desde carta. |
 | ICC estándar | Perfil conocido como sRGB, Adobe RGB o ProPhoto RGB. |
 | Iluminante | Descripción del punto blanco o fuente de luz de referencia. |
+| Lab | Espacio CIE L*a*b* usado como referencia perceptual. En ProbRAW el Lab de píxel es riguroso cuando el RGB de la imagen está descrito por un ICC de sesión válido. |
 | Mochila | Sidecar `RAW.probraw.json` con ajustes asignados al RAW. |
 | Perfil ICC de sesión | ICC generado o registrado dentro del proyecto, normalmente a partir de una carta de color. |
 | Perfil de ajuste | Perfil guardado de una categoría concreta: ICC, color/contraste, nitidez o RAW/exportación. |

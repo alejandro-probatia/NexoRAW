@@ -13,6 +13,11 @@ work, reduce allocations, reuse caches or move work away from the UI thread, but
 they must not replace colorimetric calculations with approximations that alter
 the image.
 
+The complementary implementation plan is tracked in
+[Performance Improvement Plan](PERFORMANCE_IMPROVEMENTS.md). That plan documents
+candidate display/cache optimizations and their validation requirements before
+they can be merged.
+
 ## Tools
 
 Granular profile of actual commands:
@@ -129,9 +134,9 @@ Benchmark GUI with the same RAW, Qt `offscreen`, 80 steps per control:
 
 | Source | Control | p95 UI event | p95 event loop | max event loop | Final preview |
 | --- | --- | ---: | ---: | ---: | ---: |
-| D850 half-size 2760x4144 | glitter | 0.063ms | 16.84ms | 55.32ms | 272ms |
+| D850 half-size 2760x4144 | brightness | 0.063ms | 16.84ms | 55.32ms | 272ms |
 | D850 half-size 2760x4144 | tone curve | 0.128ms | 16.87ms | 49.41ms | 434ms |
-| D850 full 5520x8288 | glitter | 0.053ms | 16.72ms | 58.94ms | 275ms |
+| D850 full 5520x8288 | brightness | 0.053ms | 16.72ms | 58.94ms | 275ms |
 | D850 full 5520x8288 | tone curve | 0.094ms | 16.78ms | 49.51ms | 443ms |
 
 Before queuing the final heavy refresh, the max of the event loop on release

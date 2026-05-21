@@ -6,6 +6,7 @@ from typing import Any
 import colour
 from colour.adaptation import matrix_chromatic_adaptation_VonKries
 import numpy as np
+from scipy.spatial import Delaunay, QhullError
 
 from .builder import D50_XY, D50_XYZ, _lookup_lab_with_icc
 from .generic import GENERIC_RGB_PROFILES
@@ -137,6 +138,49 @@ def build_gamut_series_from_spec(spec: dict[str, Any], *, grid_size: int) -> dic
             grid_size=grid_size,
         )
     raise RuntimeError(f"Tipo de perfil gamut no soportado: {kind or '<vacio>'}")
+
+
+def evaluate_lab_gamut_membership(
+    lab_points: np.ndarray,
+    *,
+    profile_a: dict[str, Any] | None,
+    profile_b: dict[str, Any] | None,
+    grid_size: int = GAMUT_GRID_SIZE,
+) -> dict[str, Any]:
+    points = _finite_lab_points(np.asarray(lab_points, dtype=np.float64))
+    if points.size == 0:
+        return {
+            "points_lab": points,
+            "inside_a": np.zeros(0, dtype=bool),
+            "inside_b": np.zeros(0, dtype=bool),
+            "inside_common": np.zeros(0, dtype=bool),
+            "label_a": "sin perfil",
+            "label_b": "sin perfil",
+            "method_a": "",
+            "method_b": "",
+        }
+    series_a = build_gamut_series_from_spec(profile_a, grid_size=grid_size) if isinstance(profile_a, dict) else None
+    series_b = build_gamut_series_from_spec(profile_b, grid_size=grid_size) if isinstance(profile_b, dict) else None
+    inside_a, method_a = (
+        _lab_inside_profile(points, series_a)
+        if isinstance(series_a, dict)
+        else (np.zeros(points.shape[0], dtype=bool), "")
+    )
+    inside_b, method_b = (
+        _lab_inside_profile(points, series_b)
+        if isinstance(series_b, dict)
+        else (np.zeros(points.shape[0], dtype=bool), "")
+    )
+    return {
+        "points_lab": points,
+        "inside_a": inside_a,
+        "inside_b": inside_b,
+        "inside_common": np.logical_and(inside_a, inside_b),
+        "label_a": str(series_a.get("label") if isinstance(series_a, dict) else "sin perfil"),
+        "label_b": str(series_b.get("label") if isinstance(series_b, dict) else "sin perfil"),
+        "method_a": method_a,
+        "method_b": method_b,
+    }
 
 
 def build_icc_gamut_series(
@@ -279,28 +323,72 @@ def _pair_containment_comparisons(series: list[dict[str, Any]]) -> list[dict[str
     if len(series) != 2:
         return []
     a, b = series
-    comparisons: list[dict[str, Any]] = []
-    if b.get("kind") == "standard" and b.get("profile_key"):
-        comparisons.append(_containment_record(source=a, target=b))
-    if a.get("kind") == "standard" and a.get("profile_key"):
-        comparisons.append(_containment_record(source=b, target=a))
-    return comparisons
+    comparisons = [
+        _containment_record(source=a, target=b, marker_color="#f43f5e"),
+        _containment_record(source=b, target=a, marker_color="#38bdf8"),
+    ]
+    return [record for record in comparisons if record is not None]
 
 
-def _containment_record(source: dict[str, Any], target: dict[str, Any]) -> dict[str, Any]:
+def _containment_record(
+    *,
+    source: dict[str, Any],
+    target: dict[str, Any],
+    marker_color: str,
+) -> dict[str, Any] | None:
     source_points = _finite_lab_points(np.asarray(source.get("points_lab"), dtype=np.float64))
-    key = str(target.get("profile_key") or "")
-    inside = _lab_inside_standard_rgb(source_points, key) if key else np.zeros(len(source_points), dtype=bool)
+    if source_points.size == 0:
+        return None
+    inside, method = _lab_inside_profile(source_points, target)
     inside_count = int(np.count_nonzero(inside))
     total = int(inside.size)
-    return {
+    _attach_out_of_gamut_samples(source, target, source_points, inside, marker_color=marker_color)
+    record = {
         "source": str(source.get("label") or "Perfil"),
-        "target": str(target.get("label") or key),
-        "target_profile_key": key,
+        "target": str(target.get("label") or target.get("profile_key") or "Perfil"),
+        "target_profile_key": str(target.get("profile_key") or ""),
         "inside_samples": inside_count,
         "outside_samples": int(total - inside_count),
         "inside_ratio": float(inside_count / total) if total else 0.0,
     }
+    if method:
+        record["method"] = method
+    return record
+
+
+def _lab_inside_profile(lab_points: np.ndarray, target: dict[str, Any]) -> tuple[np.ndarray, str]:
+    points = _finite_lab_points(lab_points)
+    if points.size == 0:
+        return np.zeros(0, dtype=bool), ""
+    key = str(target.get("profile_key") or "")
+    if target.get("kind") == "standard" and key:
+        return _lab_inside_standard_rgb(points, key), "rgb_primaries"
+    target_points = _finite_lab_points(np.asarray(target.get("points_lab"), dtype=np.float64))
+    return _lab_inside_lab_convex_hull(points, target_points), "lab_convex_hull"
+
+
+def _attach_out_of_gamut_samples(
+    source: dict[str, Any],
+    target: dict[str, Any],
+    source_points: np.ndarray,
+    inside: np.ndarray,
+    *,
+    marker_color: str,
+) -> None:
+    total = int(len(source_points))
+    if total == 0 or inside.shape[0] != total:
+        return
+    outside = np.logical_not(inside)
+    outside_count = int(np.count_nonzero(outside))
+    rgb = np.asarray(source.get("surface_rgb"), dtype=np.float64)
+    if rgb.ndim != 2 or rgb.shape[0] != total or rgb.shape[1] < 3:
+        rgb = np.zeros((total, 3), dtype=np.float64)
+    source["out_of_gamut_lab"] = np.ascontiguousarray(source_points[outside], dtype=np.float64)
+    source["out_of_gamut_rgb"] = np.ascontiguousarray(np.clip(rgb[outside, :3], 0.0, 1.0), dtype=np.float64)
+    source["out_of_gamut_samples"] = outside_count
+    source["out_of_gamut_ratio"] = float(outside_count / total) if total else 0.0
+    source["out_of_gamut_target"] = str(target.get("label") or target.get("profile_key") or "Perfil")
+    source["out_of_gamut_color"] = marker_color
 
 
 def _lab_inside_standard_rgb(lab_points: np.ndarray, output_space: str, *, tolerance: float = 1e-4) -> np.ndarray:
@@ -317,6 +405,30 @@ def _lab_inside_standard_rgb(lab_points: np.ndarray, output_space: str, *, toler
     matrix = np.asarray(rgb_space.matrix_RGB_to_XYZ, dtype=np.float64)
     rgb_linear = xyz_native @ np.linalg.inv(matrix).T
     return np.all((rgb_linear >= -tolerance) & (rgb_linear <= 1.0 + tolerance), axis=1)
+
+
+def _lab_inside_lab_convex_hull(
+    lab_points: np.ndarray,
+    target_points: np.ndarray,
+    *,
+    tolerance: float = 1e-8,
+) -> np.ndarray:
+    points = _finite_lab_points(lab_points)
+    if points.size == 0:
+        return np.zeros(0, dtype=bool)
+    target = _finite_lab_points(target_points)
+    if target.shape[0] < 4:
+        return np.zeros(points.shape[0], dtype=bool)
+    target = np.unique(np.round(target, decimals=8), axis=0)
+    if target.shape[0] < 4:
+        return np.zeros(points.shape[0], dtype=bool)
+    try:
+        hull = Delaunay(target)
+        return hull.find_simplex(points, tol=tolerance) >= 0
+    except QhullError:
+        mins = np.min(target, axis=0) - tolerance
+        maxs = np.max(target, axis=0) + tolerance
+        return np.all((points >= mins) & (points <= maxs), axis=1)
 
 
 def _finite_lab_points(points: np.ndarray) -> np.ndarray:

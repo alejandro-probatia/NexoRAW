@@ -1146,13 +1146,33 @@ class ProfileWorkflowMixin:
     def _on_refresh_gamut_diagnostics(self, _checked: bool = False) -> None:
         self._refresh_gamut_diagnostics(focus=True)
 
+    def _on_gamut_view_mode_changed(self, *_args: object) -> None:
+        mode = (
+            str(self.gamut_view_mode_combo.currentData() or "lab3d")
+            if hasattr(self, "gamut_view_mode_combo")
+            else "lab3d"
+        )
+        if hasattr(self, "gamut_3d_widget"):
+            self.gamut_3d_widget.set_view_mode(mode)
+        slice_visible = mode == "lab_xy"
+        for name in ("gamut_l_slice_label", "gamut_l_slice_slider"):
+            widget = getattr(self, name, None)
+            if widget is not None:
+                widget.setVisible(slice_visible)
+
+    def _on_gamut_l_slice_changed(self, value: int) -> None:
+        if hasattr(self, "gamut_l_slice_label"):
+            self.gamut_l_slice_label.setText(f"L* {int(value)}")
+        if hasattr(self, "gamut_3d_widget"):
+            self.gamut_3d_widget.set_l_slice(float(value))
+
     def _refresh_gamut_diagnostics(self, *, profile_out: Path | None = None, focus: bool = False) -> None:
         if not hasattr(self, "gamut_3d_widget"):
             return
         generated_profile = profile_out or self._candidate_generated_gamut_profile()
         snapshot = self._gamut_selection_snapshot(generated_profile=generated_profile)
         if hasattr(self, "gamut_status_label"):
-            self.gamut_status_label.setText(self.tr("Gamut 3D: calculando..."))
+            self.gamut_status_label.setText(self.tr("Gamut: calculando..."))
 
         def task():
             task_monitor_profile = snapshot["monitor_profile"]
@@ -1467,6 +1487,8 @@ class ProfileWorkflowMixin:
         if hasattr(self, "_deactivate_image_level_tool"):
             self._deactivate_image_level_tool()
         self._set_neutral_picker_active(False)
+        if hasattr(self, "_set_color_picker_active"):
+            self._set_color_picker_active(False)
         self._manual_chart_marking = True
         self._manual_chart_points = []
         self._manual_chart_points_source = self._selected_file.expanduser().resolve(strict=False) if self._selected_file else None
@@ -1502,6 +1524,8 @@ class ProfileWorkflowMixin:
     def _on_result_image_click(self, x: float, y: float) -> None:
         if self._neutral_picker_active:
             self._apply_neutral_picker_at(x, y)
+            return
+        if hasattr(self, "_handle_color_picker_click") and self._handle_color_picker_click(x, y):
             return
         if hasattr(self, "_handle_image_tool_click") and self._handle_image_tool_click(x, y):
             return

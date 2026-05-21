@@ -10,7 +10,7 @@ Reproducible and auditable RAW/TIFF development for scientific, forensic and
 heritage photography, with session ICC profiling, per-file parametric settings
 and open AGPL traceability.
 
-![AGPL-3.0-or-later License](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue) ![CI](https://img.shields.io/badge/CI-pending-lightgrey) ![Version](https://img.shields.io/badge/version-v0.3.20-brightgreen) ![Python](https://img.shields.io/badge/python-3.11%2B-blue) ![Platforms](https://img.shields.io/badge/platforms-Linux%20%7C%20macOS%20%7C%20Windows-informational)
+![AGPL-3.0-or-later License](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue) ![CI](https://img.shields.io/badge/CI-pending-lightgrey) ![Version](https://img.shields.io/badge/version-v0.4.0-brightgreen) ![Python](https://img.shields.io/badge/python-3.11%2B-blue) ![Platforms](https://img.shields.io/badge/platforms-Linux%20%7C%20macOS%20%7C%20Windows-informational)
 
 ![ProbRAW main interface](docs/assets/screenshots/probraw-portada.png)
 
@@ -26,24 +26,26 @@ The current workflow is intentionally ICC-centered:
   session-specific input ICC profile;
 - without a chart, ProbRAW uses a manual development profile and a real generic
   input ICC (`sRGB`, `Adobe RGB (1998)` or `ProPhoto RGB`);
+- the diagnostics panel can review chart data, 3D/Lab 2D gamut and grouped Lab
+  samples with DeltaE comparison between sets;
 - monitor ICC management affects only on-screen preview;
 - DCP support is not an active implementation target for the 0.3 line.
 
 ## Current Status
 
-ProbRAW 0.3.20 is suitable for controlled testing, method review and release
+ProbRAW 0.4.0 is suitable for controlled testing, method review and release
 candidate validation. It is not yet a certified scientific or forensic
 production system.
 
-The current version tightens monitor color preview handling, aligns all default
-session working folders with the active project and fixes manual chart ICC
-generation, while preserving the signed TIFF output path and the MTF analysis
+The current version adds Lab sample diagnostics: real-pixel eyedropper,
+per-image sample persistence, sample sets, DeltaE comparison and Lab 2D gamut
+inspection, while preserving the signed TIFF output path and the MTF analysis
 guarantees.
 
 The latest packaging validation passed with:
 
 ```text
-Release validation is recorded in docs/releases/0.3.20.md.
+Release validation is recorded in docs/releases/0.4.0.md.
 CachyOS probraw 0.3.18-3: pacman -Qkk -> 18160 files, 0 altered; validate_cachyos_install -> OK
 ```
 
@@ -144,6 +146,14 @@ Session folders are:
 
 The full list of controls and workflows is documented in the
 [User Manual](docs/MANUAL_USUARIO.md).
+
+## Diagnostic Screenshots
+
+![Chart diagnostics with per-patch DeltaE](docs/assets/screenshots/probraw-diagnostico-carta.jpeg)
+
+![ICC gamut comparison in Lab 3D](docs/assets/screenshots/probraw-gamut-3d-comparacion-actual.jpeg)
+
+![Grouped Lab samples with image markers](docs/assets/screenshots/probraw-muestras-lab-conjuntos.jpeg)
 
 ## CLI Examples
 

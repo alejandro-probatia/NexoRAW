@@ -16,6 +16,8 @@ class ImageToolsMixin:
             self._deactivate_image_level_tool()
             self._manual_chart_marking = False
             self._set_neutral_picker_active(False)
+            if hasattr(self, "_set_color_picker_active"):
+                self._set_color_picker_active(False)
             if hasattr(self, "_set_mtf_roi_selection_active"):
                 self._set_mtf_roi_selection_active(False)
             if hasattr(self, "_sync_manual_chart_overlay"):
@@ -95,6 +97,8 @@ class ImageToolsMixin:
             self._set_mtf_roi_selection_active(False)
         self._manual_chart_marking = False
         self._set_neutral_picker_active(False)
+        if hasattr(self, "_set_color_picker_active"):
+            self._set_color_picker_active(False)
         self._image_level_selection_active = True
         self._image_level_mode = mode
         self._image_level_points = []
@@ -328,11 +332,32 @@ class ImageToolsMixin:
         action.setCheckable(True)
         return action
 
+    def _color_picker_action(self):
+        action = getattr(self, "action_color_picker_select", None)
+        if action is None:
+            action = self._viewer_action(
+                self.tr("Cuentagotas Lab"),
+                self._toggle_color_picker,
+                icon=self._text_badge_icon("Lab"),
+                checkable=True,
+                tooltip=self.tr("Tomar muestras RGB/Lab y comparar contra los perfiles A/B del gamut"),
+            )
+            self.action_color_picker_select = action
+            return action
+        action.setIcon(self._text_badge_icon("Lab"))
+        action.setToolTip(self.tr("Tomar muestras RGB/Lab y comparar contra los perfiles A/B del gamut"))
+        action.setStatusTip(self.tr("Tomar muestras RGB/Lab y comparar contra los perfiles A/B del gamut"))
+        action.setCheckable(True)
+        return action
+
     def _image_adjustment_toolbar_actions(self) -> list:
         crop_action = self._image_crop_action()
         crop_action.setText(self.tr("Seleccionar recorte"))
+        color_picker_action = self._color_picker_action()
+        color_picker_action.setText(self.tr("Cuentagotas Lab"))
         return [
             crop_action,
+            color_picker_action,
             self._viewer_action(
                 self.tr("Nivelar horizontal"),
                 lambda: self._start_image_level_tool("horizontal"),

@@ -146,6 +146,24 @@ zip.
 8. If a published asset turns out to be defective and GitHub does not allow it to be replaced,
    create a new revision of the release and mark the previous one with a warning.
 
+## Release 0.4.0
+
+Release 0.4.0 adds Lab sample diagnostics:
+
+- real-pixel Lab eyedropper with sampling matrices and viewer magnifier,
+- per-image persistence of samples in `RAW.probraw.json`,
+- named sample sets with table/card views and editable name/note fields,
+- set-level DeltaE, C*, dispersion, similarity and sample-gamut comparison,
+- Lab 2D gamut slices with vertical L* selector next to the existing Lab 3D view.
+
+Expected artifacts for the Windows release:
+
+- `ProbRAW-0.4.0-Setup.exe`
+- `ProbRAW-0.4.0-Setup.exe.sha256`
+- `probraw-0.4.0.tar.gz`
+- `probraw-0.4.0-py3-none-any.whl`
+- `probraw_0.4.0_python_artifacts.sha256`
+
 ## Release 0.3.22
 
 Release 0.3.22 fixes the session-generated ICC profile selection workflow:

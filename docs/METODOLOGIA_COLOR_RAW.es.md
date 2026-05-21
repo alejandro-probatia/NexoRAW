@@ -8,7 +8,7 @@ del monitor.
 
 La decisión vigente es mantener un flujo científico centrado en ICC. La
 integración DCP fue evaluada como posibilidad futura, pero no forma parte del
-alcance activo de la serie 0.2 porque añade complejidad y puede mezclar
+alcance activo de la serie 0.3 porque añade complejidad y puede mezclar
 decisiones colorimétricas con decisiones de apariencia.
 
 ## Referencias Consultadas
@@ -45,6 +45,13 @@ produce. El ICC de entrada etiqueta esos valores y define su correspondencia
 objetiva con colorimetria PCS/Lab/XYZ. Sin esa etiqueta, el triplete RGB no es un
 color objetivo reproducible.
 
+El cuentagotas Lab de imagen aplica exactamente este principio. El valor RGB de
+un píxel o matriz de píxeles solo puede convertirse en una medición Lab rigurosa
+si la imagen tiene asignado un ICC de sesión generado por ProbRAW para esa
+cámara, receta e iluminante. Un ICC genérico permite calcular coordenadas Lab de
+forma matemática, pero no convierte la escena en una referencia colorimétrica
+medida.
+
 Por tanto:
 
 - la receta corrige y documenta el revelado base;
@@ -72,6 +79,9 @@ El contrato metodológico para RAW es:
    ICC de monitor configurado por el sistema operativo.
 10. Para exportacion, incrustar el ICC de entrada asociado y registrar
     procedencia.
+11. Para análisis de muestras, medir siempre sobre la imagen real a resolución
+    completa, registrar coordenada, matriz, RGB, Lab, ICC usado y grupo de
+    comparación en la mochila del archivo.
 
 Implementación actual:
 
@@ -123,6 +133,29 @@ Cuando existe una captura válida de carta:
 El perfil avanzado puede copiarse a imágenes tomadas bajo condiciones
 comparables de cámara, óptica, iluminante, exposición base y receta.
 
+## Análisis de Muestras Lab
+
+El análisis de muestras Lab está pensado para comparar zonas reales de una
+imagen, por ejemplo varias tomas de una misma tinta impresa sobre papel. Una sola
+toma puede depender de textura, ruido, velocidad de trazo, acumulación local de
+tinta o iluminación microscópica. Agrupar varias tomas en un conjunto permite
+estimar mejor la variación cromática real de ese material.
+
+Reglas metodológicas:
+
+- medir solo sobre píxeles reales de la imagen cargada a tamaño completo;
+- documentar matriz, coordenada, nombre y nota de cada muestra;
+- agrupar muestras que pertenecen al mismo material o hipótesis de comparación;
+- comparar conjuntos mediante media Lab, dispersión interna, DeltaE frente al
+  conjunto de referencia y gamut de muestras en Lab a*b*;
+- no usar una muestra primaria dentro del conjunto, porque la referencia
+  operacional es el conjunto completo.
+
+La lectura RGB siempre es trazable. La lectura Lab, DeltaE y gamut de muestras
+solo son colorimétricamente rigurosos cuando el ICC de entrada de la imagen es
+un perfil generado por ProbRAW para ese caso de captura. Con perfiles genéricos,
+el análisis debe rotularse como orientativo.
+
 ## Criterios de Mejora No Bloqueantes
 
 ProbRAW debe permitir generar perfiles aunque el caso de trabajo no sea ideal.
@@ -172,6 +205,10 @@ Cuando no existe carta:
 Este flujo es reproducible y funcional, pero no sustituye la precisión de una
 referencia colorimétrica medida.
 
+Las muestras Lab tomadas en este flujo sin carta tienen la misma limitación: son
+útiles para comparar de forma interna bajo el mismo espacio genérico, pero no
+deben presentarse como medición Lab validada de la escena.
+
 ## TIFF Maestro y Derivados
 
 ProbRAW distingue:
@@ -196,6 +233,8 @@ El sidecar de mochila registra:
 - perfil de ajuste asignado;
 - ICC asociado y hash cuando existe;
 - ajustes de detalle y render;
+- muestras Lab por imagen, con coordenadas reales, grupos, notas y comparación
+  de conjuntos;
 - últimas salidas TIFF generadas.
 
 La mochila no sustituye al RAW ni al manifiesto de lote. Su función es transportar

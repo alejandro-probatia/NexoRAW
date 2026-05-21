@@ -320,6 +320,8 @@ class PreviewLoadMixin:
             self._last_loaded_preview_key = None
             self._clear_manual_chart_points_for_file_change()
             self._clear_mtf_roi_for_file_change()
+            if hasattr(self, "_clear_color_picker_samples_for_file_change"):
+                self._clear_color_picker_samples_for_file_change()
             self.selected_file_label.setText(self.tr("Sin archivo seleccionado"))
             self._clear_metadata_view()
             self._clear_viewer_histogram()
@@ -392,6 +394,10 @@ class PreviewLoadMixin:
             self._auto_update_mtf_pixel_pitch_from_file(selected)
             self._refresh_preview()
             self._restore_persisted_mtf_analysis_for_selected(selected)
+            if hasattr(self, "_load_color_picker_samples_for_selected"):
+                self._load_color_picker_samples_for_selected(selected)
+                if getattr(self, "_color_picker_samples", None):
+                    self._ensure_color_picker_real_pixel_source()
             self._log_preview(f"Preview cargada desde cache: {selected.name}")
             self._set_status(self.tr("Preview en cache:") + f" {selected.name}")
             self._schedule_export_parity_preview_if_needed(
@@ -530,6 +536,10 @@ class PreviewLoadMixin:
                 self._cache_preview_image(loaded_key, self._original_linear, selected=loaded_selected)
                 self._refresh_preview()
                 self._restore_persisted_mtf_analysis_for_selected(loaded_selected)
+                if hasattr(self, "_load_color_picker_samples_for_selected"):
+                    self._load_color_picker_samples_for_selected(loaded_selected)
+                    if getattr(self, "_color_picker_samples", None):
+                        self._ensure_color_picker_real_pixel_source()
                 self._log_preview(msg)
                 self._set_status(self.tr("Preview cargada:") + f" {loaded_selected.name}")
                 self._finish_preview_load_progress(

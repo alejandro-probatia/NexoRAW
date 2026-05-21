@@ -1021,6 +1021,8 @@ class DisplayControlsMixin:
             self._update_viewer_histogram(colorimetric_array)
         if hasattr(self, "_sync_mtf_roi_overlay"):
             self._sync_mtf_roi_overlay()
+        if hasattr(self, "_sync_color_sample_overlay"):
+            self._sync_color_sample_overlay()
         if hasattr(self, "_sync_viewer_real_pixel_scale_if_requested"):
             self._sync_viewer_real_pixel_scale_if_requested()
         if hasattr(self, "_maybe_update_mtf_after_preview"):

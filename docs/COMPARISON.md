@@ -17,6 +17,7 @@ Legend: `✅` available, `⚠️ parcial` available with limits or manual flow,
 | JSON manifest and sidecars with hashes | ✅ | ❌ | ❌ | ❌ | ❌ |
 | C2PA signature / chain of custody | ✅ | ❌ | ❌ | ❌ | ❌ |
 | Colorimetric validation with independent holdout | ✅ | ❌ | ❌ | ⚠️ partial (depends on external pipeline) | ⚠️ partial (strong validation, formal holdout depends on the operator) |
+| Per-image Lab samples with sets and DeltaE comparison | ✅ | ❌ | ❌ | ⚠️ partial (requires external tools or manual workflow) | ✅ |
 | Profile operational status (`draft`/`validated`/`rejected`/`expired`) | ✅ | ❌ | ❌ | ❌ | ❌ |
 | License | AGPL-3.0-or-later | GPL-3.0 | GPL-3.0 | Owner + external components | Owner |
 | Optimal use case | Forensic/scientific with audit and traceable sessions | Advanced and creative photographic development | High-quality RAW development with manual control | Commercial photography flow with Adobe ecosystem | Industrial colorimetry and color management in commercial environments |

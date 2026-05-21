@@ -22,6 +22,33 @@ To maintain full traceability, each change must:
 
 No entries yet.
 
+## [0.4.0] - 2026-05-21
+
+### Added
+
+- Added Lab 2D gamut diagnostics with a vertical L* selector alongside the Gamut
+  3D comparator.
+- Added Lab eyedropper in `Diagnóstico > Muestras`, with real-pixel magnifier,
+  sampling matrices, numbered image markers and per-image persistence in
+  `RAW.probraw.json`.
+- Added sample sets, table/card views, editable name/note fields, set comparison
+  with means, DeltaE, similarity percentage and sample gamut in Lab a*b*.
+
+### Changed
+
+- Sample comparison no longer uses a primary sample inside a set; the comparative
+  reference is selected at set level.
+- User manual, README, color pipeline, methodology, architecture,
+  reproducibility, comparison and roadmap docs updated for the Lab sample
+  workflow and its colorimetric limits.
+
+### Tests
+
+- Added GUI regression coverage for Lab sample picking, real-pixel reload guard,
+  per-image sidecar persistence, sample-set editing and Lab 2D gamut mode.
+- Added profile/gamut tests for out-of-gamut markers and Lab membership across
+  two compared profiles.
+
 ## [0.3.22] - 2026-05-20
 
 ### Fixed

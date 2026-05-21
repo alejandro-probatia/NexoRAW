@@ -1372,12 +1372,187 @@ class LayoutMixin:
         self.gamut_status_label.setWordWrap(True)
         self.gamut_status_label.setStyleSheet("font-size: 12px; color: #d1d5db;")
         gamut_header.addWidget(self.gamut_status_label, 1)
+        self.gamut_view_mode_combo = QtWidgets.QComboBox()
+        self.gamut_view_mode_combo.addItem(self.tr("Lab 3D"), "lab3d")
+        self.gamut_view_mode_combo.addItem(self.tr("Lab 2D"), "lab_xy")
+        self.gamut_view_mode_combo.currentIndexChanged.connect(self._on_gamut_view_mode_changed)
+        gamut_header.addWidget(self.gamut_view_mode_combo)
         gamut_header.addWidget(self._button(self.tr("Actualizar"), self._on_refresh_gamut_diagnostics))
         gamut_layout.addLayout(gamut_header)
         self.gamut_3d_widget = Gamut3DWidget()
-        gamut_layout.addWidget(self.gamut_3d_widget, 1)
+        gamut_view_layout = QtWidgets.QHBoxLayout()
+        gamut_view_layout.setContentsMargins(0, 0, 0, 0)
+        gamut_view_layout.setSpacing(6)
+        gamut_view_layout.addWidget(self.gamut_3d_widget, 1)
+        gamut_slice_layout = QtWidgets.QVBoxLayout()
+        gamut_slice_layout.setContentsMargins(0, 0, 0, 0)
+        self.gamut_l_slice_label = QtWidgets.QLabel("L* 50")
+        self.gamut_l_slice_label.setAlignment(QtCore.Qt.AlignCenter)
+        self.gamut_l_slice_slider = QtWidgets.QSlider(QtCore.Qt.Vertical)
+        self.gamut_l_slice_slider.setRange(0, 100)
+        self.gamut_l_slice_slider.setSingleStep(1)
+        self.gamut_l_slice_slider.setPageStep(10)
+        self.gamut_l_slice_slider.setValue(50)
+        self.gamut_l_slice_slider.setToolTip(self.tr("Corte de luminosidad L* para Lab 2D"))
+        self.gamut_l_slice_slider.valueChanged.connect(self._on_gamut_l_slice_changed)
+        gamut_slice_layout.addWidget(self.gamut_l_slice_label)
+        gamut_slice_layout.addWidget(self.gamut_l_slice_slider, 1)
+        gamut_view_layout.addLayout(gamut_slice_layout)
+        gamut_layout.addLayout(gamut_view_layout, 1)
         self.analysis_tabs.addTab(gamut_page, self.tr("Gamut 3D"))
         self._sync_gamut_custom_controls()
+        self._on_gamut_view_mode_changed()
+
+        samples_page = QtWidgets.QWidget()
+        self.color_samples_page = samples_page
+        samples_layout = QtWidgets.QVBoxLayout(samples_page)
+        samples_layout.setContentsMargins(0, 0, 0, 0)
+        samples_layout.setSpacing(6)
+
+        samples_controls = QtWidgets.QGridLayout()
+        samples_controls.setContentsMargins(0, 0, 0, 0)
+        samples_controls.setHorizontalSpacing(6)
+        samples_controls.setVerticalSpacing(4)
+        self.btn_color_picker = QtWidgets.QPushButton(self.tr("Cuentagotas Lab"))
+        self.btn_color_picker.setCheckable(True)
+        self.btn_color_picker.clicked.connect(self._toggle_color_picker)
+        samples_controls.addWidget(self.btn_color_picker, 0, 0)
+        samples_controls.addWidget(QtWidgets.QLabel(self.tr("Matriz")), 0, 1)
+        self.color_picker_matrix_combo = QtWidgets.QComboBox()
+        for label, radius in (("1x1", 0), ("3x3", 1), ("5x5", 2), ("9x9", 4), ("17x17", 8)):
+            self.color_picker_matrix_combo.addItem(label, radius)
+        self.color_picker_matrix_combo.setCurrentIndex(2)
+        self.color_picker_matrix_combo.currentIndexChanged.connect(self._on_color_picker_matrix_changed)
+        samples_controls.addWidget(self.color_picker_matrix_combo, 0, 2)
+        samples_controls.addWidget(QtWidgets.QLabel(self.tr("Vista")), 0, 3)
+        self.color_samples_view_combo = QtWidgets.QComboBox()
+        self.color_samples_view_combo.addItem(self.tr("Tabla"), "table")
+        self.color_samples_view_combo.addItem(self.tr("Fichas"), "cards")
+        self.color_samples_view_combo.currentIndexChanged.connect(self._on_color_samples_view_changed)
+        samples_controls.addWidget(self.color_samples_view_combo, 0, 4)
+        samples_controls.addWidget(QtWidgets.QLabel(self.tr("Conjunto")), 1, 0)
+        self.color_sample_group_combo = QtWidgets.QComboBox()
+        self.color_sample_group_combo.currentIndexChanged.connect(self._on_color_sample_group_changed)
+        samples_controls.addWidget(self.color_sample_group_combo, 1, 1, 1, 2)
+        samples_controls.addWidget(self._button(self.tr("Nuevo conjunto"), self._create_color_sample_group), 1, 3)
+        samples_controls.addWidget(QtWidgets.QLabel(self.tr("Ref conjunto")), 2, 0)
+        self.color_sample_group_reference_combo = QtWidgets.QComboBox()
+        self.color_sample_group_reference_combo.currentIndexChanged.connect(self._on_color_sample_group_reference_changed)
+        samples_controls.addWidget(self.color_sample_group_reference_combo, 2, 1, 1, 3)
+        samples_controls.setColumnStretch(5, 1)
+        samples_layout.addLayout(samples_controls)
+
+        self.label_color_picker = QtWidgets.QLabel(self.tr("Color Lab: sin muestra"))
+        self.label_color_picker.setWordWrap(True)
+        self.label_color_picker.setStyleSheet("font-size: 12px; color: #d1d5db;")
+        samples_layout.addWidget(self.label_color_picker)
+
+        self.label_color_picker_precision = QtWidgets.QLabel(
+            self.tr(
+                "Aviso de precision: Lab, Delta E y gamut solo son fiables si esta imagen "
+                "usa un ICC generado por ProbRAW; con perfiles genericos son orientativos."
+            )
+        )
+        self.label_color_picker_precision.setWordWrap(True)
+        self.label_color_picker_precision.setStyleSheet("font-size: 12px; color: #fbbf24;")
+        samples_layout.addWidget(self.label_color_picker_precision)
+
+        self.color_samples_table = QtWidgets.QTableWidget()
+        self._color_samples_table_user_resized = False
+        self._color_samples_table_auto_sizing = False
+        self.color_samples_table.setColumnCount(15)
+        self.color_samples_table.setHorizontalHeaderLabels(
+            [
+                "#",
+                self.tr("Conjunto"),
+                self.tr("Nombre"),
+                self.tr("Nota"),
+                self.tr("Pos"),
+                self.tr("Matriz"),
+                "RGB",
+                "Lab",
+                "C*",
+                "A",
+                "B",
+                self.tr("Comun"),
+                "DE76 ref",
+                "DE00 ref",
+                "DC* ref",
+            ]
+        )
+        self.color_samples_table.setEditTriggers(QtWidgets.QAbstractItemView.AllEditTriggers)
+        self.color_samples_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self.color_samples_table.setAlternatingRowColors(True)
+        self.color_samples_table.verticalHeader().setVisible(False)
+        self.color_samples_table.itemChanged.connect(self._on_color_sample_table_item_changed)
+        samples_header = self.color_samples_table.horizontalHeader()
+        samples_header.setSectionResizeMode(QtWidgets.QHeaderView.Interactive)
+        samples_header.setStretchLastSection(False)
+        samples_header.sectionResized.connect(self._on_color_samples_table_section_resized)
+        self._auto_size_color_samples_table_columns(force=True)
+
+        self.color_sample_cards_scroll = QtWidgets.QScrollArea()
+        self.color_sample_cards_scroll.setWidgetResizable(True)
+        self.color_sample_cards_container = QtWidgets.QWidget()
+        self.color_sample_cards_layout = QtWidgets.QVBoxLayout(self.color_sample_cards_container)
+        self.color_sample_cards_layout.setContentsMargins(0, 0, 0, 0)
+        self.color_sample_cards_layout.setSpacing(6)
+        self.color_sample_cards_scroll.setWidget(self.color_sample_cards_container)
+
+        self.color_samples_stack = QtWidgets.QStackedWidget()
+        self.color_samples_stack.addWidget(self.color_samples_table)
+        self.color_samples_stack.addWidget(self.color_sample_cards_scroll)
+        samples_layout.addWidget(self.color_samples_stack, 1)
+
+        self.color_sample_gamut_widget = ColorSampleGamutWidget()
+        self.color_sample_gamut_widget.setToolTip(
+            self.tr("Gamut visual de los conjuntos de muestras en Lab a*b*")
+        )
+        samples_layout.addWidget(self.color_sample_gamut_widget)
+
+        self.color_sample_group_table = QtWidgets.QTableWidget()
+        self.color_sample_group_table.setColumnCount(15)
+        self.color_sample_group_table.setHorizontalHeaderLabels(
+            [
+                self.tr("Conjunto"),
+                "n",
+                self.tr("RGB medio"),
+                self.tr("Lab medio"),
+                "C*",
+                self.tr("Disp DE00"),
+                self.tr("Max DE00"),
+                self.tr("Ref"),
+                self.tr("Sim %"),
+                "DE76 c",
+                "DE00 c",
+                "DE00 min",
+                "DE00 med",
+                "DE00 max",
+                "DC*",
+            ]
+        )
+        self.color_sample_group_table.setToolTip(
+            self.tr(
+                "Sim %: porcentaje bidireccional de puntos cuyo vecino mas cercano "
+                "en el otro conjunto esta a DE00 <= 3."
+            )
+        )
+        self.color_sample_group_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        self.color_sample_group_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self.color_sample_group_table.setAlternatingRowColors(True)
+        self.color_sample_group_table.verticalHeader().setVisible(False)
+        self.color_sample_group_table.setMaximumHeight(132)
+        self.color_sample_group_table.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.ResizeToContents)
+        samples_layout.addWidget(self.color_sample_group_table)
+
+        color_samples_buttons = QtWidgets.QHBoxLayout()
+        color_samples_buttons.addWidget(self._button(self.tr("Eliminar seleccion"), self._delete_selected_color_picker_sample))
+        color_samples_buttons.addWidget(self._button(self.tr("Limpiar tomas"), self._clear_color_picker_samples))
+        samples_layout.addLayout(color_samples_buttons)
+        self._refresh_color_sample_group_controls()
+        self._refresh_color_sample_group_summary()
+        self._refresh_color_sample_group_gamut()
+        self.analysis_tabs.addTab(samples_page, self.tr("Muestras"))
 
         layout.addWidget(self.analysis_tabs, 1)
         return panel

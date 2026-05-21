@@ -38,6 +38,7 @@ from ...chart.sampling import (
     reference_catalog_template,
 )
 from ...analysis.mtf import MTFResult, analyze_slanted_edge_mtf
+from ...core.color import delta_e76, delta_e2000
 from ...core.models import Recipe, to_json_dict, write_json
 from ...core.recipe import load_recipe, save_recipe
 from ...core.external import external_tool_path, run_external
@@ -75,7 +76,9 @@ from ...profile.generic import (
 from ...profile.gamut import (
     build_gamut_diagnostics as _build_gamut_diagnostics,
     build_gamut_pair_diagnostics as _build_gamut_pair_diagnostics,
+    evaluate_lab_gamut_membership as _evaluate_lab_gamut_membership,
 )
+from ...profile.builder import _lookup_lab_with_icc as _lookup_lab_with_icc
 from ...provenance.c2pa import C2PASignConfig, DEFAULT_TIMESTAMP_URL, auto_c2pa_config
 from ...provenance.probraw_proof import (
     ProbRawProofConfig,
@@ -114,6 +117,7 @@ from ...sidecar import (
     LEGACY_RAW_SIDECAR_SUFFIXES,
     load_raw_sidecar,
     raw_sidecar_path,
+    write_raw_color_samples as _write_raw_color_samples,
     write_raw_mtf_analysis as _write_raw_mtf_analysis,
     write_raw_sidecar as _write_raw_sidecar,
 )
@@ -126,6 +130,7 @@ from ...workflow import (
 )
 from ..widgets import (
     CollapsibleToolPanel,
+    ColorSampleGamutWidget,
     Gamut3DWidget,
     ImagePanel,
     MTFComparisonPlotWidget,
@@ -193,6 +198,10 @@ def write_raw_mtf_analysis(*args, **kwargs):
     return _gui_callable("write_raw_mtf_analysis", _write_raw_mtf_analysis)(*args, **kwargs)
 
 
+def write_raw_color_samples(*args, **kwargs):
+    return _gui_callable("write_raw_color_samples", _write_raw_color_samples)(*args, **kwargs)
+
+
 def auto_generate_profile_from_charts(*args, **kwargs):
     return _gui_callable("auto_generate_profile_from_charts", _auto_generate_profile_from_charts)(*args, **kwargs)
 
@@ -203,3 +212,11 @@ def build_gamut_diagnostics(*args, **kwargs):
 
 def build_gamut_pair_diagnostics(*args, **kwargs):
     return _gui_callable("build_gamut_pair_diagnostics", _build_gamut_pair_diagnostics)(*args, **kwargs)
+
+
+def evaluate_lab_gamut_membership(*args, **kwargs):
+    return _gui_callable("evaluate_lab_gamut_membership", _evaluate_lab_gamut_membership)(*args, **kwargs)
+
+
+def lookup_lab_with_icc(*args, **kwargs):
+    return _gui_callable("lookup_lab_with_icc", _lookup_lab_with_icc)(*args, **kwargs)

@@ -8,7 +8,7 @@ monitor ICC profiles.
 
 The current decision is to keep a scientific ICC-centered workflow. DCP
 integration was evaluated as a possible future direction, but it is not active
-scope for the 0.2 series because it adds complexity and can mix colorimetric
+scope for the 0.3 series because it adds complexity and can mix colorimetric
 decisions with appearance decisions.
 
 ## References
@@ -37,6 +37,12 @@ The input ICC tags those values and defines their objective correspondence to
 PCS/Lab/XYZ colorimetry. Without that tag, an RGB triplet is not an objectively
 reproducible color.
 
+The image Lab eyedropper applies exactly the same principle. The RGB value of a
+pixel or pixel matrix can become a rigorous Lab measurement only when the image
+has a ProbRAW-generated session ICC assigned for that camera, recipe and
+illuminant. A generic ICC allows mathematical Lab coordinates to be calculated,
+but it does not turn the scene into a measured colorimetric reference.
+
 Therefore:
 
 - the recipe corrects and documents base development;
@@ -63,6 +69,9 @@ The methodological RAW contract is:
 9. For display, convert directly from the image input ICC to the monitor ICC
    profile configured by the operating system.
 10. For export, embed the associated image input ICC and record provenance.
+11. For sample analysis, always measure from the real full-resolution image and
+    record coordinate, matrix, RGB, Lab, ICC used and comparison group in the
+    file backpack.
 
 Current implementation:
 
@@ -114,6 +123,29 @@ When a valid chart capture exists:
 The advanced profile can be copied to images captured under comparable camera,
 lens, illuminant, base exposure and recipe conditions.
 
+## Lab Sample Analysis
+
+Lab sample analysis is intended for comparing real image areas, for example
+several measurements of the same ink printed on paper. A single sample may depend
+on texture, noise, stroke speed, local ink accumulation or microscopic
+illumination. Grouping several samples into a set gives a better estimate of the
+real chromatic variation of that material.
+
+Methodological rules:
+
+- measure only real pixels from the full-size loaded image;
+- document matrix, coordinate, name and note for each sample;
+- group samples that belong to the same material or comparison hypothesis;
+- compare sets through mean Lab, internal dispersion, DeltaE against the
+  reference set and sample gamut in Lab a*b*;
+- do not use a primary sample inside the set, because the operational reference
+  is the complete set.
+
+RGB readings are always traceable. Lab readings, DeltaE and sample gamut are
+colorimetrically rigorous only when the image input ICC is a ProbRAW-generated
+profile for that capture case. With generic profiles, the analysis must be
+labelled as informative.
+
 ## Workflow Without a Color Chart
 
 When no chart exists:
@@ -129,6 +161,10 @@ When no chart exists:
 
 This workflow is reproducible and functional, but it does not replace the
 precision of a measured colorimetric reference.
+
+Lab samples taken in this no-chart workflow have the same limitation: they are
+useful for internal comparison within the same generic space, but they must not
+be presented as validated scene Lab measurements.
 
 ## Master TIFF and Derivatives
 
@@ -152,6 +188,8 @@ The backpack sidecar records:
 - assigned development profile;
 - associated ICC and hash when available;
 - detail and render settings;
+- per-image Lab samples, with real coordinates, groups, notes and set
+  comparison;
 - latest generated TIFF outputs.
 
 The backpack does not replace the RAW or the batch manifest. Its purpose is to

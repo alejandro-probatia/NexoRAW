@@ -13,6 +13,7 @@ from probraw.profile.gamut import (
     _standard_rgb_to_lab,
     build_gamut_diagnostics,
     build_gamut_pair_diagnostics,
+    evaluate_lab_gamut_membership,
     rgb_surface_samples,
 )
 import probraw.profile.builder as profiling
@@ -96,6 +97,21 @@ def test_pair_gamut_diagnostics_compare_only_two_profiles():
     assert payload["comparisons"][0]["target"] == "sRGB"
 
 
+def test_pair_gamut_diagnostics_marks_out_of_gamut_source_samples():
+    payload = build_gamut_pair_diagnostics(
+        profile_a={"kind": "standard", "key": "adobe_rgb"},
+        profile_b={"kind": "standard", "key": "srgb"},
+        grid_size=7,
+    )
+
+    adobe = payload["series"][0]
+
+    assert adobe["out_of_gamut_samples"] > 0
+    assert adobe["out_of_gamut_lab"].shape[1] == 3
+    assert adobe["out_of_gamut_rgb"].shape == adobe["out_of_gamut_lab"].shape
+    assert adobe["out_of_gamut_target"] == "sRGB"
+
+
 def test_standard_gamut_membership_recognizes_own_surface_samples():
     rgb = rgb_surface_samples(5)
     lab = _standard_rgb_to_lab(rgb, "srgb")
@@ -103,6 +119,23 @@ def test_standard_gamut_membership_recognizes_own_surface_samples():
     inside = _lab_inside_standard_rgb(lab, "srgb")
 
     assert inside.all()
+
+
+def test_lab_gamut_membership_reports_common_profile_intersection():
+    lab = _standard_rgb_to_lab(np.asarray([[0.0, 1.0, 0.0]], dtype=np.float64), "adobe_rgb")
+
+    membership = evaluate_lab_gamut_membership(
+        lab,
+        profile_a={"kind": "standard", "key": "adobe_rgb"},
+        profile_b={"kind": "standard", "key": "srgb"},
+        grid_size=7,
+    )
+
+    assert membership["inside_a"].tolist() == [True]
+    assert membership["inside_b"].tolist() == [False]
+    assert membership["inside_common"].tolist() == [False]
+    assert membership["label_a"] == "Adobe RGB (1998)"
+    assert membership["label_b"] == "sRGB"
 
 
 def test_argyll_builder_accepts_icm_output(tmp_path: Path, monkeypatch):

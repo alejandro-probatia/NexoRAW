@@ -22,8 +22,10 @@ parallel color-profile layers.
 - Persistent session ICC profile catalog with several activatable versions.
 - Chart references managed from the interface, including a Lab table editor for
   custom charts.
-- Pairwise 3D gamut diagnostics for session profiles, monitor profile, standard
-  spaces and custom ICC files.
+- Pairwise 3D/Lab 2D gamut diagnostics for session profiles, monitor profile,
+  standard spaces and custom ICC files.
+- Lab eyedropper with real-pixel magnifier, per-image persistent samples, sample
+  sets and DeltaE/gamut comparison between sets.
 - Standard output ICC workflow for no-chart sessions.
 - Monitor ICC management for preview only.
 - Manual four-corner chart marking in the viewer.

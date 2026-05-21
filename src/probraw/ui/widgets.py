@@ -1937,6 +1937,9 @@ if QtWidgets is not None:
             self._azimuth = self.DEFAULT_AZIMUTH
             self._elevation = self.DEFAULT_ELEVATION
             self._zoom = self.DEFAULT_ZOOM
+            self._view_mode = "lab3d"
+            self._l_slice = 50.0
+            self._l_slice_half_width = 6.0
             self._drag_start: QtCore.QPoint | None = None
             self.setMinimumHeight(260)
             self.setMouseTracking(True)
@@ -1960,6 +1963,22 @@ if QtWidgets is not None:
             if update:
                 self.update()
 
+        def set_view_mode(self, mode: str) -> None:
+            normalized = str(mode or "lab3d").strip().lower()
+            if normalized not in {"lab3d", "lab_xy"}:
+                normalized = "lab3d"
+            if normalized == self._view_mode:
+                return
+            self._view_mode = normalized
+            self.update()
+
+        def set_l_slice(self, value: float) -> None:
+            new_value = float(np.clip(float(value), 0.0, 100.0))
+            if abs(new_value - self._l_slice) < 1e-6:
+                return
+            self._l_slice = new_value
+            self.update()
+
         def set_gamut_payload(self, payload: dict[str, Any] | None) -> None:
             if not isinstance(payload, dict):
                 self.clear()
@@ -1975,6 +1994,11 @@ if QtWidgets is not None:
                     f"{item.get('source', 'Perfil')} en {item.get('target', '')}: "
                     f"{float(item.get('inside_ratio') or 0.0) * 100.0:.1f}% dentro"
                 )
+                outside = int(item.get("outside_samples") or 0)
+                if outside:
+                    tooltip_lines.append(
+                        f"Fuera de gama {item.get('source', 'Perfil')} -> {item.get('target', '')}: {outside}"
+                    )
             for item in skipped:
                 if isinstance(item, dict):
                     tooltip_lines.append(f"Omitido {item.get('label', '')}: {item.get('reason', '')}")
@@ -1992,6 +2016,7 @@ if QtWidgets is not None:
                 points = points[np.all(np.isfinite(points), axis=1)]
                 if points.size == 0:
                     continue
+                out_of_gamut = self._coerce_lab_points(item.get("out_of_gamut_lab"))
                 normalized.append(
                     {
                         "label": str(item.get("label") or "Perfil"),
@@ -2001,6 +2026,13 @@ if QtWidgets is not None:
                         "quads": self._coerce_quads(item.get("quads"), points.shape[0]),
                         "role": str(item.get("role") or "wire"),
                         "source_key": str(item.get("path") or item.get("profile_key") or item.get("label") or ""),
+                        "out_of_gamut": out_of_gamut,
+                        "out_of_gamut_rgb": self._coerce_rgb_points(
+                            item.get("out_of_gamut_rgb"),
+                            out_of_gamut.shape[0],
+                        ),
+                        "out_of_gamut_target": str(item.get("out_of_gamut_target") or ""),
+                        "out_of_gamut_color": str(item.get("out_of_gamut_color") or "#f43f5e"),
                     }
                 )
             signature = self._series_payload_signature(normalized)
@@ -2061,6 +2093,14 @@ if QtWidgets is not None:
                     quads.append(quad)
             return quads
 
+        def _coerce_lab_points(self, value: Any) -> np.ndarray:
+            points = np.asarray(value, dtype=np.float64)
+            if points.ndim != 2 or points.shape[1] < 3:
+                return np.zeros((0, 3), dtype=np.float64)
+            points = points[:, :3]
+            points = points[np.all(np.isfinite(points), axis=1)]
+            return np.ascontiguousarray(points, dtype=np.float64)
+
         def mousePressEvent(self, event) -> None:  # noqa: N802
             if event.button() == QtCore.Qt.LeftButton:
                 self._drag_start = event.position().toPoint() if hasattr(event, "position") else event.pos()
@@ -2107,6 +2147,10 @@ if QtWidgets is not None:
             painter = QtGui.QPainter(self)
             painter.setRenderHint(QtGui.QPainter.Antialiasing)
             painter.fillRect(self.rect(), QtGui.QColor("#171a1f"))
+
+            if self._view_mode == "lab_xy":
+                self._paint_lab_xy(painter)
+                return
 
             plot_rect = self.rect().adjusted(8, 8, -8, -30)
             if plot_rect.width() <= 40 or plot_rect.height() <= 40:
@@ -2174,6 +2218,190 @@ if QtWidgets is not None:
                 QtCore.Qt.AlignLeft | QtCore.Qt.AlignBottom,
                 f"Lab 3D | az {self._azimuth:.0f} / el {self._elevation:.0f}",
             )
+
+        def _paint_lab_xy(self, painter: QtGui.QPainter) -> None:
+            plot_rect = self.rect().adjusted(8, 8, -42, -30)
+            if plot_rect.width() <= 40 or plot_rect.height() <= 40:
+                return
+
+            painter.setPen(QtGui.QPen(QtGui.QColor("#313842"), 1))
+            painter.drawRect(plot_rect)
+
+            if not self._series:
+                self._draw_lab_xy_grid(painter, plot_rect, 120.0)
+                painter.setPen(QtGui.QColor("#9ca3af"))
+                painter.drawText(plot_rect, QtCore.Qt.AlignCenter, self.tr("Sin datos de gamut Lab 2D"))
+                return
+
+            all_points = np.vstack([item["points"] for item in self._series])
+            all_ab = all_points[:, 1:3]
+            outside_sets = [
+                item.get("out_of_gamut")
+                for item in self._series
+                if isinstance(item.get("out_of_gamut"), np.ndarray) and item.get("out_of_gamut").size
+            ]
+            if outside_sets:
+                all_ab = np.vstack([all_ab, *[points[:, 1:3] for points in outside_sets]])
+            max_abs = float(np.max(np.abs(all_ab))) if all_ab.size else 120.0
+            limit = float(np.clip(np.ceil(max(max_abs, 120.0) / 20.0) * 20.0, 120.0, 260.0))
+            self._draw_lab_xy_grid(painter, plot_rect, limit)
+
+            for item in self._series:
+                points = np.asarray(item["points"], dtype=np.float64)
+                mask = self._lab_xy_slice_mask(points)
+                slice_points = points[mask]
+                if slice_points.size == 0:
+                    continue
+                base_color = QtGui.QColor(str(item["color"]))
+                hull = self._convex_hull_2d(slice_points[:, 1:3])
+                if len(hull) >= 3:
+                    polygon = QtGui.QPolygonF([
+                        self._lab_xy_to_screen(float(a), float(b), plot_rect, limit)
+                        for a, b in hull
+                    ])
+                    if item.get("role") == "solid":
+                        fill = QtGui.QColor(base_color)
+                        fill.setAlpha(42)
+                        painter.setBrush(QtGui.QBrush(fill))
+                    else:
+                        painter.setBrush(QtCore.Qt.NoBrush)
+                    line = QtGui.QColor(base_color)
+                    line.setAlpha(220)
+                    painter.setPen(QtGui.QPen(line, 1.15 if item.get("role") == "solid" else 1.35))
+                    painter.drawPolygon(polygon)
+
+                rgb = item.get("rgb")
+                rgb_slice = rgb[mask] if isinstance(rgb, np.ndarray) and rgb.shape[0] == points.shape[0] else None
+                for idx, point in enumerate(slice_points):
+                    marker = self._lab_xy_to_screen(float(point[1]), float(point[2]), plot_rect, limit)
+                    if isinstance(rgb_slice, np.ndarray) and rgb_slice.shape[0] > idx:
+                        color = QtGui.QColor(
+                            int(round(float(rgb_slice[idx, 0]) * 255.0)),
+                            int(round(float(rgb_slice[idx, 1]) * 255.0)),
+                            int(round(float(rgb_slice[idx, 2]) * 255.0)),
+                            150,
+                        )
+                    else:
+                        color = QtGui.QColor(base_color)
+                        color.setAlpha(145)
+                    painter.setPen(QtCore.Qt.NoPen)
+                    painter.setBrush(QtGui.QBrush(color))
+                    painter.drawEllipse(marker, 2.1, 2.1)
+
+            outside_summary: list[str] = []
+            for item in self._series:
+                outside = item.get("out_of_gamut")
+                if not isinstance(outside, np.ndarray) or outside.size == 0:
+                    continue
+                mask = self._lab_xy_slice_mask(outside)
+                outside_slice = outside[mask]
+                if outside_slice.size == 0:
+                    continue
+                outside_summary.append(
+                    f"{item['label']} -> {item.get('out_of_gamut_target') or '?'}: {outside_slice.shape[0]}"
+                )
+                rgb = item.get("out_of_gamut_rgb")
+                rgb_slice = rgb[mask] if isinstance(rgb, np.ndarray) and rgb.shape[0] == outside.shape[0] else None
+                marker_color = QtGui.QColor(str(item.get("out_of_gamut_color") or "#f43f5e"))
+                for idx, point in enumerate(outside_slice):
+                    marker = self._lab_xy_to_screen(float(point[1]), float(point[2]), plot_rect, limit)
+                    if isinstance(rgb_slice, np.ndarray) and rgb_slice.shape[0] > idx:
+                        fill = QtGui.QColor(
+                            int(round(float(rgb_slice[idx, 0]) * 255.0)),
+                            int(round(float(rgb_slice[idx, 1]) * 255.0)),
+                            int(round(float(rgb_slice[idx, 2]) * 255.0)),
+                            210,
+                        )
+                    else:
+                        fill = QtGui.QColor(marker_color)
+                        fill.setAlpha(170)
+                    outline = QtGui.QColor(marker_color)
+                    outline.setAlpha(245)
+                    painter.setBrush(QtGui.QBrush(fill))
+                    painter.setPen(QtGui.QPen(outline, 1.4))
+                    painter.drawEllipse(marker, 4.2, 4.2)
+
+            self._draw_legend(painter, plot_rect)
+            painter.setPen(QtGui.QColor("#9ca3af"))
+            footer = f"Lab 2D | L* {self._l_slice:.0f} +/- {self._l_slice_half_width:.0f}"
+            if outside_summary:
+                footer += " | fuera: " + ", ".join(outside_summary[:2])
+            painter.drawText(
+                self.rect().adjusted(8, 0, -8, -6),
+                QtCore.Qt.AlignLeft | QtCore.Qt.AlignBottom,
+                footer,
+            )
+
+        def _draw_lab_xy_grid(self, painter: QtGui.QPainter, rect: QtCore.QRect, limit: float) -> None:
+            center = rect.center()
+            scale = min(rect.width(), rect.height()) * 0.46 / max(float(limit), 1.0)
+            painter.setBrush(QtCore.Qt.NoBrush)
+            painter.setPen(QtGui.QPen(QtGui.QColor("#27313b"), 1))
+            ring = 40
+            while ring <= limit:
+                radius = float(ring) * scale
+                painter.drawEllipse(QtCore.QPointF(center), radius, radius)
+                ring += 40
+            painter.setPen(QtGui.QPen(QtGui.QColor("#4b5563"), 1))
+            painter.drawLine(
+                self._lab_xy_to_screen(-limit, 0.0, rect, limit),
+                self._lab_xy_to_screen(limit, 0.0, rect, limit),
+            )
+            painter.drawLine(
+                self._lab_xy_to_screen(0.0, -limit, rect, limit),
+                self._lab_xy_to_screen(0.0, limit, rect, limit),
+            )
+            painter.setPen(QtGui.QColor("#cbd5e1"))
+            painter.drawText(self._lab_xy_to_screen(limit, 0.0, rect, limit) + QtCore.QPointF(-18, -6), "a*")
+            painter.drawText(self._lab_xy_to_screen(0.0, limit, rect, limit) + QtCore.QPointF(4, 12), "b*")
+
+        def _lab_xy_to_screen(
+            self,
+            a_value: float,
+            b_value: float,
+            rect: QtCore.QRect,
+            limit: float,
+        ) -> QtCore.QPointF:
+            scale = min(rect.width(), rect.height()) * 0.46 / max(float(limit), 1.0)
+            return QtCore.QPointF(
+                rect.center().x() + float(a_value) * scale,
+                rect.center().y() - float(b_value) * scale,
+            )
+
+        def _lab_xy_slice_mask(self, points: np.ndarray) -> np.ndarray:
+            lab = np.asarray(points, dtype=np.float64)
+            if lab.ndim != 2 or lab.shape[1] < 3:
+                return np.zeros(0, dtype=bool)
+            mask = np.abs(lab[:, 0] - float(self._l_slice)) <= float(self._l_slice_half_width)
+            if np.count_nonzero(mask) > 0:
+                return mask
+            if lab.shape[0] == 0:
+                return mask
+            nearest_count = max(1, min(12, int(np.ceil(lab.shape[0] * 0.04))))
+            nearest = np.argsort(np.abs(lab[:, 0] - float(self._l_slice)))[:nearest_count]
+            mask = np.zeros(lab.shape[0], dtype=bool)
+            mask[nearest] = True
+            return mask
+
+        def _convex_hull_2d(self, points: np.ndarray) -> list[tuple[float, float]]:
+            pts = sorted({(float(row[0]), float(row[1])) for row in np.asarray(points, dtype=np.float64)})
+            if len(pts) <= 2:
+                return pts
+
+            def cross(o: tuple[float, float], a: tuple[float, float], b: tuple[float, float]) -> float:
+                return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
+
+            lower: list[tuple[float, float]] = []
+            for point in pts:
+                while len(lower) >= 2 and cross(lower[-2], lower[-1], point) <= 0.0:
+                    lower.pop()
+                lower.append(point)
+            upper: list[tuple[float, float]] = []
+            for point in reversed(pts):
+                while len(upper) >= 2 and cross(upper[-2], upper[-1], point) <= 0.0:
+                    upper.pop()
+                upper.append(point)
+            return lower[:-1] + upper[:-1]
 
         def _draw_axes(
             self,
@@ -2288,6 +2516,146 @@ if QtWidgets is not None:
             return available / span
 
 
+    class ColorSampleGamutWidget(QtWidgets.QWidget):
+        def __init__(self) -> None:
+            super().__init__()
+            self._groups: list[dict[str, Any]] = []
+            self.setMinimumHeight(170)
+            self.setMaximumHeight(240)
+
+        def set_groups(self, groups: list[dict[str, Any]] | None) -> None:
+            normalized: list[dict[str, Any]] = []
+            for index, group in enumerate(groups or []):
+                if not isinstance(group, dict):
+                    continue
+                points = np.asarray(group.get("points_lab"), dtype=np.float64)
+                if points.ndim != 2 or points.shape[1] < 3:
+                    points = np.zeros((0, 3), dtype=np.float64)
+                else:
+                    points = points[:, :3]
+                    points = points[np.all(np.isfinite(points), axis=1)]
+                normalized.append(
+                    {
+                        "name": str(group.get("name") or f"Conjunto {index + 1}"),
+                        "color": str(group.get("color") or "#22d3ee"),
+                        "points": np.ascontiguousarray(points, dtype=np.float64),
+                    }
+                )
+            self._groups = normalized
+            self.update()
+
+        def paintEvent(self, _event) -> None:  # noqa: N802
+            painter = QtGui.QPainter(self)
+            painter.setRenderHint(QtGui.QPainter.Antialiasing)
+            painter.fillRect(self.rect(), QtGui.QColor("#171a1f"))
+            plot = self.rect().adjusted(8, 8, -116, -24)
+            if plot.width() <= 50 or plot.height() <= 50:
+                return
+            valid = [group for group in self._groups if group["points"].size]
+            if not valid:
+                self._draw_grid(painter, plot, 120.0)
+                painter.setPen(QtGui.QColor("#9ca3af"))
+                painter.drawText(plot, QtCore.Qt.AlignCenter, self.tr("Sin conjuntos de muestras"))
+                return
+
+            all_ab = np.vstack([group["points"][:, 1:3] for group in valid])
+            max_abs = float(np.max(np.abs(all_ab))) if all_ab.size else 120.0
+            limit = float(np.clip(np.ceil(max(max_abs, 80.0) / 20.0) * 20.0, 80.0, 220.0))
+            self._draw_grid(painter, plot, limit)
+
+            legend_y = plot.top() + 2
+            legend_x = plot.right() + 12
+            for group in valid:
+                points = np.asarray(group["points"], dtype=np.float64)
+                color = QtGui.QColor(str(group["color"]))
+                if not color.isValid():
+                    color = QtGui.QColor("#22d3ee")
+                hull = self._convex_hull_2d(points[:, 1:3])
+                if len(hull) >= 3:
+                    polygon = QtGui.QPolygonF([self._ab_to_screen(a, b, plot, limit) for a, b in hull])
+                    fill = QtGui.QColor(color)
+                    fill.setAlpha(44)
+                    line = QtGui.QColor(color)
+                    line.setAlpha(230)
+                    painter.setBrush(fill)
+                    painter.setPen(QtGui.QPen(line, 1.6))
+                    painter.drawPolygon(polygon)
+                painter.setPen(QtCore.Qt.NoPen)
+                marker = QtGui.QColor(color)
+                marker.setAlpha(215)
+                painter.setBrush(marker)
+                for lab in points:
+                    center = self._ab_to_screen(float(lab[1]), float(lab[2]), plot, limit)
+                    painter.drawEllipse(center, 3.2, 3.2)
+
+                painter.setPen(QtCore.Qt.NoPen)
+                painter.setBrush(color)
+                painter.drawRect(QtCore.QRectF(legend_x, legend_y + 4, 9, 9))
+                painter.setPen(QtGui.QColor("#d1d5db"))
+                l_min = float(np.min(points[:, 0]))
+                l_max = float(np.max(points[:, 0]))
+                text = f"{group['name']} ({points.shape[0]}) L* {l_min:.0f}-{l_max:.0f}"
+                painter.drawText(QtCore.QRectF(legend_x + 14, legend_y, 94, 20), QtCore.Qt.AlignLeft, text)
+                legend_y += 22
+
+            painter.setPen(QtGui.QColor("#9ca3af"))
+            painter.drawText(
+                self.rect().adjusted(8, 0, -8, -4),
+                QtCore.Qt.AlignLeft | QtCore.Qt.AlignBottom,
+                self.tr("Comparacion de conjuntos en Lab a*b*"),
+            )
+
+        def _draw_grid(self, painter: QtGui.QPainter, rect: QtCore.QRect, limit: float) -> None:
+            painter.setPen(QtGui.QPen(QtGui.QColor("#27313b"), 1))
+            painter.setBrush(QtCore.Qt.NoBrush)
+            center = rect.center()
+            scale = min(rect.width(), rect.height()) * 0.46 / max(limit, 1.0)
+            ring = 40
+            while ring <= limit:
+                radius = float(ring) * scale
+                painter.drawEllipse(QtCore.QPointF(center), radius, radius)
+                ring += 40
+            painter.setPen(QtGui.QPen(QtGui.QColor("#4b5563"), 1))
+            painter.drawLine(self._ab_to_screen(-limit, 0, rect, limit), self._ab_to_screen(limit, 0, rect, limit))
+            painter.drawLine(self._ab_to_screen(0, -limit, rect, limit), self._ab_to_screen(0, limit, rect, limit))
+            painter.setPen(QtGui.QColor("#cbd5e1"))
+            painter.drawText(self._ab_to_screen(limit, 0, rect, limit) + QtCore.QPointF(-18, -6), "a*")
+            painter.drawText(self._ab_to_screen(0, limit, rect, limit) + QtCore.QPointF(4, 12), "b*")
+
+        def _ab_to_screen(
+            self,
+            a_value: float,
+            b_value: float,
+            rect: QtCore.QRect,
+            limit: float,
+        ) -> QtCore.QPointF:
+            scale = min(rect.width(), rect.height()) * 0.46 / max(float(limit), 1.0)
+            return QtCore.QPointF(
+                rect.center().x() + float(a_value) * scale,
+                rect.center().y() - float(b_value) * scale,
+            )
+
+        def _convex_hull_2d(self, points: np.ndarray) -> list[tuple[float, float]]:
+            pts = sorted({(float(row[0]), float(row[1])) for row in np.asarray(points, dtype=np.float64)})
+            if len(pts) <= 2:
+                return pts
+
+            def cross(o: tuple[float, float], a: tuple[float, float], b: tuple[float, float]) -> float:
+                return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
+
+            lower: list[tuple[float, float]] = []
+            for point in pts:
+                while len(lower) >= 2 and cross(lower[-2], lower[-1], point) <= 0.0:
+                    lower.pop()
+                lower.append(point)
+            upper: list[tuple[float, float]] = []
+            for point in reversed(pts):
+                while len(upper) >= 2 and cross(upper[-2], upper[-1], point) <= 0.0:
+                    upper.pop()
+                upper.append(point)
+            return lower[:-1] + upper[:-1]
+
+
     class ImagePanel(QtWidgets.QLabel):
         imageClicked = QtCore.Signal(float, float)
         roiSelected = QtCore.Signal(float, float, float, float)
@@ -2308,6 +2676,10 @@ if QtWidgets is not None:
             self._base_color_space = "device"
             self._image_size: tuple[int, int] | None = None
             self._overlay_points: list[tuple[float, float]] = []
+            self._sample_markers: list[dict[str, Any]] = []
+            self._sample_magnifier_enabled = False
+            self._sample_magnifier_radius = 2
+            self._sample_magnifier_image_pos: tuple[float, float] | None = None
             self._view_zoom = 1.0
             self._view_rotation = 0
             self._view_crop_rect: tuple[int, int, int, int] | None = None
@@ -2461,6 +2833,22 @@ if QtWidgets is not None:
         def set_overlay_points(self, points: list[tuple[float, float]]) -> None:
             self._overlay_points = list(points)
             self._refresh_scaled_pixmap()
+
+        def set_sample_markers(self, markers: list[dict[str, Any]]) -> None:
+            self._sample_markers = [dict(marker) for marker in markers]
+            self._refresh_scaled_pixmap()
+
+        def set_sample_magnifier_enabled(self, enabled: bool, *, radius: int | None = None) -> None:
+            self._sample_magnifier_enabled = bool(enabled)
+            if radius is not None:
+                self._sample_magnifier_radius = max(0, int(radius))
+            if not self._sample_magnifier_enabled:
+                self._sample_magnifier_image_pos = None
+            self.update()
+
+        def set_sample_magnifier_radius(self, radius: int) -> None:
+            self._sample_magnifier_radius = max(0, int(radius))
+            self.update()
 
         def set_roi_selection_enabled(self, enabled: bool) -> None:
             self._roi_selection_enabled = bool(enabled)
@@ -2624,6 +3012,7 @@ if QtWidgets is not None:
             return int(source_rect.x()) + x0, int(source_rect.y()) + y0, x1 - x0, y1 - y0
 
         def mousePressEvent(self, event) -> None:  # noqa: N802
+            self._update_sample_magnifier_from_widget_pos(event.position())
             if event.button() == QtCore.Qt.LeftButton and self._base_pixmap is not None and self._space_pan_active:
                 self._drag_start = event.position()
                 self._drag_last = event.position()
@@ -2657,6 +3046,7 @@ if QtWidgets is not None:
             super().mousePressEvent(event)
 
         def mouseMoveEvent(self, event) -> None:  # noqa: N802
+            self._update_sample_magnifier_from_widget_pos(event.position())
             if self._line_selection_enabled and self._line_drag_start_image is not None:
                 mapped = self._map_widget_to_image(event.position())
                 if mapped is not None:
@@ -2683,6 +3073,7 @@ if QtWidgets is not None:
             super().mouseMoveEvent(event)
 
         def mouseReleaseEvent(self, event) -> None:  # noqa: N802
+            self._update_sample_magnifier_from_widget_pos(event.position())
             if (
                 self._line_selection_enabled
                 and event.button() == QtCore.Qt.LeftButton
@@ -2729,6 +3120,12 @@ if QtWidgets is not None:
                 self._apply_idle_cursor()
                 return
             super().mouseReleaseEvent(event)
+
+        def leaveEvent(self, event) -> None:  # noqa: N802
+            if self._sample_magnifier_image_pos is not None:
+                self._sample_magnifier_image_pos = None
+                self.update()
+            super().leaveEvent(event)
 
         def wheelEvent(self, event) -> None:  # noqa: N802
             if self._base_pixmap is None:
@@ -2784,6 +3181,9 @@ if QtWidgets is not None:
                     painter.drawEllipse(point, 6, 6)
                     painter.drawText(point + QtCore.QPointF(8, -8), str(idx))
 
+            if self._sample_markers and self._image_size is not None:
+                self._draw_sample_markers(painter, rect, scale, transform, bounds)
+
             if self._line_drag_start_image is not None and self._line_drag_current_image is not None and self._image_size is not None:
                 start = self._map_image_to_widget(
                     self._line_drag_start_image[0],
@@ -2817,6 +3217,9 @@ if QtWidgets is not None:
                 painter.drawPolygon(QtGui.QPolygonF(corners))
                 painter.setBrush(QtCore.Qt.NoBrush)
                 painter.drawText(corners[0] + QtCore.QPointF(6, -6), self._roi_label)
+
+            if self._sample_magnifier_enabled and self._sample_magnifier_image_pos is not None:
+                self._draw_sample_magnifier(painter, rect, scale, transform, bounds)
 
             if self._framed:
                 painter.setBrush(QtCore.Qt.NoBrush)
@@ -2870,6 +3273,177 @@ if QtWidgets is not None:
                 py = rect.top() + float(y) * scale
                 painter.drawLine(QtCore.QPointF(left, py), QtCore.QPointF(right, py))
             painter.restore()
+
+        def _draw_sample_markers(
+            self,
+            painter: QtGui.QPainter,
+            rect: QtCore.QRectF,
+            scale: float,
+            transform: QtGui.QTransform,
+            bounds: QtCore.QRectF,
+        ) -> None:
+            source_rect = self._active_source_rect()
+            painter.save()
+            painter.setRenderHint(QtGui.QPainter.Antialiasing)
+            font = painter.font()
+            font.setBold(True)
+            font.setPointSize(max(8, font.pointSize()))
+            painter.setFont(font)
+            for fallback_index, marker in enumerate(self._sample_markers, start=1):
+                try:
+                    x = float(marker.get("x", 0.0))
+                    y = float(marker.get("y", 0.0))
+                except Exception:
+                    continue
+                if (
+                    x < float(source_rect.x())
+                    or y < float(source_rect.y())
+                    or x >= float(source_rect.x() + source_rect.width())
+                    or y >= float(source_rect.y() + source_rect.height())
+                ):
+                    continue
+                point = self._map_image_to_widget(x, y, rect, scale, transform, bounds)
+                label = str(marker.get("label") or marker.get("index") or fallback_index)
+                radius = 10.0
+                label_rect = QtCore.QRectF(point.x() - radius, point.y() - radius, radius * 2.0, radius * 2.0)
+                fill = QtGui.QColor(str(marker.get("color") or "#22d3ee"))
+                if not fill.isValid():
+                    fill = QtGui.QColor("#22d3ee")
+                fill.setAlpha(220)
+                text_color = QtGui.QColor(str(marker.get("text_color") or ""))
+                if not text_color.isValid():
+                    luminance = (
+                        0.2126 * float(fill.red())
+                        + 0.7152 * float(fill.green())
+                        + 0.0722 * float(fill.blue())
+                    ) / 255.0
+                    text_color = QtGui.QColor("#0f172a" if luminance >= 0.62 else "#ffffff")
+                outline = QtGui.QColor("#ffffff" if text_color.lightnessF() < 0.5 else "#0f172a")
+                painter.setPen(QtGui.QPen(outline, 3))
+                painter.setBrush(fill)
+                painter.drawEllipse(label_rect)
+                painter.setPen(QtGui.QPen(text_color, 1))
+                painter.drawText(label_rect, QtCore.Qt.AlignCenter, label)
+                painter.setPen(QtGui.QPen(outline, 1))
+                painter.drawLine(point + QtCore.QPointF(-15, 0), point + QtCore.QPointF(-6, 0))
+                painter.drawLine(point + QtCore.QPointF(6, 0), point + QtCore.QPointF(15, 0))
+                painter.drawLine(point + QtCore.QPointF(0, -15), point + QtCore.QPointF(0, -6))
+                painter.drawLine(point + QtCore.QPointF(0, 6), point + QtCore.QPointF(0, 15))
+            painter.restore()
+
+        def _draw_sample_magnifier(
+            self,
+            painter: QtGui.QPainter,
+            rect: QtCore.QRectF,
+            scale: float,
+            transform: QtGui.QTransform,
+            bounds: QtCore.QRectF,
+        ) -> None:
+            if self._base_pixmap is None or self._image_size is None or self._sample_magnifier_image_pos is None:
+                return
+            image = self._base_pixmap if isinstance(self._base_pixmap, QtGui.QImage) else self._base_pixmap.toImage()
+            image_w, image_h = self._image_size
+            xi = int(round(float(np.clip(self._sample_magnifier_image_pos[0], 0, max(0, image_w - 1)))))
+            yi = int(round(float(np.clip(self._sample_magnifier_image_pos[1], 0, max(0, image_h - 1)))))
+            sample_radius = max(0, int(self._sample_magnifier_radius))
+            context_radius = max(6, sample_radius + 4)
+            x0 = max(0, xi - context_radius)
+            x1 = min(image_w - 1, xi + context_radius)
+            y0 = max(0, yi - context_radius)
+            y1 = min(image_h - 1, yi + context_radius)
+            patch_w = max(1, x1 - x0 + 1)
+            patch_h = max(1, y1 - y0 + 1)
+            pixel_size = int(np.clip(176.0 / max(patch_w, patch_h), 5, 14))
+            label_h = 24
+            padding = 8
+            lens_w = patch_w * pixel_size + padding * 2
+            lens_h = patch_h * pixel_size + padding * 2 + label_h
+            anchor = self._map_image_to_widget(xi, yi, rect, scale, transform, bounds)
+            lens = QtCore.QRectF(anchor.x() + 18, anchor.y() + 18, lens_w, lens_h)
+            bounds_rect = QtCore.QRectF(self.rect()).adjusted(6, 6, -6, -6)
+            if lens.right() > bounds_rect.right():
+                lens.moveRight(anchor.x() - 18)
+            if lens.left() < bounds_rect.left():
+                lens.moveLeft(bounds_rect.left())
+            if lens.bottom() > bounds_rect.bottom():
+                lens.moveBottom(anchor.y() - 18)
+            if lens.top() < bounds_rect.top():
+                lens.moveTop(bounds_rect.top())
+
+            painter.save()
+            painter.setRenderHint(QtGui.QPainter.Antialiasing)
+            painter.setPen(QtGui.QPen(QtGui.QColor("#64748b"), 1))
+            painter.setBrush(QtGui.QColor(15, 23, 42, 235))
+            painter.drawRoundedRect(lens, 6, 6)
+
+            grid_origin = QtCore.QPointF(lens.left() + padding, lens.top() + padding)
+            painter.setRenderHint(QtGui.QPainter.Antialiasing, False)
+            for yy in range(y0, y1 + 1):
+                for xx in range(x0, x1 + 1):
+                    color = image.pixelColor(xx, yy)
+                    px = grid_origin.x() + (xx - x0) * pixel_size
+                    py = grid_origin.y() + (yy - y0) * pixel_size
+                    painter.fillRect(QtCore.QRectF(px, py, pixel_size, pixel_size), color)
+
+            painter.setPen(QtGui.QPen(QtGui.QColor(255, 255, 255, 55), 1))
+            for column in range(patch_w + 1):
+                xline = grid_origin.x() + column * pixel_size
+                painter.drawLine(
+                    QtCore.QPointF(xline, grid_origin.y()),
+                    QtCore.QPointF(xline, grid_origin.y() + patch_h * pixel_size),
+                )
+            for row in range(patch_h + 1):
+                yline = grid_origin.y() + row * pixel_size
+                painter.drawLine(
+                    QtCore.QPointF(grid_origin.x(), yline),
+                    QtCore.QPointF(grid_origin.x() + patch_w * pixel_size, yline),
+                )
+
+            selected_x0 = max(x0, xi - sample_radius)
+            selected_x1 = min(x1, xi + sample_radius)
+            selected_y0 = max(y0, yi - sample_radius)
+            selected_y1 = min(y1, yi + sample_radius)
+            selection = QtCore.QRectF(
+                grid_origin.x() + (selected_x0 - x0) * pixel_size,
+                grid_origin.y() + (selected_y0 - y0) * pixel_size,
+                (selected_x1 - selected_x0 + 1) * pixel_size,
+                (selected_y1 - selected_y0 + 1) * pixel_size,
+            )
+            painter.setRenderHint(QtGui.QPainter.Antialiasing)
+            painter.setBrush(QtGui.QColor(250, 204, 21, 42))
+            painter.setPen(QtGui.QPen(QtGui.QColor("#facc15"), 2))
+            painter.drawRect(selection.adjusted(1, 1, -1, -1))
+
+            center = QtCore.QRectF(
+                grid_origin.x() + (xi - x0) * pixel_size,
+                grid_origin.y() + (yi - y0) * pixel_size,
+                pixel_size,
+                pixel_size,
+            )
+            painter.setPen(QtGui.QPen(QtGui.QColor("#ffffff"), 2))
+            painter.drawLine(center.center() + QtCore.QPointF(-pixel_size * 0.35, 0), center.center() + QtCore.QPointF(pixel_size * 0.35, 0))
+            painter.drawLine(center.center() + QtCore.QPointF(0, -pixel_size * 0.35), center.center() + QtCore.QPointF(0, pixel_size * 0.35))
+
+            painter.setPen(QtGui.QColor("#e5e7eb"))
+            font = painter.font()
+            font.setPointSize(max(8, font.pointSize() - 1))
+            painter.setFont(font)
+            matrix = sample_radius * 2 + 1
+            label_rect = QtCore.QRectF(lens.left() + padding, lens.bottom() - label_h, lens.width() - padding * 2, label_h)
+            painter.drawText(label_rect, QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter, f"x {xi}, y {yi} | {matrix}x{matrix}")
+            painter.restore()
+
+        def _update_sample_magnifier_from_widget_pos(self, pos: QtCore.QPointF) -> None:
+            if not self._sample_magnifier_enabled or self._base_pixmap is None:
+                if self._sample_magnifier_image_pos is not None:
+                    self._sample_magnifier_image_pos = None
+                    self.update()
+                return
+            mapped = self._map_widget_to_image(pos)
+            next_pos = None if mapped is None else (float(mapped[0]), float(mapped[1]))
+            if next_pos != self._sample_magnifier_image_pos:
+                self._sample_magnifier_image_pos = next_pos
+                self.update()
 
         def _apply_idle_cursor(self) -> None:
             if self._space_pan_active and self._base_pixmap is not None:
@@ -3157,6 +3731,7 @@ else:  # pragma: no cover - importable en entornos sin Qt
     MTFPlotWidget = None
     RGBHistogramWidget = None
     Gamut3DWidget = None
+    ColorSampleGamutWidget = None
     ImagePanel = None
 
 
@@ -3192,5 +3767,6 @@ __all__ = [
     "MTFPlotWidget",
     "RGBHistogramWidget",
     "Gamut3DWidget",
+    "ColorSampleGamutWidget",
     "ImagePanel",
 ]

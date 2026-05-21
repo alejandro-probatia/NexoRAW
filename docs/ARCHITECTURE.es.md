@@ -29,7 +29,7 @@ src/probraw/
   gui_config.py                # constantes visuales, cache y compatibilidad de GUI
   workflow.py                  # orquestación end-to-end
   session.py                   # modelo y persistencia de sesiones
-  sidecar.py                   # mochilas RAW.probraw.json por imagen
+  sidecar.py                   # mochilas RAW.probraw.json por imagen, MTF y muestras Lab
   display_color.py             # perfil ICC de monitor por plataforma
   reporting.py                 # contexto de ejecución y trazabilidad
 
@@ -51,6 +51,7 @@ src/probraw/
   profile/                     # perfil ICC y export
     development.py             # perfil de revelado cientifico: WB + densidad + EV
     builder.py                 # build_profile / validate_profile (ArgyllCMS)
+    gamut.py                   # diagnostico de gamut, Lab 2D y pertenencia de muestras
     generic.py                 # perfiles ICC genericos para flujos sin carta
     export.py                  # batch_develop + export ICC/CMM + matriz diagnostica
 
@@ -69,7 +70,7 @@ src/probraw/
       browser.py               # explorador, miniaturas, cachés y metadatos
       preview.py               # fachada de preview
       preview_menu.py          # acciones de menú, ayuda, QA y recetas
-      preview_recipe.py        # controles de receta, histograma y curva tonal
+      preview_recipe.py        # controles de receta, histograma, curva tonal y muestras Lab
       preview_cache.py         # claves y cache de preview
       preview_load.py          # carga de imagen y precache visible
       preview_render.py        # preview interactivo, ICC y refresco final
@@ -115,6 +116,9 @@ como `raw/captura.NEF` contra `01_ORG/captura.NEF` cuando existe el archivo.
   imagen, normalmente ProPhoto RGB. No inventa otros perfiles ni usa
   conversiones a espacios ajenos para el analisis objetivo.
 - La visualizacion gestionada es directa `ICC entrada -> ICC monitor`.
+- El diagnostico de muestras Lab convierte RGB de imagen a Lab mediante el ICC
+  activo; solo se considera medicion rigurosa cuando ese ICC fue generado por
+  ProbRAW para la sesion de captura.
 
 ## Perfiles de ajuste
 
@@ -135,7 +139,10 @@ Se registra:
 - metadatos RAW,
 - detección de carta,
 - muestras por parche,
+- muestras Lab por imagen con coordenada real, matriz, grupo, nombre y nota,
 - DeltaE 76/2000,
+- comparaciones de conjuntos de muestras: media Lab, dispersion DE00, similitud
+  y gamut de muestras,
 - hashes de entradas/salidas,
 - manifiesto de lote.
 

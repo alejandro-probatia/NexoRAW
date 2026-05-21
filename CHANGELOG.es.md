@@ -20,6 +20,34 @@ Para mantener trazabilidad completa, cada cambio debe:
 
 Sin entradas todavia.
 
+## [0.4.0] - 2026-05-21
+
+### Added
+
+- Añadido diagnóstico de gamut en Lab 2D con selector vertical de L* junto al
+  comparador Gamut 3D.
+- Añadido cuentagotas Lab en `Diagnóstico > Muestras`, con lupa de píxel real,
+  matrices de muestreo, marcadores numerados sobre la imagen y persistencia por
+  imagen en `RAW.probraw.json`.
+- Añadidos conjuntos de muestras, vista en tabla/fichas, edición de nombre/nota,
+  comparación de conjuntos con medias, DeltaE, similitud porcentual y gamut de
+  muestras en Lab a*b*.
+
+### Changed
+
+- La comparación de muestras ya no usa una muestra primaria dentro de un
+  conjunto; la referencia comparativa se elige a nivel de conjunto.
+- Manual de usuario, README, pipeline de color, metodología, arquitectura,
+  reproducibilidad, comparativa y roadmap actualizados para reflejar el flujo de
+  muestras Lab y sus límites colorimétricos.
+
+### Tests
+
+- Anadida cobertura GUI para cuentagotas Lab, recarga obligatoria de pixel real,
+  persistencia por mochila, edicion de conjuntos y modo Lab 2D de gamut.
+- Anadidas pruebas de perfil/gamut para marcadores fuera de gama y pertenencia
+  Lab entre dos perfiles comparados.
+
 ## [0.3.22] - 2026-05-20
 
 ### Fixed

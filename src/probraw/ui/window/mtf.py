@@ -558,6 +558,8 @@ class MTFAnalysisMixin:
         if checked:
             self._manual_chart_marking = False
             self._set_neutral_picker_active(False)
+            if hasattr(self, "_set_color_picker_active"):
+                self._set_color_picker_active(False)
             if hasattr(self, "_sync_manual_chart_overlay"):
                 self._sync_manual_chart_overlay()
             self._set_status(self.tr("MTF: arrastra un rectángulo alrededor de un borde inclinado"))

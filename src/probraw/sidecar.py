@@ -58,6 +58,7 @@ def write_raw_sidecar(
 
     outputs = list(existing.get("outputs") or []) if isinstance(existing.get("outputs"), list) else []
     mtf_analysis = existing.get("mtf_analysis") if isinstance(existing.get("mtf_analysis"), dict) else None
+    color_samples = existing.get("color_samples") if isinstance(existing.get("color_samples"), dict) else None
     existing_raw_processing = existing.get("raw_processing") if isinstance(existing.get("raw_processing"), dict) else None
     stored_adjustment_profiles = (
         adjustment_profiles
@@ -113,6 +114,8 @@ def write_raw_sidecar(
         payload["raw_processing"] = existing_raw_processing
     if mtf_analysis is not None:
         payload["mtf_analysis"] = mtf_analysis
+    if color_samples is not None:
+        payload["color_samples"] = color_samples
     write_json(sidecar_path, payload)
     return sidecar_path
 
@@ -158,6 +161,49 @@ def write_raw_mtf_analysis(
     if not isinstance(payload.get("outputs"), list):
         payload["outputs"] = []
     payload["mtf_analysis"] = mtf_payload
+
+    write_json(sidecar_path, payload)
+    return sidecar_path
+
+
+def write_raw_color_samples(
+    source_path: Path,
+    color_samples_payload: dict[str, Any],
+    *,
+    session_root: Path | None = None,
+    session_name: str | None = None,
+) -> Path:
+    source_path = Path(source_path).expanduser()
+    sidecar_path = raw_sidecar_path(source_path)
+    existing = _load_existing_payload(_existing_raw_sidecar_path(source_path))
+    now = _utc_now_iso()
+
+    payload = dict(existing) if existing else {}
+    payload["schema"] = RAW_SIDECAR_SCHEMA
+    payload["schema_version"] = 1
+    payload["software"] = {
+        "name": "ProbRAW",
+        "version": __version__,
+    }
+    payload["status"] = str(payload.get("status") or "configured")
+    payload["created_at"] = str(payload.get("created_at") or now)
+    payload["updated_at"] = now
+
+    session_payload = payload.get("session") if isinstance(payload.get("session"), dict) else {}
+    if session_name is not None:
+        session_payload["name"] = session_name
+    session_payload.setdefault("name", "")
+    if session_root is not None:
+        session_payload["root_path"] = str(Path(session_root).expanduser())
+    session_payload.setdefault("root_path", "")
+    payload["session"] = session_payload
+
+    source_payload = _source_payload(source_path, session_root, hash_file=False)
+    existing_source = payload.get("source") if isinstance(payload.get("source"), dict) else {}
+    if existing_source.get("sha256"):
+        source_payload["sha256"] = existing_source.get("sha256")
+    payload["source"] = source_payload
+    payload["color_samples"] = color_samples_payload if isinstance(color_samples_payload, dict) else {}
 
     write_json(sidecar_path, payload)
     return sidecar_path

@@ -1,3 +1,5 @@
+_English version: [PERFORMANCE.md](PERFORMANCE.md)_
+
 # Performance
 
 Este documento recoge la politica practica de medicion de rendimiento en
@@ -10,6 +12,11 @@ precision de los valores RGB mostrados ni los bytes de salida canonica. Las
 optimizaciones aceptables eliminan trabajo redundante, reducen asignaciones,
 reutilizan caches o mueven trabajo fuera del hilo de interfaz, pero no sustituyen
 calculos colorimetricos por aproximaciones que alteren la imagen.
+
+El plan complementario de implementacion se mantiene en
+[Plan de mejoras de rendimiento](PERFORMANCE_IMPROVEMENTS.es.md). Ese documento
+recoge optimizaciones candidatas de visualizacion/cache y sus requisitos de
+validacion antes de poder fusionarlas.
 
 ## Herramientas
 
