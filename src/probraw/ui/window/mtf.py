@@ -60,7 +60,7 @@ class MTFAnalysisMixin:
         self.btn_mtf_select_roi.clicked.connect(self._toggle_mtf_roi_selection)
         tools.addWidget(self.btn_mtf_select_roi)
         tools.addWidget(self._button(self.tr("Actualizar"), self._recalculate_mtf_analysis))
-        tools.addWidget(self._button(self.tr("Auto nitidez"), self._auto_optimize_mtf_sharpening))
+        tools.addWidget(self._button(self.tr("Nitidez automática"), self._auto_optimize_mtf_sharpening))
         tools.addWidget(self._button(self.tr("Ampliar"), self._show_mtf_expanded_dialog))
         tools.addWidget(self._button(self.tr("Copiar datos"), self._copy_mtf_analysis_data))
         tools.addWidget(self._button(self.tr("Exportar CSV"), self._export_mtf_analysis_csv))
@@ -100,7 +100,7 @@ class MTFAnalysisMixin:
         options.addWidget(self.spin_mtf_pixel_pitch_um, 3, 1)
         self.mtf_pixel_pitch_source_label = QtWidgets.QLabel(self.tr("Pitch: pendiente de metadatos"))
         self.mtf_pixel_pitch_source_label.setWordWrap(True)
-        self.mtf_pixel_pitch_source_label.setStyleSheet("font-size: 11px; color: #4b5563;")
+        self.mtf_pixel_pitch_source_label.setStyleSheet("font-size: 11px; color: #d4d4d4;")
         options.addWidget(self.mtf_pixel_pitch_source_label, 4, 0, 1, 2)
         layout.addLayout(options)
 
@@ -109,7 +109,7 @@ class MTFAnalysisMixin:
 
         self.mtf_metrics_label = QtWidgets.QLabel(self.tr("MTF: selecciona una ROI con un borde inclinado."))
         self.mtf_metrics_label.setWordWrap(True)
-        self.mtf_metrics_label.setStyleSheet("font-size: 12px; color: #374151;")
+        self.mtf_metrics_label.setStyleSheet("font-size: 12px; color: #d8d8d8;")
         layout.addWidget(self.mtf_metrics_label)
         return panel
 
@@ -118,8 +118,8 @@ class MTFAnalysisMixin:
         panel.setObjectName("mtfProgressPanel")
         panel.setStyleSheet(
             "QWidget#mtfProgressPanel {"
-            " background-color: #f8fafc;"
-            " border: 1px solid #d1d5db;"
+            " background-color: #262626;"
+            " border: 1px solid #505050;"
             " border-radius: 4px;"
             "}"
         )
@@ -129,12 +129,12 @@ class MTFAnalysisMixin:
 
         self.mtf_progress_label = QtWidgets.QLabel(self.tr("MTF: esperando ROI"))
         self.mtf_progress_label.setWordWrap(True)
-        self.mtf_progress_label.setStyleSheet("font-size: 12px; color: #111827; font-weight: 600;")
+        self.mtf_progress_label.setStyleSheet("font-size: 12px; color: #f0f0f0; font-weight: 600;")
         layout.addWidget(self.mtf_progress_label)
 
         self.mtf_progress_time_label = QtWidgets.QLabel(self.tr("Tiempo: --"))
         self.mtf_progress_time_label.setWordWrap(True)
-        self.mtf_progress_time_label.setStyleSheet("font-size: 11px; color: #374151;")
+        self.mtf_progress_time_label.setStyleSheet("font-size: 11px; color: #d4d4d4;")
 
         self.mtf_progress_bar = QtWidgets.QProgressBar()
         self.mtf_progress_bar.setTextVisible(False)
@@ -146,7 +146,7 @@ class MTFAnalysisMixin:
 
         self.mtf_phase_label = QtWidgets.QLabel(self._mtf_phase_text("idle"))
         self.mtf_phase_label.setWordWrap(True)
-        self.mtf_phase_label.setStyleSheet("font-size: 11px; color: #4b5563;")
+        self.mtf_phase_label.setStyleSheet("font-size: 11px; color: #d4d4d4;")
         layout.addWidget(self.mtf_phase_label)
         return panel
 
@@ -164,26 +164,26 @@ class MTFAnalysisMixin:
     def _mtf_phase_text(self, stage: str) -> str:
         key = str(stage or "idle")
         if key in {"prepare", "queued"}:
-            return self.tr("ROI full-res: activo | MTF: pendiente | Caché: pendiente")
+            return self.tr("ROI a resolución real: activa | MTF: pendiente | Caché: pendiente")
         if key in {"analyze", "auto_sharpen"}:
-            return self.tr("ROI full-res: lista | MTF: activo | Caché: lista")
+            return self.tr("ROI a resolución real: lista | MTF: activo | Caché: lista")
         if key in {"complete", "auto_complete"}:
-            return self.tr("ROI full-res: lista | MTF: lista | Caché: lista")
+            return self.tr("ROI a resolución real: lista | MTF: lista | Caché: lista")
         if key in {"deferred"}:
-            return self.tr("ROI full-res: pendiente | MTF: pospuesta | Caché: pendiente")
+            return self.tr("ROI a resolución real: pendiente | MTF: pospuesta | Caché: pendiente")
         if key in {"error"}:
-            return self.tr("ROI full-res: error | MTF: detenida | Caché: sin actualizar")
-        return self.tr("ROI full-res: pendiente | MTF: pendiente | Caché: pendiente")
+            return self.tr("ROI a resolución real: error | MTF: detenida | Caché: sin actualizar")
+        return self.tr("ROI a resolución real: pendiente | MTF: pendiente | Caché: pendiente")
 
     def _mtf_stage_label(self, stage: str) -> str:
         labels = {
             "idle": self.tr("MTF: esperando ROI"),
-            "queued": self.tr("MTF: ROI full-res en cola"),
-            "prepare": self.tr("MTF: preparando ROI full-res"),
+            "queued": self.tr("MTF: ROI a resolución real en cola"),
+            "prepare": self.tr("MTF: preparando ROI a resolución real"),
             "analyze": self.tr("MTF: calculando curvas y métricas"),
-            "auto_sharpen": self.tr("Auto nitidez: evaluando combinaciones"),
+            "auto_sharpen": self.tr("Nitidez automática: evaluando combinaciones"),
             "complete": self.tr("MTF: análisis completado"),
-            "auto_complete": self.tr("Auto nitidez completada"),
+            "auto_complete": self.tr("Nitidez automática completada"),
             "deferred": self.tr("MTF: recálculo automático pospuesto"),
             "error": self.tr("MTF: análisis detenido"),
         }
@@ -1504,10 +1504,10 @@ class MTFAnalysisMixin:
 
     def _auto_optimize_mtf_sharpening(self) -> None:
         if getattr(self, "_mtf_roi", None) is None:
-            self._update_mtf_result_widgets(error=self.tr("Auto nitidez: selecciona primero una ROI MTF."))
+            self._update_mtf_result_widgets(error=self.tr("Nitidez automática: selecciona primero una ROI MTF."))
             return
         if not self._run_mtf_analysis_inline() and not self._mtf_try_activate_cached_base_roi(self._mtf_roi):
-            self._update_mtf_result_widgets(error=self.tr("Auto nitidez: preparando ROI full-res en segundo plano..."))
+            self._update_mtf_result_widgets(error=self.tr("Nitidez automática: preparando ROI a resolución real en segundo plano..."))
             self._queue_mtf_base_roi_worker(self._mtf_roi, mode="auto_sharpen")
             return
         auto_started = time.perf_counter()
@@ -1517,7 +1517,7 @@ class MTFAnalysisMixin:
                 detail=self.tr("preparando candidatos"),
                 estimate_seconds=self._mtf_auto_sharpen_estimate_seconds(),
             )
-        self._set_status(self.tr("Auto nitidez: evaluando ROI a resolución real..."))
+        self._set_status(self.tr("Nitidez automática: evaluando ROI a resolución real..."))
         app = QtWidgets.QApplication.instance()
         if app is not None:
             app.processEvents(QtCore.QEventLoop.ExcludeUserInputEvents)
@@ -1525,11 +1525,11 @@ class MTFAnalysisMixin:
             prepared = self._mtf_auto_sharpen_prepared_roi(self._mtf_roi)
         except Exception as exc:
             self._fail_mtf_progress(str(exc))
-            self._update_mtf_result_widgets(error=f"{self.tr('Auto nitidez')}: {exc}")
+            self._update_mtf_result_widgets(error=f"{self.tr('Nitidez automática')}: {exc}")
             return
         if prepared is None:
             self._fail_mtf_progress(self.tr("No se pudo preparar la ROI."))
-            self._update_mtf_result_widgets(error=self.tr("Auto nitidez: no se pudo preparar la ROI."))
+            self._update_mtf_result_widgets(error=self.tr("Nitidez automática: no se pudo preparar la ROI."))
             return
 
         evaluated: list[dict[str, Any]] = []
@@ -1545,7 +1545,7 @@ class MTFAnalysisMixin:
                 len(candidates),
                 detail=self.tr("combinación")
                 + f" {index + 1}/{len(candidates)}"
-                + f" (amount={float(amount_slider) / 100.0:.2f}, radius={float(radius_slider) / 10.0:.1f})",
+                + f" (cantidad={float(amount_slider) / 100.0:.2f}, radio={float(radius_slider) / 10.0:.1f})",
             )
             if app is not None and index % 6 == 0:
                 app.processEvents(QtCore.QEventLoop.ExcludeUserInputEvents)
@@ -1574,7 +1574,7 @@ class MTFAnalysisMixin:
         best = self._mtf_auto_sharpen_select_best(evaluated)
         if best is None:
             self._fail_mtf_progress(self.tr("Sin combinación válida."))
-            self._update_mtf_result_widgets(error=self.tr("Auto nitidez: no se encontró una combinación válida."))
+            self._update_mtf_result_widgets(error=self.tr("Nitidez automática: no se encontró una combinación válida."))
             return
         self._apply_mtf_auto_sharpening(best, prepared)
         elapsed = time.perf_counter() - auto_started
@@ -1584,7 +1584,7 @@ class MTFAnalysisMixin:
         detail = (
             self.tr("ROI")
             + f" {self._mtf_format_duration(float(roi_elapsed))} + "
-            + self.tr("auto nitidez")
+            + self.tr("nitidez automática")
             + f" {self._mtf_format_duration(elapsed)}"
             if roi_elapsed is not None
             else f"{len(evaluated)}/{len(candidates)} " + self.tr("combinaciones evaluadas")
@@ -1888,8 +1888,8 @@ class MTFAnalysisMixin:
         mtf50 = self._format_mtf_cycles(result.mtf50)
         mtf50p = self._format_mtf_cycles(getattr(result, "mtf50p", None))
         self._set_status(
-            self.tr("Auto nitidez aplicada")
-            + f": amount={amount:.2f}, radius={radius:.1f}, MTF50={mtf50}, MTF50P={mtf50p}, halo={float(best.get('halo', 0.0)) * 100.0:.1f}%"
+            self.tr("Nitidez automática aplicada")
+            + f": cantidad={amount:.2f}, radio={radius:.1f}, MTF50={mtf50}, MTF50P={mtf50p}, halo={float(best.get('halo', 0.0)) * 100.0:.1f}%"
         )
 
     def _mtf_try_activate_cached_base_roi(self, display_roi: tuple[int, int, int, int]) -> bool:
@@ -1945,7 +1945,7 @@ class MTFAnalysisMixin:
         cache_key = str(request["cache_key"])
         if bool(getattr(self, "_mtf_base_roi_task_active", False)):
             if getattr(self, "_mtf_base_roi_inflight_key", None) == cache_key:
-                self._set_status(self.tr("MTF: ROI full-res ya se está preparando en segundo plano..."))
+                self._set_status(self.tr("MTF: ROI a resolución real ya se está preparando en segundo plano..."))
                 return True
             self._mtf_base_roi_pending_request = request
             self._start_mtf_progress(
@@ -1953,7 +1953,7 @@ class MTFAnalysisMixin:
                 detail=self._mtf_request_progress_detail(request),
                 estimate_seconds=self._mtf_worker_estimate_seconds(request),
             )
-            self._set_status(self.tr("MTF: ROI full-res encolada; se procesará al terminar la actual."))
+            self._set_status(self.tr("MTF: ROI a resolución real encolada; se procesará al terminar la actual."))
             return True
         self._start_mtf_base_roi_worker(request)
         return True
@@ -1968,7 +1968,7 @@ class MTFAnalysisMixin:
             except Exception:
                 roi_label = ""
         mode = str(request.get("mode") or "analysis")
-        mode_label = self.tr("auto nitidez") if mode == "auto_sharpen" else self.tr("análisis")
+        mode_label = self.tr("nitidez automática") if mode == "auto_sharpen" else self.tr("análisis")
         name = path.name or self.tr("archivo actual")
         return f"{name}{roi_label} ({mode_label})"
 
@@ -1985,7 +1985,7 @@ class MTFAnalysisMixin:
                         str(output_path),
                     ]
             raise RuntimeError(
-                self.tr("No se encontrÃ³ el ejecutable CLI de ProbRAW para calcular la ROI MTF.")
+                self.tr("No se encontró el ejecutable CLI de ProbRAW para calcular la ROI MTF.")
             )
         return [
             sys.executable,
@@ -1996,8 +1996,8 @@ class MTFAnalysisMixin:
         ]
 
     def _start_mtf_base_roi_worker(self, request: dict[str, Any]) -> None:
-        label = self.tr("MTF ROI full-res")
-        self._set_status(self.tr("MTF: preparando ROI full-res en segundo plano..."))
+        label = self.tr("ROI MTF a resolución real")
+        self._set_status(self.tr("MTF: preparando ROI a resolución real en segundo plano..."))
         task_row = self._monitor_task_start(label)
         app = QtWidgets.QApplication.instance()
         if app is not None:
@@ -2092,7 +2092,7 @@ class MTFAnalysisMixin:
                         else self._mtf_auto_sharpen_estimate_seconds()
                     ),
                 )
-                self._set_status(self.tr("MTF: ROI full-res preparada; calculando métricas..."))
+                self._set_status(self.tr("MTF: ROI a resolución real preparada; calculando métricas..."))
                 if str(payload_request.get("mode") or "") == "auto_sharpen":
                     self._auto_optimize_mtf_sharpening()
                 else:
@@ -2107,14 +2107,14 @@ class MTFAnalysisMixin:
         def fail(trace: str) -> None:
             pending = cleanup()
             self._log_preview(trace[-1200:])
-            self._set_status(self.tr("Error preparando ROI MTF full-res"))
+            self._set_status(self.tr("Error preparando ROI MTF a resolución real"))
             self._monitor_task_finish(
                 task_row,
                 self.tr("Error"),
                 trace.strip().splitlines()[-1] if trace.strip() else self.tr("Error"),
             )
             self._fail_mtf_progress(trace.strip().splitlines()[-1] if trace.strip() else self.tr("Error"))
-            self._update_mtf_result_widgets(error=self.tr("MTF: no se pudo preparar la ROI full-res."))
+            self._update_mtf_result_widgets(error=self.tr("MTF: no se pudo preparar la ROI a resolución real."))
             maybe_start_pending(pending)
 
         thread.succeeded.connect(ok)
@@ -2128,7 +2128,7 @@ class MTFAnalysisMixin:
         display_roi = self._mtf_roi
         if not self._run_mtf_analysis_inline() and not self._mtf_try_activate_cached_base_roi(display_roi):
             self._mtf_last_result = None
-            self._update_mtf_result_widgets(error=self.tr("MTF: preparando ROI full-res en segundo plano..."))
+            self._update_mtf_result_widgets(error=self.tr("MTF: preparando ROI a resolución real en segundo plano..."))
             self._queue_mtf_base_roi_worker(display_roi, mode="analysis")
             return
         analysis_started = time.perf_counter()
@@ -2251,7 +2251,7 @@ class MTFAnalysisMixin:
                 if not bool(getattr(self, "_mtf_base_roi_task_active", False)):
                     self._finish_mtf_progress(
                         "deferred",
-                        detail=self.tr("pulsa Actualizar para preparar la ROI full-res"),
+                        detail=self.tr("pulsa Actualizar para preparar la ROI a resolución real"),
                         elapsed_seconds=0.0,
                     )
                 self._set_status(
@@ -2423,7 +2423,7 @@ class MTFAnalysisMixin:
         source = getattr(self, "_selected_file", None)
         roi_x, roi_y, roi_w, roi_h = result.roi
         rows: list[tuple[str, str]] = [
-            (self.tr("Fuente"), str(source) if source is not None else self.tr("preview actual")),
+            (self.tr("Fuente"), str(source) if source is not None else self.tr("vista previa actual")),
             (self.tr("Imagen análisis"), f"{image_dimensions[0]} x {image_dimensions[1]} px" if image_dimensions else self.tr("no disponible")),
             (self.tr("Imagen visor"), f"{display_dimensions[0]} x {display_dimensions[1]} px" if display_dimensions else self.tr("no disponible")),
             (self.tr("ROI"), f"x={roi_x}, y={roi_y}, w={roi_w}, h={roi_h} px"),

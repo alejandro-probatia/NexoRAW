@@ -16,6 +16,34 @@ class PreviewRenderMixin:
                 until,
             )
 
+    def _current_adjusted_linear_signature(self) -> str:
+        source_key = self._last_loaded_preview_key or str(id(self._original_linear))
+        shape: tuple[int, ...] = ()
+        if self._original_linear is not None:
+            try:
+                shape = tuple(int(v) for v in np.asarray(self._original_linear).shape)
+            except Exception:
+                shape = ()
+        detail_kwargs = {
+            "denoise_luminance": float(self.slider_noise_luma.value() / 100.0),
+            "denoise_color": float(self.slider_noise_color.value() / 100.0),
+            "sharpen_amount": float(self.slider_sharpen.value() / 100.0),
+            "sharpen_radius": float(self.slider_radius.value() / 10.0),
+        }
+        ca_red, ca_blue = self._ca_scale_factors()
+        detail_kwargs["lateral_ca_red_scale"] = float(ca_red)
+        detail_kwargs["lateral_ca_blue_scale"] = float(ca_blue)
+        return json.dumps(
+            {
+                "source": source_key,
+                "shape": shape,
+                "detail": detail_kwargs,
+                "render": self._render_adjustment_kwargs(),
+            },
+            sort_keys=True,
+            default=str,
+        )
+
     def _recent_preview_control_interaction_active(self) -> bool:
         now = time.perf_counter()
         return (
@@ -1182,7 +1210,7 @@ class PreviewRenderMixin:
             key = f"generic-preview-profile|{recipe.output_space}|{exc}"
             if self._profile_preview_error_key != key:
                 self._profile_preview_error_key = key
-                self._log_preview(f"Aviso: perfil ICC estandar no disponible para preview directa: {exc}")
+                self._log_preview(f"Aviso: perfil ICC estandar no disponible para vista previa directa: {exc}")
             raise RuntimeError(
                 f"No se puede visualizar {recipe.output_space} con garantia colorimetrica: "
                 "falta el perfil ICC estandar. Instala/configura el ICC correspondiente."
@@ -1342,7 +1370,7 @@ class PreviewRenderMixin:
                         return self._srgb_to_display_u8_tiled(image_srgb, monitor_profile)
                     return srgb_to_display_u8(image_srgb, monitor_profile)
                 except Exception as exc:
-                    raise RuntimeError(f"No se pudo convertir la preview sRGB al ICC de monitor: {exc}") from exc
+                    raise RuntimeError(f"No se pudo convertir la vista previa sRGB al ICC de monitor: {exc}") from exc
 
             source = self._interactive_preview_source(
                 np.asarray(source_linear, dtype=np.float32),
@@ -1449,7 +1477,7 @@ class PreviewRenderMixin:
                         adjusted_u8 = rgb_float_to_u8(adjusted)
                         display_u8 = profiled_u8_to_display_u8(adjusted_u8, source_profile, monitor_profile)
                 except Exception as exc:
-                    raise RuntimeError(f"No se pudo convertir la preview del ICC de imagen al ICC de monitor: {exc}") from exc
+                    raise RuntimeError(f"No se pudo convertir la vista previa del ICC de imagen al ICC de monitor: {exc}") from exc
                 if bool(include_colorimetric_patch):
                     try:
                         result_srgb_u8 = (
@@ -1459,7 +1487,7 @@ class PreviewRenderMixin:
                         )
                         result_srgb = np.asarray(result_srgb_u8, dtype=np.uint8)
                     except Exception as exc:
-                        raise RuntimeError(f"No se pudo convertir la preview con el ICC de imagen: {exc}") from exc
+                        raise RuntimeError(f"No se pudo convertir la vista previa con el ICC de imagen: {exc}") from exc
             else:
                 if render_tiled:
                     result_srgb = self._standard_profile_to_srgb_display_tiled(adjusted, output_space)
@@ -1604,8 +1632,8 @@ class PreviewRenderMixin:
             key = f"interactive-preview-failed|{request_key}|{line}"
             if self._profile_preview_error_key != key:
                 self._profile_preview_error_key = key
-                self._log_preview(f"Aviso: fallo en preview interactiva; se conserva la ultima vista: {line}")
-                self._set_status(self.tr("Preview interactiva fallida; puedes seguir ajustando."))
+                self._log_preview(f"Aviso: fallo en vista previa interactiva; se conserva la ultima vista: {line}")
+                self._set_status(self.tr("Vista previa interactiva fallida; puedes seguir ajustando."))
             cleanup()
 
         thread.succeeded.connect(ok)
@@ -1633,7 +1661,7 @@ class PreviewRenderMixin:
         self._interactive_preview_inflight_include_analysis = False
         pending = self._interactive_preview_pending_request
         self._interactive_preview_pending_request = None
-        self._log_preview("Aviso: preview interactiva cancelada por tiempo de espera; se reanuda la cola de ajustes.")
+        self._log_preview("Aviso: vista previa interactiva cancelada por tiempo de espera; se reanuda la cola de ajustes.")
         if pending is not None:
             self._start_interactive_preview_task(pending)
         else:
@@ -1832,6 +1860,7 @@ class PreviewRenderMixin:
             )
             adjusted = apply_render_adjustments(detail_adjusted, **render_kwargs)
             self._adjusted_linear = adjusted
+            self._adjusted_linear_signature = self._current_adjusted_linear_signature()
             active_session_profile = self._active_session_icc_for_settings()
             raw_profile_text = self.path_profile_active.text().strip() if hasattr(self, "path_profile_active") else ""
 
@@ -1839,7 +1868,7 @@ class PreviewRenderMixin:
                 try:
                     result_srgb = profiled_float_to_display_u8(adjusted, source_profile, None).astype(np.float32) / 255.0
                 except Exception as exc:
-                    raise RuntimeError(f"No se pudo calcular la preview colorimetrica desde el ICC de entrada: {exc}") from exc
+                    raise RuntimeError(f"No se pudo calcular la vista previa colorimetrica desde el ICC de entrada: {exc}") from exc
             else:
                 result_srgb = standard_profile_to_srgb_display(adjusted, recipe.output_space)
 
@@ -1891,6 +1920,8 @@ class PreviewRenderMixin:
     def _schedule_preview_refresh(self) -> None:
         if self._original_linear is None:
             return
+        if hasattr(self, "_mark_color_picker_samples_pending_for_adjustment_change"):
+            self._mark_color_picker_samples_pending_for_adjustment_change()
         if self._is_preview_interaction_active():
             if not self._preview_refresh_timer.isActive():
                 self._preview_refresh_timer.start(PREVIEW_REFRESH_THROTTLE_MS)
@@ -1954,7 +1985,7 @@ class PreviewRenderMixin:
         if bool(mark_pending) and hasattr(self, "histogram_shadow_label") and hasattr(self, "histogram_highlight_label"):
             self.histogram_shadow_label.setText(self.tr("Sombras: recalculando..."))
             self.histogram_highlight_label.setText(self.tr("Luces: recalculando..."))
-            pending_style = "font-size: 12px; color: #9ca3af;"
+            pending_style = "font-size: 12px; color: #a6a6a6;"
             self.histogram_shadow_label.setStyleSheet(pending_style)
             self.histogram_highlight_label.setStyleSheet(pending_style)
         timer = getattr(self, "_exact_histogram_refresh_timer", None)

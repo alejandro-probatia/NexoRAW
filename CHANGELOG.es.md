@@ -20,6 +20,35 @@ Para mantener trazabilidad completa, cada cambio debe:
 
 Sin entradas todavia.
 
+## [0.4.1] - 2026-05-29
+
+### Fixed
+
+- Corregidas las lecturas del cuentagotas Lab tras ajustes de color,
+  exposicion y contraste: las muestras guardadas pasan a pendiente cuando
+  cambia el render y se recalculan desde los valores actuales de pixel real
+  antes de publicarse.
+- Corregidas las actualizaciones parciales de preview interactiva para que
+  tambien refresquen las muestras guardadas en vez de dejar RGB/Lab obsoletos.
+- Corregidas superficies de interfaz con mezcla de idiomas forzando el idioma
+  fuente espanol hasta completar el catalogo de traduccion.
+- Corregidos textos y avisos de bajo contraste en la interfaz oscura.
+
+### Changed
+
+- La GUI usa ahora un tema gris oscuro neutro con independencia del tema del
+  sistema operativo.
+- Los RGB de muestras Lab se muestran como tripletas enteras normales 0-255 en
+  vez de valores RGB fraccionarios.
+- Los avisos explicativos de precision y flujo se han movido a botones compactos
+  de informacion cuando es posible, reduciendo ruido visual permanente.
+
+### Tests
+
+- Anadida cobertura de regresion para refresco dinamico de muestras Lab tras
+  ajustes de render y actualizaciones parciales de preview.
+- Validado con la suite local completa: `504 passed, 2 warnings`.
+
 ## [0.4.0] - 2026-05-21
 
 ### Added

@@ -122,7 +122,7 @@ class SessionQueueMixin:
         elif status == "done":
             bar.setStyleSheet("QProgressBar::chunk { background-color: #047857; } QProgressBar { text-align: center; }")
         elif status in {"processing", "queued"}:
-            bar.setStyleSheet("QProgressBar::chunk { background-color: #2563eb; } QProgressBar { text-align: center; }")
+            bar.setStyleSheet("QProgressBar::chunk { background-color: #4a4a4a; } QProgressBar { text-align: center; }")
         return bar
 
     def _queue_item_progress_value(self, item: dict[str, Any], status: str) -> int:

@@ -4,6 +4,43 @@ from ._imports import *  # noqa: F401,F403
 
 
 class LayoutMixin:
+    def _info_button(self, title: str, text: str) -> QtWidgets.QToolButton:
+        button = QtWidgets.QToolButton()
+        button.setText("i")
+        button.setAutoRaise(True)
+        button.setCursor(QtCore.Qt.PointingHandCursor)
+        button.setToolTip(str(text))
+        button.setAccessibleName(str(title or self.tr("Información")))
+        button.setFixedSize(22, 22)
+        button.setStyleSheet(
+            "QToolButton {"
+            " border: 1px solid #707070;"
+            " border-radius: 11px;"
+            " color: #d0d0d0;"
+            " background: #2a2a2a;"
+            " font-weight: 700;"
+            " padding: 0;"
+            "}"
+            "QToolButton:hover { background: #3f3f3f; color: #ffffff; }"
+        )
+        button.clicked.connect(
+            lambda _checked=False, info_title=str(title or self.tr("Información")), info_text=str(text): QtWidgets.QMessageBox.information(
+                self,
+                info_title,
+                info_text,
+            )
+        )
+        return button
+
+    def _info_row(self, title: str, text: str) -> QtWidgets.QWidget:
+        row = QtWidgets.QWidget()
+        layout = QtWidgets.QHBoxLayout(row)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(4)
+        layout.addStretch(1)
+        layout.addWidget(self._info_button(title, text))
+        return row
+
     def _build_ui(self) -> None:
         root = QtWidgets.QWidget()
         root_layout = QtWidgets.QVBoxLayout(root)
@@ -24,8 +61,8 @@ class LayoutMixin:
         task_panel.setObjectName("globalProgressPanel")
         task_panel.setStyleSheet(
             "QWidget#globalProgressPanel {"
-            " background-color: #1b1f24;"
-            " border: 1px solid #3f4652;"
+            " background-color: #262626;"
+            " border: 1px solid #505050;"
             " border-radius: 4px;"
             "}"
         )
@@ -38,10 +75,10 @@ class LayoutMixin:
         task_top.setSpacing(8)
         self.global_status_label = QtWidgets.QLabel(self.tr("Listo"))
         self.global_status_label.setWordWrap(True)
-        self.global_status_label.setStyleSheet("font-size: 12px; color: #f3f4f6; font-weight: 600;")
+        self.global_status_label.setStyleSheet("font-size: 12px; color: #f0f0f0; font-weight: 600;")
         self.global_progress_time_label = QtWidgets.QLabel(self.tr("Tiempo: --"))
         self.global_progress_time_label.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
-        self.global_progress_time_label.setStyleSheet("font-size: 11px; color: #cbd5e1;")
+        self.global_progress_time_label.setStyleSheet("font-size: 11px; color: #d4d4d4;")
         task_top.addWidget(self.global_status_label, 2)
         task_top.addWidget(self.global_progress_time_label, 1)
         task_bar.addLayout(task_top)
@@ -55,7 +92,7 @@ class LayoutMixin:
 
         self.global_progress_phase_label = QtWidgets.QLabel(self.tr("Sin operación en curso"))
         self.global_progress_phase_label.setWordWrap(True)
-        self.global_progress_phase_label.setStyleSheet("font-size: 11px; color: #9ca3af;")
+        self.global_progress_phase_label.setStyleSheet("font-size: 11px; color: #a6a6a6;")
         task_bar.addWidget(self.global_progress_phase_label)
         root_layout.addWidget(task_panel)
 
@@ -87,7 +124,7 @@ class LayoutMixin:
         menu_file.addAction(self._action(self.tr("Guardar sesión"), self._on_save_session, "Ctrl+Shift+S"))
         menu_file.addSeparator()
         menu_file.addAction(self._action(self.tr("Abrir carpeta..."), self._pick_directory, "Ctrl+O"))
-        menu_file.addAction(self._action(self.tr("Guardar preview PNG"), self._on_save_preview, "Ctrl+S"))
+        menu_file.addAction(self._action(self.tr("Guardar vista previa PNG"), self._on_save_preview, "Ctrl+S"))
         menu_file.addAction(self._action(self.tr("Aplicar ajustes a selección"), self._on_batch_develop_selected, "Ctrl+R"))
         menu_file.addSeparator()
         menu_file.addAction(self._action(self.tr("Salir"), self.close, "Ctrl+Q"))
@@ -363,7 +400,7 @@ class LayoutMixin:
 
         self.session_active_label = QtWidgets.QLabel(self.tr("Sin sesión activa"))
         self.session_active_label.setWordWrap(True)
-        self.session_active_label.setStyleSheet("font-size: 12px; color: #1f2937;")
+        self.session_active_label.setStyleSheet("font-size: 12px; color: #d8d8d8;")
         grid.addWidget(self.session_active_label, 5, 0, 1, 3)
 
         outer.addWidget(session_box)
@@ -392,13 +429,13 @@ class LayoutMixin:
         ):
             value_label = QtWidgets.QLabel("0")
             value_label.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
-            value_label.setStyleSheet("font-weight: 600; color: #111827;")
+            value_label.setStyleSheet("font-weight: 600; color: #f0f0f0;")
             self.session_stats_labels[key] = value_label
             stats_grid.addWidget(QtWidgets.QLabel(label), row_index, 0)
             stats_grid.addWidget(value_label, row_index, 1)
         self.session_stats_updated_label = QtWidgets.QLabel(self.tr("Sin sesión activa"))
         self.session_stats_updated_label.setWordWrap(True)
-        self.session_stats_updated_label.setStyleSheet("font-size: 12px; color: #6b7280;")
+        self.session_stats_updated_label.setStyleSheet("font-size: 12px; color: #d4d4d4;")
         stats_grid.addWidget(self.session_stats_updated_label, 0, 2, 3, 1)
         stats_grid.addWidget(self._button(self.tr("Actualizar estadísticas"), self._refresh_session_statistics), 3, 2)
         stats_grid.setColumnStretch(2, 1)
@@ -469,7 +506,7 @@ class LayoutMixin:
 
         self.profile_chart_selection_label = QtWidgets.QLabel(self.tr("Referencias colorimétricas: todas las compatibles de la carpeta indicada"))
         self.profile_chart_selection_label.setWordWrap(True)
-        self.profile_chart_selection_label.setStyleSheet("font-size: 12px; color: #374151;")
+        self.profile_chart_selection_label.setStyleSheet("font-size: 12px; color: #d8d8d8;")
         grid.addWidget(self.profile_chart_selection_label, 1, 0, 1, 3)
 
         self.path_reference = QtWidgets.QLineEdit("colorchecker24_colorchecker2005_d50.json")
@@ -494,7 +531,7 @@ class LayoutMixin:
 
         self.reference_status_label = QtWidgets.QLabel(self.tr("Referencia de carta no validada"))
         self.reference_status_label.setWordWrap(True)
-        self.reference_status_label.setStyleSheet("font-size: 12px; color: #374151;")
+        self.reference_status_label.setStyleSheet("font-size: 12px; color: #d8d8d8;")
         grid.addWidget(self.reference_status_label, 5, 0, 1, 3)
 
         self.profile_out_path_edit = QtWidgets.QLineEdit("/tmp/camera_profile_gui.icc")
@@ -526,7 +563,7 @@ class LayoutMixin:
         self.profile_min_conf.setValue(0.35)
         grid.addWidget(self.profile_min_conf, 12, 1, 1, 2)
 
-        self.profile_allow_fallback = QtWidgets.QCheckBox(self.tr("Permitir fallback"))
+        self.profile_allow_fallback = QtWidgets.QCheckBox(self.tr("Permitir respaldo"))
         self.profile_allow_fallback.setChecked(False)
         grid.addWidget(self.profile_allow_fallback, 13, 1, 1, 2)
 
@@ -581,7 +618,7 @@ class LayoutMixin:
         manual_layout.addLayout(manual_buttons)
         self.manual_chart_points_label = QtWidgets.QLabel(self.tr("Puntos: 0/4"))
         self.manual_chart_points_label.setWordWrap(True)
-        self.manual_chart_points_label.setStyleSheet("font-size: 12px; color: #374151;")
+        self.manual_chart_points_label.setStyleSheet("font-size: 12px; color: #d8d8d8;")
         manual_layout.addWidget(self.manual_chart_points_label)
         outer.addWidget(manual_box)
 
@@ -591,7 +628,7 @@ class LayoutMixin:
 
         self.profile_summary_label = QtWidgets.QLabel(self.tr("Sin ICC generado"))
         self.profile_summary_label.setWordWrap(True)
-        self.profile_summary_label.setStyleSheet("font-size: 12px; color: #374151;")
+        self.profile_summary_label.setStyleSheet("font-size: 12px; color: #d8d8d8;")
         outer.addWidget(self.profile_summary_label)
 
         self.profile_output = QtWidgets.QPlainTextEdit()
@@ -644,7 +681,7 @@ class LayoutMixin:
 
         self.development_profile_status_label = QtWidgets.QLabel(self.tr("Sin perfiles de ajuste guardados"))
         self.development_profile_status_label.setWordWrap(True)
-        self.development_profile_status_label.setStyleSheet("font-size: 12px; color: #374151;")
+        self.development_profile_status_label.setStyleSheet("font-size: 12px; color: #d8d8d8;")
         grid.addWidget(self.development_profile_status_label, 4, 0, 1, 3)
 
         self._refresh_development_profile_combo()
@@ -687,7 +724,7 @@ class LayoutMixin:
         queue_layout.addLayout(queue_actions)
 
         self.queue_status_label = QtWidgets.QLabel(self.tr("Cola vacía"))
-        self.queue_status_label.setStyleSheet("font-size: 12px; color: #374151;")
+        self.queue_status_label.setStyleSheet("font-size: 12px; color: #d8d8d8;")
         queue_layout.addWidget(self.queue_status_label)
 
         self.queue_table = QtWidgets.QTableWidget(0, 6)
@@ -817,7 +854,7 @@ class LayoutMixin:
 
         self.current_dir_label = QtWidgets.QLabel(self.tr(""))
         self.current_dir_label.setWordWrap(True)
-        self.current_dir_label.setStyleSheet("font-size: 12px; color: #374151;")
+        self.current_dir_label.setStyleSheet("font-size: 12px; color: #d8d8d8;")
         box_layout.addWidget(self.current_dir_label)
 
         self.dir_tree = QtWidgets.QTreeView()
@@ -864,9 +901,9 @@ class LayoutMixin:
         clip_row = QtWidgets.QHBoxLayout()
         clip_row.setContentsMargins(0, 0, 0, 0)
         self.histogram_shadow_label = QtWidgets.QLabel(self.tr("Sombras: --"))
-        self.histogram_shadow_label.setStyleSheet("font-size: 12px; color: #6b7280;")
+        self.histogram_shadow_label.setStyleSheet("font-size: 12px; color: #d4d4d4;")
         self.histogram_highlight_label = QtWidgets.QLabel(self.tr("Luces: --"))
-        self.histogram_highlight_label.setStyleSheet("font-size: 12px; color: #6b7280;")
+        self.histogram_highlight_label.setStyleSheet("font-size: 12px; color: #d4d4d4;")
         clip_row.addWidget(self.histogram_shadow_label, 1)
         clip_row.addWidget(self.histogram_highlight_label, 1)
         histogram_layout.addLayout(clip_row)
@@ -892,14 +929,14 @@ class LayoutMixin:
         painter = QtGui.QPainter(pixmap)
         painter.setRenderHint(QtGui.QPainter.Antialiasing)
         rect = QtCore.QRectF(3, 4, 50, 28)
-        painter.setPen(QtGui.QPen(QtGui.QColor("#aeb5bf"), 1.2))
-        painter.setBrush(QtGui.QColor("#273449"))
+        painter.setPen(QtGui.QPen(QtGui.QColor("#b3b3b3"), 1.2))
+        painter.setBrush(QtGui.QColor("#303030"))
         painter.drawRoundedRect(rect, 4, 4)
         font = QtGui.QFontDatabase.systemFont(QtGui.QFontDatabase.GeneralFont)
         font.setBold(True)
         font.setPointSize(13)
         painter.setFont(font)
-        painter.setPen(QtGui.QColor("#f8fafc"))
+        painter.setPen(QtGui.QColor("#f7f7f7"))
         painter.drawText(rect, QtCore.Qt.AlignCenter, text)
         painter.end()
         return QtGui.QIcon(pixmap)
@@ -916,7 +953,7 @@ class LayoutMixin:
         path = QtGui.QPainterPath()
         path.arcMoveTo(rect, start_angle)
         path.arcTo(rect, start_angle, span_angle)
-        pen = QtGui.QPen(QtGui.QColor("#f8fafc"), 2.2)
+        pen = QtGui.QPen(QtGui.QColor("#f7f7f7"), 2.2)
         pen.setCapStyle(QtCore.Qt.RoundCap)
         pen.setJoinStyle(QtCore.Qt.RoundJoin)
         painter.setPen(pen)
@@ -947,7 +984,7 @@ class LayoutMixin:
             float(tangent[0] * back - normal[0] * spread),
             float(tangent[1] * back - normal[1] * spread),
         )
-        painter.setBrush(QtGui.QColor("#f8fafc"))
+        painter.setBrush(QtGui.QColor("#f7f7f7"))
         painter.setPen(QtCore.Qt.NoPen)
         painter.drawPolygon(QtGui.QPolygonF([tip, p1, p2]))
         painter.end()
@@ -959,8 +996,8 @@ class LayoutMixin:
         painter = QtGui.QPainter(pixmap)
         painter.setRenderHint(QtGui.QPainter.Antialiasing)
 
-        tile_pen = QtGui.QPen(QtGui.QColor("#aeb5bf"), 1.1)
-        tile_fill = QtGui.QColor("#223047")
+        tile_pen = QtGui.QPen(QtGui.QColor("#b3b3b3"), 1.1)
+        tile_fill = QtGui.QColor("#303030")
         painter.setPen(tile_pen)
         painter.setBrush(tile_fill)
         for row in range(2):
@@ -983,14 +1020,14 @@ class LayoutMixin:
 
         if one_to_one:
             badge_rect = QtCore.QRectF(20, 20, 18, 10)
-            painter.setPen(QtGui.QPen(QtGui.QColor("#93c5fd"), 1.0))
-            painter.setBrush(QtGui.QColor("#172554"))
+            painter.setPen(QtGui.QPen(QtGui.QColor("#9a9a9a"), 1.0))
+            painter.setBrush(QtGui.QColor("#3a3a3a"))
             painter.drawRoundedRect(badge_rect, 2, 2)
             font = QtGui.QFontDatabase.systemFont(QtGui.QFontDatabase.GeneralFont)
             font.setBold(True)
             font.setPointSize(6)
             painter.setFont(font)
-            painter.setPen(QtGui.QColor("#dbeafe"))
+            painter.setPen(QtGui.QColor("#f0f0f0"))
             painter.drawText(badge_rect, QtCore.Qt.AlignCenter, "1:1")
 
         painter.end()
@@ -1002,9 +1039,9 @@ class LayoutMixin:
         painter = QtGui.QPainter(pixmap)
         painter.setRenderHint(QtGui.QPainter.Antialiasing)
 
-        border = QtGui.QColor("#aeb5bf")
-        side_fill = QtGui.QColor("#223047")
-        center_fill = QtGui.QColor("#1e293b" if focused else "#273449")
+        border = QtGui.QColor("#b3b3b3")
+        side_fill = QtGui.QColor("#303030")
+        center_fill = QtGui.QColor("#3a3a3a" if focused else "#343434")
         painter.setPen(QtGui.QPen(border, 1.1))
         painter.setBrush(side_fill)
         painter.drawRoundedRect(QtCore.QRectF(4, 6, 7, 20), 1.6, 1.6)
@@ -1012,10 +1049,10 @@ class LayoutMixin:
         painter.setBrush(center_fill)
         painter.drawRoundedRect(QtCore.QRectF(13, 5, 14, 22), 2.0, 2.0)
 
-        arrow_pen = QtGui.QPen(QtGui.QColor("#f8fafc"), 1.8)
+        arrow_pen = QtGui.QPen(QtGui.QColor("#f7f7f7"), 1.8)
         arrow_pen.setCapStyle(QtCore.Qt.RoundCap)
         painter.setPen(arrow_pen)
-        painter.setBrush(QtGui.QColor("#f8fafc"))
+        painter.setBrush(QtGui.QColor("#f7f7f7"))
 
         if focused:
             pairs = [
@@ -1054,20 +1091,20 @@ class LayoutMixin:
         painter.setRenderHint(QtGui.QPainter.Antialiasing)
 
         lens_rect = QtCore.QRectF(5, 4, 18, 18)
-        painter.setPen(QtGui.QPen(QtGui.QColor("#f8fafc"), 2.0))
-        painter.setBrush(QtGui.QColor("#223047"))
+        painter.setPen(QtGui.QPen(QtGui.QColor("#f7f7f7"), 2.0))
+        painter.setBrush(QtGui.QColor("#303030"))
         painter.drawEllipse(lens_rect)
         painter.drawLine(QtCore.QPointF(19.5, 19.5), QtCore.QPointF(27.5, 27.5))
 
         badge_rect = QtCore.QRectF(19, 5, 22, 13)
-        painter.setPen(QtGui.QPen(QtGui.QColor("#93c5fd"), 1.0))
-        painter.setBrush(QtGui.QColor("#172554"))
+        painter.setPen(QtGui.QPen(QtGui.QColor("#9a9a9a"), 1.0))
+        painter.setBrush(QtGui.QColor("#3a3a3a"))
         painter.drawRoundedRect(badge_rect, 2, 2)
         font = QtGui.QFontDatabase.systemFont(QtGui.QFontDatabase.GeneralFont)
         font.setBold(True)
         font.setPointSize(7)
         painter.setFont(font)
-        painter.setPen(QtGui.QColor("#dbeafe"))
+        painter.setPen(QtGui.QColor("#f0f0f0"))
         painter.drawText(badge_rect, QtCore.Qt.AlignCenter, "1:1")
 
         painter.end()
@@ -1080,12 +1117,12 @@ class LayoutMixin:
         painter.setRenderHint(QtGui.QPainter.Antialiasing)
 
         lens_rect = QtCore.QRectF(5, 4, 18, 18)
-        painter.setPen(QtGui.QPen(QtGui.QColor("#f8fafc"), 2.0))
-        painter.setBrush(QtGui.QColor("#223047"))
+        painter.setPen(QtGui.QPen(QtGui.QColor("#f7f7f7"), 2.0))
+        painter.setBrush(QtGui.QColor("#303030"))
         painter.drawEllipse(lens_rect)
         painter.drawLine(QtCore.QPointF(19.5, 19.5), QtCore.QPointF(28.0, 28.0))
 
-        painter.setPen(QtGui.QPen(QtGui.QColor("#dbeafe"), 2.0))
+        painter.setPen(QtGui.QPen(QtGui.QColor("#f0f0f0"), 2.0))
         painter.drawLine(QtCore.QPointF(10.5, 13.0), QtCore.QPointF(17.5, 13.0))
         if str(sign) == "+":
             painter.drawLine(QtCore.QPointF(14.0, 9.5), QtCore.QPointF(14.0, 16.5))
@@ -1179,8 +1216,8 @@ class LayoutMixin:
         toolbar = QtWidgets.QFrame()
         toolbar.setFrameShape(QtWidgets.QFrame.StyledPanel)
         toolbar.setStyleSheet(
-            "QFrame { background-color: #15181d; border: 1px solid #2f353d; }"
-            "QLabel { color: #d1d5db; }"
+            "QFrame { background-color: #202020; border: 1px solid #4a4a4a; }"
+            "QLabel { color: #d8d8d8; }"
             "QToolButton { padding: 2px 5px; }"
         )
         layout = QtWidgets.QHBoxLayout(toolbar)
@@ -1234,36 +1271,36 @@ class LayoutMixin:
             self._viewer_action(self.tr("Girar derecha"), self._viewer_rotate_right, icon=self._rotate_arrow_icon(clockwise=True)),
             *self._image_adjustment_toolbar_actions(),
             self._viewer_action(
-                self.tr("Cache 1:1 actual"),
+                self.tr("Caché 1:1 actual"),
                 self._on_precache_selected_preview,
                 icon=self._precache_icon(one_to_one=True),
-                tooltip=self.tr("Cargar en cache el 100% real del RAW seleccionado"),
+                tooltip=self.tr("Cargar en caché el 100% real del RAW seleccionado"),
             ),
             self._viewer_action(
-                self.tr("Cache 1:1 carpeta"),
+                self.tr("Caché 1:1 carpeta"),
                 lambda: self._on_precache_visible_previews(full_resolution=True),
                 icon=self._precache_icon(one_to_one=True),
-                tooltip=self.tr("Cargar en cache el 100% real de todos los RAW visibles"),
+                tooltip=self.tr("Cargar en caché el 100% real de todos los RAW visibles"),
             ),
         ]
         for index, action in enumerate(actions):
             if index in {2, 6, 8, 11}:
                 separator = QtWidgets.QFrame()
                 separator.setFrameShape(QtWidgets.QFrame.VLine)
-                separator.setStyleSheet("color: #2f353d;")
+                separator.setStyleSheet("color: #4a4a4a;")
                 layout.addWidget(separator)
             layout.addWidget(self._viewer_action_button(action))
 
         self.selected_file_label = QtWidgets.QLabel(self.tr("Sin archivo seleccionado"))
         self.selected_file_label.setWordWrap(False)
         self.selected_file_label.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse)
-        self.selected_file_label.setStyleSheet("font-size: 12px; color: #d1d5db; border: 0;")
+        self.selected_file_label.setStyleSheet("font-size: 12px; color: #d8d8d8; border: 0;")
         layout.addWidget(self.selected_file_label, 1)
 
         self.viewer_zoom_label = QtWidgets.QLabel(self.tr("100%"))
         self.viewer_zoom_label.setAlignment(QtCore.Qt.AlignCenter)
         self.viewer_zoom_label.setMinimumWidth(52)
-        self.viewer_zoom_label.setStyleSheet("font-size: 12px; color: #cbd5e1; border: 0;")
+        self.viewer_zoom_label.setStyleSheet("font-size: 12px; color: #d4d4d4; border: 0;")
         layout.addWidget(self.viewer_zoom_label)
         return toolbar
 
@@ -1294,7 +1331,7 @@ class LayoutMixin:
         chart_header.setSpacing(6)
         self.chart_diagnostics_summary = QtWidgets.QLabel(self.tr("Sin datos de carta"))
         self.chart_diagnostics_summary.setWordWrap(True)
-        self.chart_diagnostics_summary.setStyleSheet("font-size: 12px; color: #d1d5db;")
+        self.chart_diagnostics_summary.setStyleSheet("font-size: 12px; color: #d8d8d8;")
         chart_header.addWidget(self.chart_diagnostics_summary, 1)
         self.chart_diagnostics_refresh_button = QtWidgets.QToolButton()
         self.chart_diagnostics_refresh_button.setAutoRaise(True)
@@ -1368,9 +1405,9 @@ class LayoutMixin:
         gamut_layout.addLayout(gamut_controls)
 
         gamut_header = QtWidgets.QHBoxLayout()
-        self.gamut_status_label = QtWidgets.QLabel(self.tr("Gamut 3D: sin perfil generado"))
+        self.gamut_status_label = QtWidgets.QLabel(self.tr("Gama 3D: sin perfil generado"))
         self.gamut_status_label.setWordWrap(True)
-        self.gamut_status_label.setStyleSheet("font-size: 12px; color: #d1d5db;")
+        self.gamut_status_label.setStyleSheet("font-size: 12px; color: #d8d8d8;")
         gamut_header.addWidget(self.gamut_status_label, 1)
         self.gamut_view_mode_combo = QtWidgets.QComboBox()
         self.gamut_view_mode_combo.addItem(self.tr("Lab 3D"), "lab3d")
@@ -1399,7 +1436,7 @@ class LayoutMixin:
         gamut_slice_layout.addWidget(self.gamut_l_slice_slider, 1)
         gamut_view_layout.addLayout(gamut_slice_layout)
         gamut_layout.addLayout(gamut_view_layout, 1)
-        self.analysis_tabs.addTab(gamut_page, self.tr("Gamut 3D"))
+        self.analysis_tabs.addTab(gamut_page, self.tr("Gama 3D"))
         self._sync_gamut_custom_controls()
         self._on_gamut_view_mode_changed()
 
@@ -1444,18 +1481,22 @@ class LayoutMixin:
 
         self.label_color_picker = QtWidgets.QLabel(self.tr("Color Lab: sin muestra"))
         self.label_color_picker.setWordWrap(True)
-        self.label_color_picker.setStyleSheet("font-size: 12px; color: #d1d5db;")
+        self.label_color_picker.setStyleSheet("font-size: 12px; color: #d8d8d8;")
         samples_layout.addWidget(self.label_color_picker)
 
-        self.label_color_picker_precision = QtWidgets.QLabel(
-            self.tr(
-                "Aviso de precision: Lab, Delta E y gamut solo son fiables si esta imagen "
-                "usa un ICC generado por ProbRAW; con perfiles genericos son orientativos."
-            )
+        precision_text = self.tr(
+            "Aviso de precision: Lab, Delta E y gamut solo son fiables si esta imagen "
+            "usa un ICC generado por ProbRAW; con perfiles genericos son orientativos."
         )
-        self.label_color_picker_precision.setWordWrap(True)
-        self.label_color_picker_precision.setStyleSheet("font-size: 12px; color: #fbbf24;")
-        samples_layout.addWidget(self.label_color_picker_precision)
+        self.label_color_picker_precision = QtWidgets.QLabel(precision_text)
+        self.label_color_picker_precision.setVisible(False)
+        self.color_picker_precision_info_button = self._info_button(self.tr("Precisión colorimétrica"), precision_text)
+        samples_header = QtWidgets.QHBoxLayout()
+        samples_header.setContentsMargins(0, 0, 0, 0)
+        samples_header.addWidget(QtWidgets.QLabel(self.tr("Lectura colorimétrica")))
+        samples_header.addStretch(1)
+        samples_header.addWidget(self.color_picker_precision_info_button)
+        samples_layout.addLayout(samples_header)
 
         self.color_samples_table = QtWidgets.QTableWidget()
         self._color_samples_table_user_resized = False
@@ -1506,7 +1547,7 @@ class LayoutMixin:
 
         self.color_sample_gamut_widget = ColorSampleGamutWidget()
         self.color_sample_gamut_widget.setToolTip(
-            self.tr("Gamut visual de los conjuntos de muestras en Lab a*b*")
+            self.tr("Gama visual de los conjuntos de muestras en Lab a*b*")
         )
         samples_layout.addWidget(self.color_sample_gamut_widget)
 
@@ -1586,7 +1627,7 @@ class LayoutMixin:
 
         self.metadata_file_label = QtWidgets.QLabel(self.tr("Sin archivo seleccionado"))
         self.metadata_file_label.setWordWrap(True)
-        self.metadata_file_label.setStyleSheet("font-size: 12px; color: #d1d5db;")
+        self.metadata_file_label.setStyleSheet("font-size: 12px; color: #d8d8d8;")
         layout.addWidget(self.metadata_file_label)
 
         actions = QtWidgets.QHBoxLayout()
@@ -1676,19 +1717,19 @@ class LayoutMixin:
         self.file_list.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
         self.file_list.setStyleSheet(
             "QListWidget {"
-            "background-color: #1b1f24;"
-            "border: 1px solid #343a40;"
+            "background-color: #262626;"
+            "border: 1px solid #4a4a4a;"
             "padding: 2px;"
             "}"
             "QListWidget::item {"
-            "background-color: #171a1e;"
-            "border: 1px solid #2c3238;"
+            "background-color: #242424;"
+            "border: 1px solid #454545;"
             "margin: 0px;"
             "padding: 0px;"
             "}"
             "QListWidget::item:selected {"
-            "border: 2px solid #d1d5db;"
-            "background-color: #1f252b;"
+            "border: 2px solid #d8d8d8;"
+            "background-color: #303030;"
             "}"
         )
         self.file_list.itemSelectionChanged.connect(self._on_file_selection_changed)
@@ -1746,8 +1787,8 @@ class LayoutMixin:
         single_layout.addWidget(self.image_result_single, 1)
         self.viewer_stack.addWidget(single_page)
 
-        self.image_original_compare = ImagePanel(self.tr(""), framed=False, background="#15181d")
-        self.image_result_compare = ImagePanel(self.tr(""), framed=False, background="#15181d")
+        self.image_original_compare = ImagePanel(self.tr(""), framed=False, background="#202020")
+        self.image_result_compare = ImagePanel(self.tr(""), framed=False, background="#202020")
         self.image_result_compare.imageClicked.connect(self._on_result_image_click)
         self.image_result_compare.roiSelected.connect(self._on_viewer_roi_selected)
         self.image_original_compare.lineSelected.connect(self._on_viewer_line_selected)
@@ -1759,9 +1800,9 @@ class LayoutMixin:
         self.compare_splitter.setHandleWidth(3)
         self.compare_splitter.setStyleSheet(
             "QSplitter::handle:horizontal {"
-            "background-color: #0f1115;"
-            "border-left: 1px solid #2f353d;"
-            "border-right: 1px solid #2f353d;"
+            "background-color: #1a1a1a;"
+            "border-left: 1px solid #4a4a4a;"
+            "border-right: 1px solid #4a4a4a;"
             "}"
         )
         self.compare_splitter.addWidget(self.image_original_compare)
@@ -1772,7 +1813,7 @@ class LayoutMixin:
         compare_layout.setContentsMargins(0, 0, 0, 0)
         compare_layout.setSpacing(0)
         compare_header = QtWidgets.QWidget()
-        compare_header.setStyleSheet("background-color: #15181d;")
+        compare_header.setStyleSheet("background-color: #202020;")
         compare_header_layout = QtWidgets.QHBoxLayout(compare_header)
         compare_header_layout.setContentsMargins(0, 2, 0, 2)
         compare_header_layout.setSpacing(0)
@@ -1785,7 +1826,7 @@ class LayoutMixin:
             label.setStyleSheet(
                 "QLabel {"
                 "background-color: #7a7d82;"
-                "color: #f8fafc;"
+                "color: #f7f7f7;"
                 "font-size: 11px;"
                 "font-weight: 600;"
                 "padding: 1px 8px;"

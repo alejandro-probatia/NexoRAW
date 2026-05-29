@@ -91,6 +91,158 @@ except Exception:  # pragma: no cover - entorno sin GUI
     QtWidgets = None
 
 
+def _probraw_dark_stylesheet() -> str:
+    return """
+QWidget {
+    background-color: #1f1f1f;
+    color: #e6e6e6;
+    selection-background-color: #4a4a4a;
+    selection-color: #ffffff;
+}
+QMainWindow, QDialog, QMenu, QMenuBar, QTabWidget::pane {
+    background-color: #1f1f1f;
+}
+QMenuBar::item:selected, QMenu::item:selected {
+    background-color: #4a4a4a;
+    color: #ffffff;
+}
+QGroupBox {
+    border: 1px solid #4a4a4a;
+    border-radius: 5px;
+    margin-top: 12px;
+    padding-top: 8px;
+}
+QGroupBox::title {
+    subcontrol-origin: margin;
+    left: 8px;
+    padding: 0 4px;
+    color: #f0f0f0;
+}
+QLineEdit, QPlainTextEdit, QTextEdit, QSpinBox, QDoubleSpinBox, QComboBox, QListWidget,
+QTreeView, QTableWidget, QTableView {
+    background-color: #262626;
+    color: #f0f0f0;
+    border: 1px solid #505050;
+    border-radius: 4px;
+}
+QLineEdit:focus, QPlainTextEdit:focus, QTextEdit:focus, QSpinBox:focus,
+QDoubleSpinBox:focus, QComboBox:focus {
+    border-color: #707070;
+}
+QPushButton, QToolButton {
+    background-color: #303030;
+    color: #f7f7f7;
+    border: 1px solid #5c5c5c;
+    border-radius: 4px;
+    padding: 4px 8px;
+}
+QPushButton:hover, QToolButton:hover {
+    background-color: #3a3a3a;
+    border-color: #707070;
+}
+QPushButton:pressed, QToolButton:pressed {
+    background-color: #3f3f3f;
+}
+QPushButton:checked, QToolButton:checked {
+    background-color: #4a4a4a;
+    border-color: #9a9a9a;
+}
+QPushButton:disabled, QToolButton:disabled, QLineEdit:disabled, QComboBox:disabled,
+QSpinBox:disabled, QDoubleSpinBox:disabled {
+    background-color: #242424;
+    color: #7a7a7a;
+    border-color: #3a3a3a;
+}
+QHeaderView::section {
+    background-color: #303030;
+    color: #f0f0f0;
+    border: 1px solid #4a4a4a;
+    padding: 4px;
+}
+QTableWidget {
+    gridline-color: #4a4a4a;
+    alternate-background-color: #232323;
+}
+QTabBar::tab {
+    background-color: #262626;
+    color: #d4d4d4;
+    border: 1px solid #454545;
+    padding: 6px 10px;
+}
+QTabBar::tab:selected {
+    background-color: #303030;
+    color: #ffffff;
+    border-bottom-color: #707070;
+}
+QProgressBar {
+    background-color: #262626;
+    color: #f0f0f0;
+    border: 1px solid #4a4a4a;
+    border-radius: 4px;
+    text-align: center;
+}
+QProgressBar::chunk {
+    background-color: #4a4a4a;
+    border-radius: 3px;
+}
+QScrollBar:vertical, QScrollBar:horizontal {
+    background: #1f1f1f;
+    border: none;
+}
+QScrollBar::handle:vertical, QScrollBar::handle:horizontal {
+    background: #4a4a4a;
+    border-radius: 4px;
+}
+QScrollBar::handle:vertical:hover, QScrollBar::handle:horizontal:hover {
+    background: #5c5c5c;
+}
+QToolTip {
+    background-color: #202020;
+    color: #f7f7f7;
+    border: 1px solid #707070;
+    padding: 4px;
+}
+"""
+
+
+def apply_probraw_dark_theme(app=None) -> None:
+    if QtWidgets is None or QtGui is None:
+        return
+    app = app or QtWidgets.QApplication.instance()
+    if app is None:
+        return
+    if app.property("probraw_dark_theme") is True:
+        return
+    try:
+        app.setStyle("Fusion")
+    except Exception:
+        pass
+    palette = QtGui.QPalette()
+    colors = {
+        QtGui.QPalette.Window: "#1f1f1f",
+        QtGui.QPalette.WindowText: "#e6e6e6",
+        QtGui.QPalette.Base: "#262626",
+        QtGui.QPalette.AlternateBase: "#232323",
+        QtGui.QPalette.ToolTipBase: "#202020",
+        QtGui.QPalette.ToolTipText: "#f7f7f7",
+        QtGui.QPalette.Text: "#f0f0f0",
+        QtGui.QPalette.Button: "#303030",
+        QtGui.QPalette.ButtonText: "#f7f7f7",
+        QtGui.QPalette.BrightText: "#f87171",
+        QtGui.QPalette.Highlight: "#4a4a4a",
+        QtGui.QPalette.HighlightedText: "#ffffff",
+        QtGui.QPalette.Link: "#9a9a9a",
+    }
+    for role, color in colors.items():
+        palette.setColor(role, QtGui.QColor(color))
+    palette.setColor(QtGui.QPalette.Disabled, QtGui.QPalette.Text, QtGui.QColor("#7a7a7a"))
+    palette.setColor(QtGui.QPalette.Disabled, QtGui.QPalette.ButtonText, QtGui.QColor("#7a7a7a"))
+    palette.setColor(QtGui.QPalette.Disabled, QtGui.QPalette.WindowText, QtGui.QColor("#7a7a7a"))
+    app.setPalette(palette)
+    app.setStyleSheet(_probraw_dark_stylesheet())
+    app.setProperty("probraw_dark_theme", True)
+
+
 if QtWidgets is not None:
     class ProbRawMainWindow(
         LayoutMixin,
@@ -110,6 +262,7 @@ if QtWidgets is not None:
     ):
         def __init__(self) -> None:
             super().__init__()
+            apply_probraw_dark_theme()
             self.setWindowTitle(f"{APP_NAME} - " + self.tr("Ajuste paramétrico RAW"))
             icon = _app_icon()
             if not icon.isNull():
@@ -291,6 +444,7 @@ if QtWidgets is not None:
 
             self._original_linear: np.ndarray | None = None
             self._adjusted_linear: np.ndarray | None = None
+            self._adjusted_linear_signature: str | None = None
             self._preview_srgb: np.ndarray | None = None
             self._current_result_display_u8: np.ndarray | None = None
             self._current_result_colorimetric_u8: np.ndarray | None = None
@@ -401,17 +555,22 @@ def main(argv: list[str] | None = None) -> int:
     app.setApplicationName(APP_NAME)
     app.setOrganizationName(ORG_NAME)
     app.setDesktopFileName("probraw")
+    apply_probraw_dark_theme(app)
     icon = _app_icon()
     if not icon.isNull():
         app.setWindowIcon(icon)
 
     # Cargar traductor antes de crear la ventana, para que todos los widgets
     # reciban las cadenas traducidas desde el primer paint.
-    from .i18n import AUTO_LANG, install_translator, resolve_language
+    from .i18n import install_translator, resolve_language
     _lang_settings = _make_app_settings()
-    # Default "auto": instalaciones nuevas siguen al idioma del SO. No migramos
-    # usuarios existentes con "es" guardado: respetan la elección previa.
-    _lang_pref = str(_lang_settings.value("app/language", AUTO_LANG) or AUTO_LANG).strip()
+    # El español es el idioma fuente. Forzamos una preferencia coherente para
+    # evitar mezclar una traducción inglesa parcial con cadenas nuevas.
+    _lang_pref = str(_lang_settings.value("app/language", "es") or "es").strip()
+    if _lang_pref.lower() != "es":
+        _lang_settings.setValue("app/language", "es")
+        _lang_settings.sync()
+        _lang_pref = "es"
     install_translator(app, resolve_language(_lang_pref))
 
     win = ProbRawMainWindow()

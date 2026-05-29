@@ -340,13 +340,13 @@ class ImageToolsMixin:
                 self._toggle_color_picker,
                 icon=self._text_badge_icon("Lab"),
                 checkable=True,
-                tooltip=self.tr("Tomar muestras RGB/Lab y comparar contra los perfiles A/B del gamut"),
+                tooltip=self.tr("Tomar muestras RGB/Lab y comparar contra las gamas A/B"),
             )
             self.action_color_picker_select = action
             return action
         action.setIcon(self._text_badge_icon("Lab"))
-        action.setToolTip(self.tr("Tomar muestras RGB/Lab y comparar contra los perfiles A/B del gamut"))
-        action.setStatusTip(self.tr("Tomar muestras RGB/Lab y comparar contra los perfiles A/B del gamut"))
+        action.setToolTip(self.tr("Tomar muestras RGB/Lab y comparar contra las gamas A/B"))
+        action.setStatusTip(self.tr("Tomar muestras RGB/Lab y comparar contra las gamas A/B"))
         action.setCheckable(True)
         return action
 

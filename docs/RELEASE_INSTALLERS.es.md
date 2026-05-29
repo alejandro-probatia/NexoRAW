@@ -152,6 +152,25 @@ pruebas.
 8. Si un asset publicado resulta defectuoso y GitHub no permite reemplazarlo,
    crear una revision nueva de la release y marcar la anterior con un aviso.
 
+## Release 0.4.1
+
+La release 0.4.1 es una correccion Linux Arch/CachyOS para el flujo de muestras
+Lab y la GUI:
+
+- las muestras Lab guardadas se invalidan y recalculan tras cambios de color,
+  exposicion y contraste,
+- las actualizaciones parciales de preview interactiva tambien refrescan las
+  lecturas guardadas,
+- los RGB de muestra se muestran como enteros 0-255,
+- la interfaz queda unificada en espanol y usa un tema gris oscuro neutro,
+- las notas de precision y flujo se exponen mediante botones compactos de
+  informacion cuando es posible.
+
+Artefactos esperados para la release Linux Arch/CachyOS:
+
+- `probraw-0.4.1-1-x86_64.pkg.tar.zst`
+- `probraw-0.4.1-1-x86_64.pkg.tar.zst.sha256`
+
 ## Release 0.4.0
 
 La release 0.4.0 anade diagnostico de muestras Lab:

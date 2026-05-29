@@ -19,6 +19,7 @@ import probraw.ui.window.display as display_module  # noqa: E402
 import probraw.ui.window.preview_export as preview_export_module  # noqa: E402
 import probraw.ui.window.preview_recipe as preview_recipe_module  # noqa: E402
 import probraw.ui.window.preview_render as preview_render_module  # noqa: E402
+import probraw.ui.window.tasks as tasks_module  # noqa: E402
 from probraw.analysis.mtf import MTFResult  # noqa: E402
 from probraw.chart.sampling import ReferenceCatalog  # noqa: E402
 from probraw.core.models import Recipe  # noqa: E402
@@ -301,6 +302,99 @@ def test_activate_session_rejects_existing_state_paths_outside_project_root(tmp_
         window.close()
 
 
+def test_session_icc_catalog_drops_generated_profiles_outside_project_root(tmp_path: Path, qapp):
+    root = tmp_path / "session"
+    old_root = tmp_path / "old_session"
+    outside_profile = old_root / "00_configuraciones" / "profiles" / "old.icc"
+    outside_report = old_root / "00_configuraciones" / "profile_report.json"
+    loaded_profile = tmp_path / "shared_profiles" / "manual.icc"
+    loaded_report = tmp_path / "shared_profiles" / "manual_report.json"
+    for path in (outside_profile, outside_report, loaded_profile, loaded_report):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if path.suffix == ".icc":
+            path.write_bytes(b"profile bytes" * 8)
+        else:
+            path.write_text("{}", encoding="utf-8")
+
+    payload = create_session(
+        root,
+        name="new",
+        state={
+            "icc_profiles": [
+                {
+                    "id": "old-generated",
+                    "name": "old",
+                    "source": "generated",
+                    "path": str(outside_profile),
+                    "profile_report_path": str(outside_report),
+                },
+                {
+                    "id": "manual-loaded",
+                    "name": "manual",
+                    "source": "loaded",
+                    "path": str(loaded_profile),
+                    "profile_report_path": str(loaded_report),
+                },
+            ],
+        },
+    )
+
+    window = ICCRawMainWindow()
+    try:
+        window._activate_session(root, payload)
+
+        ids = {profile["id"] for profile in window._icc_profiles}
+        assert "old-generated" not in ids
+        assert "manual-loaded" in ids
+        loaded = next(profile for profile in window._icc_profiles if profile["id"] == "manual-loaded")
+        assert loaded["path"] == str(loaded_profile)
+        assert loaded["profile_report_path"] == ""
+
+        serialized = json.dumps(load_session(root))
+        assert str(outside_profile) not in serialized
+        assert str(outside_report) not in serialized
+        assert str(loaded_profile) in serialized
+        assert str(loaded_report) not in serialized
+    finally:
+        window.close()
+
+
+def test_external_loaded_icc_profile_roundtrips_session_catalog(tmp_path: Path, qapp):
+    root = tmp_path / "session"
+    payload = create_session(root, name="Sesion perfil externo")
+    external_profile = tmp_path / "shared_profiles" / "manual.icc"
+    external_profile.parent.mkdir(parents=True, exist_ok=True)
+    external_profile.write_bytes(b"external profile bytes" * 16)
+
+    window = ICCRawMainWindow()
+    try:
+        window._activate_session(root, payload)
+        profile_id = window._register_icc_profile(
+            {
+                "id": "manual-loaded",
+                "name": "manual",
+                "source": "loaded",
+                "path": str(external_profile),
+            },
+            activate=True,
+        )
+
+        assert profile_id == "manual-loaded"
+        assert window._active_session_icc_for_settings() == external_profile
+    finally:
+        window.close()
+
+    reloaded = ICCRawMainWindow()
+    try:
+        reloaded._activate_session(root, load_session(root))
+
+        assert reloaded._icc_profile_by_id("manual-loaded") is not None
+        assert reloaded._active_icc_profile_id == "manual-loaded"
+        assert reloaded._active_session_icc_for_settings() == external_profile
+    finally:
+        reloaded.close()
+
+
 def _custom_reference_payload(name: str = "ColorChecker personalizada") -> dict:
     return {
         "chart_name": name,
@@ -437,7 +531,7 @@ def test_raw_develop_layout_prioritizes_viewer_area(qapp):
         labels = [window.left_tabs.tabText(i) for i in range(window.left_tabs.count())]
         assert labels == ["Explorador", "Diagnóstico", "Metadatos", "Log"]
         analysis_labels = [window.analysis_tabs.tabText(i) for i in range(window.analysis_tabs.count())]
-        assert analysis_labels == ["Imagen", "Carta", "Gamut 3D", "Muestras"]
+        assert analysis_labels == ["Imagen", "Carta", "Gama 3D", "Muestras"]
         assert isinstance(window.gamut_3d_widget, gui_module.Gamut3DWidget)
         assert window.color_samples_table.columnCount() == 15
         assert window.color_samples_table.horizontalHeader().sectionResizeMode(2) == QtWidgets.QHeaderView.Interactive
@@ -508,7 +602,7 @@ def test_gamut_widget_resets_camera_when_payload_changes(qapp):
             {
                 "label": "Perfil A",
                 "path": "/tmp/profile-a.icc",
-                "color": "#f8fafc",
+                "color": "#f7f7f7",
                 "role": "wire",
                 "points_lab": gui_module.np.asarray(
                     [[50.0, 0.0, 0.0], [65.0, 25.0, -18.0]],
@@ -606,6 +700,11 @@ def test_main_window_omits_redundant_app_title_header(qapp):
 def test_image_panels_use_neutral_gray_background(qapp):
     window = ICCRawMainWindow()
     try:
+        assert QtWidgets.QApplication.instance().property("probraw_dark_theme") is True
+        assert QtWidgets.QApplication.instance().palette().color(QtGui.QPalette.Window).name() == "#1f1f1f"
+        app_stylesheet = QtWidgets.QApplication.instance().styleSheet().lower()
+        for stale_color in ("#1f2937", "#2563eb", "#60a5fa", "#93c5fd"):
+            assert stale_color not in app_stylesheet
         stylesheet = window.image_result_single.styleSheet().lower()
         assert gui_module.IMAGE_PANEL_BACKGROUND == "#2b2b2b"
         assert "background-color: #2b2b2b" in stylesheet
@@ -3073,7 +3172,7 @@ def test_export_preview_color_parity_rejects_mismatching_tiff(tmp_path: Path, qa
         out = tmp_path / "wrong.tiff"
         Image.fromarray(gui_module.np.round(wrong * 255).astype(gui_module.np.uint8), "RGB").save(out)
 
-        with pytest.raises(RuntimeError, match="paridad colorimetrica preview/export"):
+        with pytest.raises(RuntimeError, match="paridad colorimetrica vista previa/exportacion"):
             window._verify_export_preview_color_parity(
                 out,
                 image,
@@ -4403,7 +4502,7 @@ def test_gamut_refresh_populates_diagnostic_widget(tmp_path: Path, monkeypatch, 
             "series": [
                 {
                     "label": "ICC generado",
-                    "color": "#f8fafc",
+                    "color": "#f7f7f7",
                     "role": "wire",
                     "points_lab": gui_module.np.asarray(
                         [[50.0, 0.0, 0.0], [60.0, 20.0, 10.0]],
@@ -4451,7 +4550,7 @@ def test_gamut_refresh_populates_diagnostic_widget(tmp_path: Path, monkeypatch, 
         assert captured["profile_b"] == {"kind": "standard", "key": "srgb"}
         assert len(window.gamut_3d_widget._series) == 2
         assert "ICC generado en sRGB: 100.0% dentro" in window.gamut_status_label.text()
-        assert window.analysis_tabs.tabText(window.analysis_tabs.currentIndex()) == "Gamut 3D"
+        assert window.analysis_tabs.tabText(window.analysis_tabs.currentIndex()) == "Gama 3D"
     finally:
         window.close()
 
@@ -4490,7 +4589,8 @@ def test_color_lab_picker_samples_pixel_and_reports_common_gamut(tmp_path: Path,
         window._start_background_task = run_task
         window._original_linear = gui_module.np.zeros((3, 3, 3), dtype=gui_module.np.float32)
         window._adjusted_linear = window._original_linear.copy()
-        window._adjusted_linear[1, 1] = gui_module.np.asarray([0.25, 0.5, 0.75], dtype=gui_module.np.float32)
+        window._original_linear[1, 1] = gui_module.np.asarray([0.25, 0.5, 0.75], dtype=gui_module.np.float32)
+        window._adjusted_linear[1, 1] = window._original_linear[1, 1]
         window._loaded_preview_source_profile_path = profile
         window.color_picker_matrix_combo.setCurrentIndex(0)
         window._set_color_picker_active(True)
@@ -4506,12 +4606,16 @@ def test_color_lab_picker_samples_pixel_and_reports_common_gamut(tmp_path: Path,
         assert captured["profile_path"] == profile
         assert gui_module.np.allclose(captured["rgb"], [[0.25, 0.5, 0.75]])
         assert gui_module.np.allclose(captured["lab"], [[52.0, 8.5, -14.0]])
+        assert window.label_color_picker_precision.isVisible() is False
+        assert "orientativos" in window.color_picker_precision_info_button.toolTip()
+        assert "RGB 64, 128, 191" in window.label_color_picker.text()
         assert "Lab 52.00, +8.50, -14.00" in window.label_color_picker.text()
         assert "gama comun: no" in window.label_color_picker.text()
         assert window.color_samples_table.rowCount() == 1
         assert window.color_samples_table.item(0, 0).text() == "1"
         assert window.color_samples_table.item(0, 1).text() == "Conjunto 1"
         assert window.color_samples_table.item(0, 2).text() == "Muestra 1"
+        assert window.color_samples_table.item(0, 6).text() == "64, 128, 191"
         assert window.color_samples_table.item(0, 12).text() == "0.00"
         assert window.color_samples_table.item(0, 13).text() == "0.00"
         assert window.color_samples_table.item(0, 14).text() == "+0.00"
@@ -4524,17 +4628,19 @@ def test_color_lab_picker_samples_pixel_and_reports_common_gamut(tmp_path: Path,
             "index": 1,
             "label": "1",
             "color": "#88bae0",
-            "text_color": "#0f172a",
+            "text_color": "#202020",
         }
         assert window.image_result_single._sample_magnifier_enabled is True
 
         window._create_color_sample_group(name="Tinta variable")
         assert window.color_sample_group_combo.currentData() == "Tinta variable"
-        window._adjusted_linear[2, 2] = gui_module.np.asarray([0.5, 0.5, 0.5], dtype=gui_module.np.float32)
+        window._original_linear[2, 2] = gui_module.np.asarray([0.5, 0.5, 0.5], dtype=gui_module.np.float32)
+        window._adjusted_linear[2, 2] = window._original_linear[2, 2]
         window._on_result_image_click(2, 2)
 
         assert window.color_samples_table.rowCount() == 2
         assert window.color_samples_table.item(1, 1).text() == "Tinta variable"
+        assert window.color_samples_table.item(1, 6).text() == "128, 128, 128"
         assert window.color_samples_table.item(1, 12).text() == "5.00"
         assert window.color_samples_table.item(1, 13).text() != "ref"
         assert window.color_samples_table.item(1, 14).text().startswith("-")
@@ -4572,6 +4678,256 @@ def test_color_lab_picker_samples_pixel_and_reports_common_gamut(tmp_path: Path,
         assert window.color_samples_table.rowCount() == 2
         assert window.color_samples_table.item(1, 2).text() == "Rojo carta"
         assert window.color_samples_table.item(1, 3).text() == "zona saturada"
+    finally:
+        window.close()
+
+
+def test_color_lab_picker_saved_points_refresh_with_render_adjustments(tmp_path: Path, monkeypatch, qapp):
+    profile = tmp_path / "source.icc"
+    profile.write_bytes(b"fake icc" * 32)
+
+    def fake_lookup_lab_with_icc(_profile_path, rgb):
+        rows = []
+        for row in gui_module.np.asarray(rgb, dtype=gui_module.np.float64):
+            if float(row[0]) > 0.3:
+                rows.append([52.0, 11.5, -10.0])
+            else:
+                rows.append([52.0, 8.5, -14.0])
+        return gui_module.np.asarray(rows, dtype=gui_module.np.float64)
+
+    monkeypatch.setattr(gui_module, "lookup_lab_with_icc", fake_lookup_lab_with_icc)
+    monkeypatch.setattr(
+        gui_module,
+        "evaluate_lab_gamut_membership",
+        lambda lab, **_kwargs: {
+            "inside_a": gui_module.np.ones(len(lab), dtype=bool),
+            "inside_b": gui_module.np.zeros(len(lab), dtype=bool),
+            "inside_common": gui_module.np.zeros(len(lab), dtype=bool),
+            "label_a": "ICC imagen",
+            "label_b": "sRGB",
+        },
+    )
+
+    def run_task(_label, task, on_success):
+        on_success(task())
+
+    window = ICCRawMainWindow()
+    try:
+        window._start_background_task = run_task
+        window._selected_file = tmp_path / "image.tiff"
+        window._selected_file.write_bytes(b"image")
+        window._loaded_preview_source_profile_path = profile
+        window._original_linear = gui_module.np.zeros((3, 3, 3), dtype=gui_module.np.float32)
+        window._adjusted_linear = window._original_linear.copy()
+        window._original_linear[1, 1] = gui_module.np.asarray([0.25, 0.5, 0.75], dtype=gui_module.np.float32)
+        window._adjusted_linear[1, 1] = window._original_linear[1, 1]
+        window.color_picker_matrix_combo.setCurrentIndex(0)
+        window._set_color_picker_active(True)
+
+        window._on_result_image_click(1, 1)
+        assert window.color_samples_table.item(0, 6).text() == "64, 128, 191"
+        assert window.color_samples_table.item(0, 7).text() == "52.00, +8.50, -14.00"
+
+        window.slider_brightness.blockSignals(True)
+        window.slider_brightness.setValue(100)
+        window.slider_brightness.blockSignals(False)
+        window._set_result_u8_pair(
+            gui_module.np.full((3, 3, 3), 255, dtype=gui_module.np.uint8),
+            None,
+            compare_enabled=False,
+        )
+        QtTest.QTest.qWait(220)
+
+        assert window.color_samples_table.item(0, 6).text() == "128, 255, 255"
+        assert window.color_samples_table.item(0, 7).text() == "52.00, +11.50, -10.00"
+    finally:
+        window.close()
+
+
+def test_color_lab_picker_region_preview_refreshes_saved_points(tmp_path: Path, monkeypatch, qapp):
+    profile = tmp_path / "source.icc"
+    profile.write_bytes(b"fake icc" * 32)
+
+    def fake_lookup_lab_with_icc(_profile_path, rgb):
+        rows = []
+        for row in gui_module.np.asarray(rgb, dtype=gui_module.np.float64):
+            rows.append([52.0, 11.5, -10.0] if float(row[0]) > 0.3 else [52.0, 8.5, -14.0])
+        return gui_module.np.asarray(rows, dtype=gui_module.np.float64)
+
+    monkeypatch.setattr(gui_module, "lookup_lab_with_icc", fake_lookup_lab_with_icc)
+    monkeypatch.setattr(
+        gui_module,
+        "evaluate_lab_gamut_membership",
+        lambda lab, **_kwargs: {
+            "inside_a": gui_module.np.ones(len(lab), dtype=bool),
+            "inside_b": gui_module.np.zeros(len(lab), dtype=bool),
+            "inside_common": gui_module.np.zeros(len(lab), dtype=bool),
+            "label_a": "ICC imagen",
+            "label_b": "sRGB",
+        },
+    )
+
+    def run_task(_label, task, on_success):
+        on_success(task())
+
+    window = ICCRawMainWindow()
+    try:
+        window._start_background_task = run_task
+        window._selected_file = tmp_path / "image.tiff"
+        window._selected_file.write_bytes(b"image")
+        window._loaded_preview_source_profile_path = profile
+        window._original_linear = gui_module.np.zeros((3, 3, 3), dtype=gui_module.np.float32)
+        window._original_linear[1, 1] = gui_module.np.asarray([0.25, 0.25, 0.25], dtype=gui_module.np.float32)
+        window._adjusted_linear = window._original_linear.copy()
+        window.color_picker_matrix_combo.setCurrentIndex(0)
+        window._set_color_picker_active(True)
+        window.image_result_single.set_rgb_u8_image(gui_module.np.zeros((3, 3, 3), dtype=gui_module.np.uint8))
+        window._current_result_display_u8 = gui_module.np.zeros((3, 3, 3), dtype=gui_module.np.uint8)
+        window._preview_srgb = gui_module.np.zeros((3, 3, 3), dtype=gui_module.np.float32)
+
+        window._on_result_image_click(1, 1)
+        assert window.color_samples_table.item(0, 6).text() == "64, 64, 64"
+
+        window.slider_brightness.blockSignals(True)
+        window.slider_brightness.setValue(100)
+        window.slider_brightness.blockSignals(False)
+        window._mark_color_picker_samples_pending_for_adjustment_change()
+        assert window.color_samples_table.item(0, 6).text() == "pendiente"
+
+        assert window._apply_result_display_u8_region(
+            gui_module.np.full((1, 1, 3), 128, dtype=gui_module.np.uint8),
+            gui_module.np.full((1, 1, 3), 128, dtype=gui_module.np.uint8),
+            (1, 1, 1, 1),
+            compare_enabled=False,
+            bypass_profile=False,
+        )
+        QtTest.QTest.qWait(220)
+
+        assert window.color_samples_table.item(0, 6).text() == "128, 128, 128"
+        assert window.color_samples_table.item(0, 7).text() == "52.00, +11.50, -10.00"
+    finally:
+        window.close()
+
+
+def test_color_lab_picker_refresh_does_not_publish_partial_values(tmp_path: Path, monkeypatch, qapp):
+    profile = tmp_path / "source.icc"
+    profile.write_bytes(b"fake icc" * 32)
+    fail_lookup = {"enabled": False}
+
+    def fake_lookup_lab_with_icc(_profile_path, rgb):
+        if fail_lookup["enabled"]:
+            raise RuntimeError("xicclu no disponible")
+        return gui_module.np.asarray([[52.0, 8.5, -14.0]], dtype=gui_module.np.float64)
+
+    monkeypatch.setattr(gui_module, "lookup_lab_with_icc", fake_lookup_lab_with_icc)
+    monkeypatch.setattr(
+        gui_module,
+        "evaluate_lab_gamut_membership",
+        lambda lab, **_kwargs: {
+            "inside_a": gui_module.np.ones(len(lab), dtype=bool),
+            "inside_b": gui_module.np.zeros(len(lab), dtype=bool),
+            "inside_common": gui_module.np.zeros(len(lab), dtype=bool),
+            "label_a": "ICC imagen",
+            "label_b": "sRGB",
+        },
+    )
+
+    def run_task(_label, task, on_success):
+        on_success(task())
+
+    window = ICCRawMainWindow()
+    try:
+        window._start_background_task = run_task
+        window._selected_file = tmp_path / "image.tiff"
+        window._selected_file.write_bytes(b"image")
+        window._loaded_preview_source_profile_path = profile
+        window._original_linear = gui_module.np.zeros((3, 3, 3), dtype=gui_module.np.float32)
+        window._adjusted_linear = window._original_linear.copy()
+        window._original_linear[1, 1] = gui_module.np.asarray([0.25, 0.5, 0.75], dtype=gui_module.np.float32)
+        window._adjusted_linear[1, 1] = window._original_linear[1, 1]
+        window.color_picker_matrix_combo.setCurrentIndex(0)
+        window._set_color_picker_active(True)
+
+        window._on_result_image_click(1, 1)
+        assert window.color_samples_table.item(0, 6).text() == "64, 128, 191"
+        assert window.color_samples_table.item(0, 7).text() == "52.00, +8.50, -14.00"
+
+        fail_lookup["enabled"] = True
+        window._adjusted_linear[1, 1] = gui_module.np.asarray([0.5, 0.5, 0.5], dtype=gui_module.np.float32)
+        window._refresh_color_picker_samples_from_current_image()
+
+        assert window._color_picker_samples[0]["reading_status"] == "pending"
+        assert window._color_picker_samples[0]["rgb"] == pytest.approx([0.25, 0.5, 0.75])
+        assert window.color_samples_table.item(0, 6).text() == "pendiente"
+        assert window.color_samples_table.item(0, 7).text() == "pendiente"
+        assert "no se actualizaron" in window.label_color_picker.text()
+    finally:
+        window.close()
+
+
+def test_color_lab_picker_marks_samples_pending_when_preview_is_reduced(tmp_path: Path, monkeypatch, qapp):
+    profile = tmp_path / "source.icc"
+    profile.write_bytes(b"fake icc" * 32)
+    monkeypatch.setattr(
+        gui_module,
+        "lookup_lab_with_icc",
+        lambda _profile_path, _rgb: gui_module.np.asarray([[52.0, 8.5, -14.0]], dtype=gui_module.np.float64),
+    )
+    monkeypatch.setattr(
+        gui_module,
+        "evaluate_lab_gamut_membership",
+        lambda lab, **_kwargs: {
+            "inside_a": gui_module.np.ones(len(lab), dtype=bool),
+            "inside_b": gui_module.np.zeros(len(lab), dtype=bool),
+            "inside_common": gui_module.np.zeros(len(lab), dtype=bool),
+            "label_a": "ICC imagen",
+            "label_b": "sRGB",
+        },
+    )
+
+    def run_task(_label, task, on_success):
+        on_success(task())
+
+    window = ICCRawMainWindow()
+    try:
+        window._start_background_task = run_task
+        window._selected_file = tmp_path / "image.NEF"
+        window._selected_file.write_bytes(b"raw")
+        window._loaded_preview_source_profile_path = profile
+        window._loaded_preview_max_side_request = gui_module.PREVIEW_AUTO_BASE_MAX_SIDE
+        window._loaded_preview_fast_raw = False
+        window._original_linear = gui_module.np.zeros((3, 3, 3), dtype=gui_module.np.float32)
+        window._adjusted_linear = window._original_linear.copy()
+        window._adjusted_linear[1, 1] = gui_module.np.asarray([0.25, 0.5, 0.75], dtype=gui_module.np.float32)
+        window.color_picker_matrix_combo.setCurrentIndex(0)
+        window._set_color_picker_active(True)
+        window._color_picker_samples = [
+            {
+                "x": 1,
+                "y": 1,
+                "matrix": "1x1",
+                "count": 1,
+                "reading_status": "ok",
+                "rgb": [0.25, 0.5, 0.75],
+                "lab": [52.0, 8.5, -14.0],
+                "chroma": 16.36,
+                "inside_a": True,
+                "inside_b": False,
+                "inside_common": False,
+                "label_a": "ICC imagen",
+                "label_b": "sRGB",
+                "group": "Conjunto 1",
+                "name": "Muestra 1",
+                "note": "",
+            }
+        ]
+
+        window._refresh_color_picker_samples_from_current_image()
+
+        assert window._color_picker_samples[0]["reading_status"] == "pending"
+        assert window.color_samples_table.item(0, 6).text() == "pendiente"
+        assert window.color_samples_table.item(0, 7).text() == "pendiente"
+        assert "pendientes de recalculo" in window.label_color_picker.text()
     finally:
         window.close()
 
@@ -5727,6 +6083,44 @@ def test_shutdown_background_threads_does_not_wait_forever(qapp):
         window.close()
 
 
+def test_shutdown_background_threads_bounds_forced_termination_wait(qapp):
+    class FakeThread:
+        def __init__(self) -> None:
+            self.waits: list[int] = []
+            self.terminated = False
+
+        def isRunning(self) -> bool:  # noqa: N802
+            return True
+
+        def wait(self, timeout_ms: int) -> bool:
+            self.waits.append(timeout_ms)
+            return False
+
+        def requestInterruption(self) -> None:  # noqa: N802
+            pass
+
+        def quit(self) -> None:
+            pass
+
+        def terminate(self) -> None:
+            self.terminated = True
+
+    window = ICCRawMainWindow()
+    threads = [FakeThread(), FakeThread(), FakeThread()]
+    window._threads.extend(threads)
+    try:
+        window._shutdown_background_threads(timeout_ms=10)
+
+        assert not window._threads
+        assert all(thread.terminated for thread in threads)
+        assert all(thread.waits[-1] <= 100 for thread in threads)
+    finally:
+        for thread in threads:
+            if thread in tasks_module._SHUTDOWN_THREAD_GRAVEYARD:
+                tasks_module._SHUTDOWN_THREAD_GRAVEYARD.remove(thread)
+        window.close()
+
+
 def test_thumbnail_copy_paste_development_settings_writes_raw_sidecars(tmp_path: Path, qapp):
     root = tmp_path / "session"
     raw_dir = root / "01_ORG"
@@ -6767,10 +7161,10 @@ def test_mtf_progress_panel_reports_elapsed_estimate_and_completion(qapp):
         assert "Transcurrido" in window.mtf_progress_time_label.text()
         assert "estimado" in window.mtf_progress_time_label.text()
         assert window.mtf_progress_bar.value() > 0
-        assert "activo" in window.mtf_phase_label.text()
+        assert "activa" in window.mtf_phase_label.text()
         assert "capture.NEF" in window.global_status_label.text()
         assert "estimado" in window.global_progress_time_label.text()
-        assert "activo" in window.global_progress_phase_label.text()
+        assert "activa" in window.global_progress_phase_label.text()
         assert window.global_progress.value() == window.mtf_progress_bar.value()
         assert window.mtf_progress_panel.isVisible() is False
 
@@ -6805,19 +7199,19 @@ def test_global_progress_panel_tracks_preview_load_threshold(tmp_path: Path, qap
         window._preview_load_progress_started_at -= 1.2
         window._update_preview_load_progress_status()
 
-        assert "Preview" in window.global_status_label.text()
+        assert "Vista previa" in window.global_status_label.text()
         assert "capture.NEF" in window.global_status_label.text()
         assert "estimado" in window.global_progress_time_label.text()
-        assert "Preview: pendiente" in window.global_progress_phase_label.text()
+        assert "Vista previa: pendiente" in window.global_progress_phase_label.text()
         assert window.global_progress.value() > 0
 
         window._finish_preview_load_progress(
             success=True,
-            detail="Preview cargada: capture.NEF",
+            detail="Vista previa cargada: capture.NEF",
             elapsed_seconds=1.4,
         )
 
-        assert "Preview cargada" in window.global_status_label.text()
+        assert "Vista previa cargada" in window.global_status_label.text()
         assert "1.4s" in window.global_progress_time_label.text()
         assert window.global_progress.value() == 100
     finally:
@@ -6832,7 +7226,7 @@ def test_global_progress_panel_promotes_slow_interactive_adjustments(qapp):
         window._update_interactive_preview_global_progress()
 
         assert window._global_progress_owner == "preview"
-        assert "Ajustando preview" in window.global_status_label.text()
+        assert "Ajustando vista previa" in window.global_status_label.text()
         assert "1." in window.global_progress_time_label.text()
         assert window.global_progress.minimum() == 0
         assert window.global_progress.maximum() == 0
@@ -7399,7 +7793,14 @@ def test_global_configuration_dialog_owns_non_image_settings(qapp):
             for i in range(window.global_settings_tabs.count())
         ]
         assert "Firma / C2PA" in global_tabs
-        assert "Preview / monitor" in global_tabs
+        assert "Vista previa / monitor" in global_tabs
+        language_items = [
+            window.combo_app_language.itemText(i)
+            for i in range(window.combo_app_language.count())
+        ]
+        assert language_items == ["Español"]
+        assert window.combo_app_language.currentData() == "es"
+        assert "English" not in language_items
 
         def is_descendant(widget: QtWidgets.QWidget, ancestor: QtWidgets.QWidget) -> bool:
             parent = widget.parentWidget()

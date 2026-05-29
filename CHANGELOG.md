@@ -22,6 +22,34 @@ To maintain full traceability, each change must:
 
 No entries yet.
 
+## [0.4.1] - 2026-05-29
+
+### Fixed
+
+- Fixed Lab eyedropper sample readings after color, exposure and contrast
+  adjustments: saved samples are now marked pending when the render changes and
+  recalculated from the current real-pixel image values before being published.
+- Fixed partial interactive preview updates so they also trigger saved-sample
+  refreshes instead of leaving stale RGB/Lab values visible.
+- Fixed mixed-language UI surfaces by forcing the Spanish source language until
+  the translation catalog is complete.
+- Fixed low-contrast UI text and helper notices in the dark interface.
+
+### Changed
+
+- The GUI now uses a neutral dark-gray theme regardless of the operating system
+  theme.
+- Lab sample RGB values are displayed as normal integer 0-255 triplets instead
+  of fractional RGB values.
+- Explanatory precision and workflow notices were moved behind compact
+  information buttons where possible, reducing persistent visual noise.
+
+### Tests
+
+- Added regression coverage for dynamic Lab sample refresh after render
+  adjustments and partial preview updates.
+- Validated with the full local suite: `504 passed, 2 warnings`.
+
 ## [0.4.0] - 2026-05-21
 
 ### Added

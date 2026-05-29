@@ -57,7 +57,7 @@ class PreviewExportMixin:
         if actual.shape != expected.shape:
             raise RuntimeError(
                 "Fallo de paridad colorimetrica: el TIFF exportado no coincide en dimensiones "
-                f"con la preview ({actual.shape} != {expected.shape})."
+                f"con la vista previa ({actual.shape} != {expected.shape})."
             )
         diff = np.abs(actual.astype(np.int16) - expected.astype(np.int16))
         mean_delta = float(np.mean(diff))
@@ -70,7 +70,7 @@ class PreviewExportMixin:
         }
         if mean_delta > 1.5 or p99_delta > 4.0 or max_delta > 12:
             raise RuntimeError(
-                "Fallo de paridad colorimetrica preview/export: "
+                "Fallo de paridad colorimetrica vista previa/exportacion: "
                 f"media={mean_delta:.3f}, p99={p99_delta:.3f}, max={max_delta}. "
                 "No se acepta el TIFF porque no reproduce la imagen visualizada."
             )
@@ -78,13 +78,13 @@ class PreviewExportMixin:
 
     def _on_save_preview(self) -> None:
         if self._preview_srgb is None:
-            QtWidgets.QMessageBox.information(self, self.tr("Info"), "No hay preview para guardar.")
+            QtWidgets.QMessageBox.information(self, self.tr("Info"), "No hay vista previa para guardar.")
             return
         self._ensure_session_output_controls()
         default_out = str(self._session_default_outputs()["preview"])
         out_text, _ = QtWidgets.QFileDialog.getSaveFileName(
             self,
-            self.tr("Guardar preview PNG"),
+            self.tr("Guardar vista previa PNG"),
             default_out,
             "PNG (*.png)",
         )
@@ -99,8 +99,8 @@ class PreviewExportMixin:
         if not ok:
             QtWidgets.QMessageBox.critical(self, self.tr("Error"), self.tr("No se pudo guardar:") + f" {out}")
             return
-        self._log_preview(f"Preview guardada en: {out}")
-        self._set_status(self.tr("Preview guardada:") + f" {out}")
+        self._log_preview(f"Vista previa guardada en: {out}")
+        self._set_status(self.tr("Vista previa guardada:") + f" {out}")
         self._save_active_session(silent=True)
 
     def _on_develop_selected(self) -> None:
@@ -262,7 +262,7 @@ class PreviewExportMixin:
             self._log_preview(f"TIFF revelado: {payload['output_tiff']}")
             self._log_preview(f"ProbRAW Proof: {payload['proof']}")
             if payload.get("color_parity"):
-                self._log_preview(f"Paridad color preview/export: {payload['color_parity']}")
+                self._log_preview(f"Paridad color vista previa/exportacion: {payload['color_parity']}")
             if payload.get("raw_sidecar"):
                 self._log_preview(f"Mochila ProbRAW: {payload['raw_sidecar']}")
             self._refresh_color_reference_thumbnail_markers()

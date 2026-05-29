@@ -663,12 +663,12 @@ if QtWidgets is not None:
         def paintEvent(self, _event) -> None:  # noqa: N802
             painter = QtGui.QPainter(self)
             painter.setRenderHint(QtGui.QPainter.Antialiasing)
-            painter.fillRect(self.rect(), QtGui.QColor("#20242b"))
+            painter.fillRect(self.rect(), QtGui.QColor("#202020"))
             plot = self.rect().adjusted(56, 22, -18, -44)
-            painter.fillRect(plot, QtGui.QColor("#15181d"))
+            painter.fillRect(plot, QtGui.QColor("#181818"))
 
             x_values, y_values, title, x_label, y_label = self._curve_payload()
-            painter.setPen(QtGui.QPen(QtGui.QColor("#cbd5e1"), 1))
+            painter.setPen(QtGui.QPen(QtGui.QColor("#d8d8d8"), 1))
             painter.drawText(self.rect().adjusted(8, 2, -8, -4), QtCore.Qt.AlignTop | QtCore.Qt.AlignLeft, title)
             painter.drawText(self.rect().adjusted(8, 0, -8, -8), QtCore.Qt.AlignBottom | QtCore.Qt.AlignHCenter, x_label)
             painter.save()
@@ -679,7 +679,7 @@ if QtWidgets is not None:
 
             if x_values.size < 2 or y_values.size < 2:
                 self._draw_empty_grid(painter, plot)
-                painter.setPen(QtGui.QPen(QtGui.QColor("#94a3b8"), 1))
+                painter.setPen(QtGui.QPen(QtGui.QColor("#a8a8a8"), 1))
                 painter.drawText(plot, QtCore.Qt.AlignCenter, self.tr("Selecciona una ROI de borde inclinado"))
                 painter.end()
                 return
@@ -811,7 +811,7 @@ if QtWidgets is not None:
             return ymin - pad, ymax + pad
 
         def _draw_empty_grid(self, painter: QtGui.QPainter, plot: QtCore.QRect) -> None:
-            painter.setPen(QtGui.QPen(QtGui.QColor("#334155"), 1))
+            painter.setPen(QtGui.QPen(QtGui.QColor("#454545"), 1))
             for i in range(5):
                 x = plot.left() + plot.width() * i / 4.0
                 y = plot.top() + plot.height() * i / 4.0
@@ -827,36 +827,36 @@ if QtWidgets is not None:
             ymin: float,
             ymax: float,
         ) -> None:
-            painter.setPen(QtGui.QPen(QtGui.QColor("#334155"), 1))
+            painter.setPen(QtGui.QPen(QtGui.QColor("#454545"), 1))
             font = painter.font()
             font.setPointSize(max(7, font.pointSize() - 1))
             painter.setFont(font)
 
             minor_ticks = self._minor_axis_ticks(xmin, xmax)
             if minor_ticks:
-                painter.setPen(QtGui.QPen(QtGui.QColor("#25303a"), 1))
+                painter.setPen(QtGui.QPen(QtGui.QColor("#333333"), 1))
                 for value in minor_ticks:
                     px, _py = self._data_to_plot(value, ymin, plot, xmin, xmax, ymin, ymax)
                     painter.drawLine(px, plot.top(), px, plot.bottom())
 
-            painter.setPen(QtGui.QPen(QtGui.QColor("#334155"), 1))
+            painter.setPen(QtGui.QPen(QtGui.QColor("#454545"), 1))
             for value in self._axis_ticks(xmin, xmax):
                 px, _py = self._data_to_plot(value, ymin, plot, xmin, xmax, ymin, ymax)
                 painter.drawLine(px, plot.top(), px, plot.bottom())
-                painter.setPen(QtGui.QPen(QtGui.QColor("#94a3b8"), 1))
+                painter.setPen(QtGui.QPen(QtGui.QColor("#a8a8a8"), 1))
                 label_rect = QtCore.QRectF(px - 28, plot.bottom() + 3, 56, 16)
                 painter.drawText(label_rect, QtCore.Qt.AlignHCenter | QtCore.Qt.AlignTop, self._format_axis_value(value))
-                painter.setPen(QtGui.QPen(QtGui.QColor("#334155"), 1))
+                painter.setPen(QtGui.QPen(QtGui.QColor("#454545"), 1))
 
             for value in self._axis_ticks(ymin, ymax):
                 _px, py = self._data_to_plot(xmin, value, plot, xmin, xmax, ymin, ymax)
                 painter.drawLine(plot.left(), py, plot.right(), py)
-                painter.setPen(QtGui.QPen(QtGui.QColor("#94a3b8"), 1))
+                painter.setPen(QtGui.QPen(QtGui.QColor("#a8a8a8"), 1))
                 label_rect = QtCore.QRectF(plot.left() - 50, py - 8, 44, 16)
                 painter.drawText(label_rect, QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter, self._format_axis_value(value))
-                painter.setPen(QtGui.QPen(QtGui.QColor("#334155"), 1))
+                painter.setPen(QtGui.QPen(QtGui.QColor("#454545"), 1))
 
-            painter.setPen(QtGui.QPen(QtGui.QColor("#4b5563"), 1))
+            painter.setPen(QtGui.QPen(QtGui.QColor("#5c5c5c"), 1))
             painter.drawRect(plot)
 
         def _draw_nyquist_marker(
@@ -975,15 +975,15 @@ if QtWidgets is not None:
             ymin: float,
             ymax: float,
         ) -> None:
-            painter.setPen(QtGui.QPen(QtGui.QColor("#64748b"), 1))
+            painter.setPen(QtGui.QPen(QtGui.QColor("#7a7a7a"), 1))
             top_y = plot.top()
             for value in self._axis_ticks(xmin, xmax):
                 px, _py = self._data_to_plot(value, ymax, plot, xmin, xmax, ymin, ymax)
                 painter.drawLine(px, top_y, px, top_y + 6)
                 label = self._format_axis_value(value)
-                painter.setPen(QtGui.QPen(QtGui.QColor("#cbd5e1"), 1))
+                painter.setPen(QtGui.QPen(QtGui.QColor("#d8d8d8"), 1))
                 painter.drawText(QtCore.QRectF(px - 24, top_y + 6, 48, 14), QtCore.Qt.AlignHCenter | QtCore.Qt.AlignTop, label)
-                painter.setPen(QtGui.QPen(QtGui.QColor("#64748b"), 1))
+                painter.setPen(QtGui.QPen(QtGui.QColor("#7a7a7a"), 1))
 
         # Pixel strips ----------------------------------------------------
 
@@ -992,7 +992,7 @@ if QtWidgets is not None:
             if x.size == 0 or values.size == 0:
                 return
             strip = QtCore.QRectF(plot.left(), plot.top() + 21, plot.width(), 16)
-            painter.setPen(QtGui.QPen(QtGui.QColor("#475569"), 1))
+            painter.setPen(QtGui.QPen(QtGui.QColor("#5a5a5a"), 1))
             painter.drawRect(strip)
             for distance, value in zip(x, values, strict=False):
                 x0 = float(distance) - 0.5
@@ -1005,7 +1005,7 @@ if QtWidgets is not None:
                     px1 = px0 + 1.0
                 gray = int(np.clip(round(float(value) * 255.0), 0, 255))
                 painter.fillRect(QtCore.QRectF(px0, strip.top() + 1, px1 - px0, strip.height() - 2), QtGui.QColor(gray, gray, gray))
-            painter.setPen(QtGui.QPen(QtGui.QColor("#cbd5e1"), 1))
+            painter.setPen(QtGui.QPen(QtGui.QColor("#d8d8d8"), 1))
             painter.drawText(strip.adjusted(6, 0, -6, 0), QtCore.Qt.AlignVCenter | QtCore.Qt.AlignLeft, self.tr("tonos de pixeles del borde"))
 
         def _esf_pixel_strip_payload(self) -> tuple[np.ndarray, np.ndarray]:
@@ -1157,7 +1157,7 @@ if QtWidgets is not None:
             self._draw_ca_pixel_strip(painter, plot, xmin, xmax)
             if ymin < 0.0 < ymax:
                 _px, py = self._data_to_plot(xmin, 0.0, plot, xmin, xmax, ymin, ymax)
-                painter.setPen(QtGui.QPen(QtGui.QColor("#64748b"), 1, QtCore.Qt.DashLine))
+                painter.setPen(QtGui.QPen(QtGui.QColor("#7a7a7a"), 1, QtCore.Qt.DashLine))
                 painter.drawLine(plot.left(), py, plot.right(), py)
             self._draw_curve_path(painter, plot, x, red - green, xmin, xmax, ymin, ymax, pen=QtGui.QPen(QtGui.QColor("#ef4444"), 2))
             self._draw_curve_path(painter, plot, x, blue - green, xmin, xmax, ymin, ymax, pen=QtGui.QPen(QtGui.QColor("#3b82f6"), 2))
@@ -1169,7 +1169,7 @@ if QtWidgets is not None:
             if distances.size == 0 or rgb.size == 0:
                 return
             strip = QtCore.QRectF(plot.left(), plot.top() + 4, plot.width(), 18)
-            painter.setPen(QtGui.QPen(QtGui.QColor("#475569"), 1))
+            painter.setPen(QtGui.QPen(QtGui.QColor("#5a5a5a"), 1))
             painter.drawRect(strip)
             for distance, color in zip(distances, rgb, strict=False):
                 x0 = float(distance) - 0.5
@@ -1182,7 +1182,7 @@ if QtWidgets is not None:
                     px1 = px0 + 1.0
                 r, g, b = [int(np.clip(round(float(v) * 255.0), 0, 255)) for v in color[:3]]
                 painter.fillRect(QtCore.QRectF(px0, strip.top() + 1, px1 - px0, strip.height() - 2), QtGui.QColor(r, g, b))
-            painter.setPen(QtGui.QPen(QtGui.QColor("#cbd5e1"), 1))
+            painter.setPen(QtGui.QPen(QtGui.QColor("#d8d8d8"), 1))
             painter.drawText(strip.adjusted(6, 0, -6, 0), QtCore.Qt.AlignVCenter | QtCore.Qt.AlignLeft, self.tr("fila de pixeles del borde"))
 
         def _draw_channel_legend(self, painter: QtGui.QPainter, plot: QtCore.QRect) -> None:
@@ -1191,7 +1191,7 @@ if QtWidgets is not None:
             width = 146
             height = metrics.height() + 12
             rect = QtCore.QRectF(plot.right() - width - 8, plot.bottom() - height - 8, width, height)
-            painter.setPen(QtGui.QPen(QtGui.QColor("#334155"), 1))
+            painter.setPen(QtGui.QPen(QtGui.QColor("#454545"), 1))
             painter.setBrush(QtGui.QColor(15, 23, 42, 210))
             painter.drawRoundedRect(rect, 4, 4)
             x = rect.left() + 8
@@ -1199,7 +1199,7 @@ if QtWidgets is not None:
                 painter.setPen(QtGui.QPen(QtGui.QColor(color), 3))
                 y = rect.center().y()
                 painter.drawLine(x, y, x + 12, y)
-                painter.setPen(QtGui.QPen(QtGui.QColor("#e2e8f0"), 1))
+                painter.setPen(QtGui.QPen(QtGui.QColor("#e6e6e6"), 1))
                 painter.drawText(QtCore.QRectF(x + 16, rect.top() + 4, 34, metrics.height()), QtCore.Qt.AlignVCenter, label)
                 x += 44
 
@@ -1262,7 +1262,7 @@ if QtWidgets is not None:
             painter.setPen(QtGui.QPen(QtGui.QColor("#e879f9"), 1, QtCore.Qt.DashLine))
             painter.drawLine(px10, plot.top(), px10, plot.bottom())
             painter.drawLine(px90, plot.top(), px90, plot.bottom())
-            painter.setPen(QtGui.QPen(QtGui.QColor("#f8fafc"), 1))
+            painter.setPen(QtGui.QPen(QtGui.QColor("#f7f7f7"), 1))
             bracket_y = min(max(plot.top() + 34, (py10 + py90) * 0.5), plot.bottom() - 24)
             painter.drawLine(px10, bracket_y, px90, bracket_y)
             painter.drawLine(px10, bracket_y - 4, px10, bracket_y + 4)
@@ -1296,7 +1296,7 @@ if QtWidgets is not None:
             mtf10 = self._optional_float(getattr(result, "mtf10", None))
             if mtf50 is not None:
                 lines.append(f"MTF50: {mtf50:.3f} c/p")
-                self._draw_frequency_marker(painter, plot, xmin, xmax, ymin, ymax, mtf50, 0.5, "#f8fafc")
+                self._draw_frequency_marker(painter, plot, xmin, xmax, ymin, ymax, mtf50, 0.5, "#f7f7f7")
             if mtf50p is not None:
                 lines.append(f"MTF50P: {mtf50p:.3f} c/p")
                 self._draw_frequency_marker(painter, plot, xmin, xmax, ymin, ymax, mtf50p, 0.5, "#a78bfa")
@@ -1348,10 +1348,10 @@ if QtWidgets is not None:
             x = anchor_rect.right() - width if align_right else anchor_rect.left()
             y = anchor_rect.top()
             rect = QtCore.QRectF(x, y, width, height)
-            painter.setPen(QtGui.QPen(QtGui.QColor("#334155"), 1))
+            painter.setPen(QtGui.QPen(QtGui.QColor("#454545"), 1))
             painter.setBrush(QtGui.QColor(15, 23, 42, 210))
             painter.drawRoundedRect(rect, 4, 4)
-            painter.setPen(QtGui.QPen(QtGui.QColor("#e2e8f0"), 1))
+            painter.setPen(QtGui.QPen(QtGui.QColor("#e6e6e6"), 1))
             for index, line in enumerate(lines):
                 line_rect = QtCore.QRectF(
                     rect.left() + 7,
@@ -1423,7 +1423,7 @@ if QtWidgets is not None:
             y = float(np.clip(y, ymin, ymax))
             px, py = self._data_to_plot(x, y, plot, xmin, xmax, ymin, ymax)
 
-            painter.setPen(QtGui.QPen(QtGui.QColor("#e2e8f0"), 1, QtCore.Qt.DotLine))
+            painter.setPen(QtGui.QPen(QtGui.QColor("#e6e6e6"), 1, QtCore.Qt.DotLine))
             painter.drawLine(px, plot.top(), px, plot.bottom())
             painter.drawLine(plot.left(), py, plot.right(), py)
 
@@ -1434,10 +1434,10 @@ if QtWidgets is not None:
             lx = min(max(plot.left() + 4, px + 8), plot.right() - label_w - 4)
             ly = max(plot.top() + 4, py - label_h - 8)
             rect = QtCore.QRectF(lx, ly, label_w, label_h)
-            painter.setPen(QtGui.QPen(QtGui.QColor("#334155"), 1))
+            painter.setPen(QtGui.QPen(QtGui.QColor("#454545"), 1))
             painter.setBrush(QtGui.QColor(15, 23, 42, 230))
             painter.drawRoundedRect(rect, 4, 4)
-            painter.setPen(QtGui.QPen(QtGui.QColor("#f8fafc"), 1))
+            painter.setPen(QtGui.QPen(QtGui.QColor("#f7f7f7"), 1))
             painter.drawText(rect.adjusted(7, 0, -7, 0), QtCore.Qt.AlignVCenter | QtCore.Qt.AlignLeft, label)
 
         def _data_to_plot(
@@ -1562,12 +1562,12 @@ if QtWidgets is not None:
         def paintEvent(self, _event) -> None:  # noqa: N802
             painter = QtGui.QPainter(self)
             painter.setRenderHint(QtGui.QPainter.Antialiasing)
-            painter.fillRect(self.rect(), QtGui.QColor("#20242b"))
+            painter.fillRect(self.rect(), QtGui.QColor("#202020"))
             plot = self.rect().adjusted(56, 22, -18, -48)
-            painter.fillRect(plot, QtGui.QColor("#15181d"))
+            painter.fillRect(plot, QtGui.QColor("#181818"))
 
             title, x_label, y_label = self._comparison_labels()
-            painter.setPen(QtGui.QPen(QtGui.QColor("#cbd5e1"), 1))
+            painter.setPen(QtGui.QPen(QtGui.QColor("#d8d8d8"), 1))
             painter.drawText(self.rect().adjusted(8, 2, -8, -4), QtCore.Qt.AlignTop | QtCore.Qt.AlignLeft, title)
             painter.drawText(self.rect().adjusted(8, 0, -8, -8), QtCore.Qt.AlignBottom | QtCore.Qt.AlignHCenter, x_label)
             painter.save()
@@ -1578,7 +1578,7 @@ if QtWidgets is not None:
 
             if not self._series:
                 self._draw_empty_grid(painter, plot)
-                painter.setPen(QtGui.QPen(QtGui.QColor("#94a3b8"), 1))
+                painter.setPen(QtGui.QPen(QtGui.QColor("#a8a8a8"), 1))
                 painter.drawText(plot, QtCore.Qt.AlignCenter, self.tr("No hay curvas MTF guardadas"))
                 painter.end()
                 return
@@ -1686,7 +1686,7 @@ if QtWidgets is not None:
             legend_w = min(300, max(160, int(plot.width() * 0.44)))
             legend_h = row_h * len(self._series) + 8
             rect = QtCore.QRectF(plot.right() - legend_w - 8, plot.top() + 8, legend_w, legend_h)
-            painter.setPen(QtGui.QPen(QtGui.QColor("#334155"), 1))
+            painter.setPen(QtGui.QPen(QtGui.QColor("#454545"), 1))
             painter.setBrush(QtGui.QColor(15, 23, 42, 220))
             painter.drawRoundedRect(rect, 4, 4)
             for idx, (label, _x_values, _y_values) in enumerate(self._series):
@@ -1694,7 +1694,7 @@ if QtWidgets is not None:
                 y = rect.top() + 8 + idx * row_h + row_h / 2.0
                 painter.setPen(QtGui.QPen(color, 3))
                 painter.drawLine(rect.left() + 10, y, rect.left() + 34, y)
-                painter.setPen(QtGui.QPen(QtGui.QColor("#e2e8f0"), 1))
+                painter.setPen(QtGui.QPen(QtGui.QColor("#e6e6e6"), 1))
                 text_rect = QtCore.QRectF(rect.left() + 42, rect.top() + 4 + idx * row_h, rect.width() - 50, row_h)
                 text = metrics.elidedText(str(label), QtCore.Qt.ElideMiddle, int(text_rect.width()))
                 painter.drawText(text_rect, QtCore.Qt.AlignVCenter | QtCore.Qt.AlignLeft, text)
@@ -1803,18 +1803,18 @@ if QtWidgets is not None:
         def paintEvent(self, _event) -> None:  # noqa: N802
             painter = QtGui.QPainter(self)
             painter.setRenderHint(QtGui.QPainter.Antialiasing)
-            painter.fillRect(self.rect(), QtGui.QColor("#1c1f24"))
+            painter.fillRect(self.rect(), QtGui.QColor("#202020"))
 
             plot_rect = self.rect().adjusted(8, 8, -8, -24)
             if plot_rect.width() <= 4 or plot_rect.height() <= 4:
                 return
 
             bg_grad = QtGui.QLinearGradient(plot_rect.topLeft(), plot_rect.bottomLeft())
-            bg_grad.setColorAt(0.0, QtGui.QColor("#2b2f35"))
-            bg_grad.setColorAt(1.0, QtGui.QColor("#1d2025"))
+            bg_grad.setColorAt(0.0, QtGui.QColor("#303030"))
+            bg_grad.setColorAt(1.0, QtGui.QColor("#242424"))
             painter.fillRect(plot_rect, bg_grad)
 
-            painter.setPen(QtGui.QPen(QtGui.QColor("#3b4048"), 1))
+            painter.setPen(QtGui.QPen(QtGui.QColor("#4a4a4a"), 1))
             for idx in range(1, 4):
                 x = plot_rect.left() + (plot_rect.width() * idx / 4.0)
                 painter.drawLine(QtCore.QPointF(x, plot_rect.top()), QtCore.QPointF(x, plot_rect.bottom()))
@@ -1826,7 +1826,7 @@ if QtWidgets is not None:
             self._draw_hist_channel(painter, plot_rect, self._hist_g, QtGui.QColor(134, 239, 172, 150), QtGui.QColor(134, 239, 172, 245))
             self._draw_hist_channel(painter, plot_rect, self._hist_b, QtGui.QColor(96, 165, 250, 150), QtGui.QColor(96, 165, 250, 245))
 
-            painter.setPen(QtGui.QPen(QtGui.QColor("#4b515b"), 1))
+            painter.setPen(QtGui.QPen(QtGui.QColor("#5c5c5c"), 1))
             painter.setBrush(QtCore.Qt.NoBrush)
             painter.drawRect(plot_rect)
 
@@ -1835,7 +1835,7 @@ if QtWidgets is not None:
                 painter,
                 left_side=True,
                 active=bool(self._pending_label is None and metrics["shadow_any"] > VIEWER_HISTOGRAM_CLIP_ALERT_RATIO),
-                color=QtGui.QColor("#60a5fa"),
+                color=QtGui.QColor("#bdbdbd"),
             )
             self._draw_clip_marker(
                 painter,
@@ -1844,7 +1844,7 @@ if QtWidgets is not None:
                 color=QtGui.QColor("#f87171"),
             )
 
-            painter.setPen(QtGui.QColor("#aeb5bf"))
+            painter.setPen(QtGui.QColor("#b3b3b3"))
             if self._pending_label:
                 painter.drawText(
                     self.rect().adjusted(8, 0, -8, -4),
@@ -1920,8 +1920,8 @@ if QtWidgets is not None:
                 ]
             )
             marker_on = bool(self._clip_markers_enabled and active)
-            painter.setPen(QtGui.QPen(QtGui.QColor("#0f1115"), 1))
-            painter.setBrush(QtGui.QBrush(color if marker_on else QtGui.QColor("#323842")))
+            painter.setPen(QtGui.QPen(QtGui.QColor("#181818"), 1))
+            painter.setBrush(QtGui.QBrush(color if marker_on else QtGui.QColor("#3a3a3a")))
             painter.drawPolygon(points)
 
 
@@ -2020,7 +2020,7 @@ if QtWidgets is not None:
                 normalized.append(
                     {
                         "label": str(item.get("label") or "Perfil"),
-                        "color": str(item.get("color") or "#94a3b8"),
+                        "color": str(item.get("color") or "#a8a8a8"),
                         "points": np.ascontiguousarray(points, dtype=np.float64),
                         "rgb": self._coerce_rgb_points(item.get("surface_rgb"), points.shape[0]),
                         "quads": self._coerce_quads(item.get("quads"), points.shape[0]),
@@ -2146,7 +2146,7 @@ if QtWidgets is not None:
         def paintEvent(self, _event) -> None:  # noqa: N802
             painter = QtGui.QPainter(self)
             painter.setRenderHint(QtGui.QPainter.Antialiasing)
-            painter.fillRect(self.rect(), QtGui.QColor("#171a1f"))
+            painter.fillRect(self.rect(), QtGui.QColor("#202020"))
 
             if self._view_mode == "lab_xy":
                 self._paint_lab_xy(painter)
@@ -2156,13 +2156,13 @@ if QtWidgets is not None:
             if plot_rect.width() <= 40 or plot_rect.height() <= 40:
                 return
 
-            painter.setPen(QtGui.QPen(QtGui.QColor("#313842"), 1))
+            painter.setPen(QtGui.QPen(QtGui.QColor("#454545"), 1))
             painter.drawRect(plot_rect)
 
             if not self._series:
                 self._draw_axes(painter, plot_rect, np.asarray([50.0, 0.0, 0.0], dtype=np.float64), 1.0)
-                painter.setPen(QtGui.QColor("#9ca3af"))
-                painter.drawText(plot_rect, QtCore.Qt.AlignCenter, self.tr("Sin datos de gamut 3D"))
+                painter.setPen(QtGui.QColor("#a6a6a6"))
+                painter.drawText(plot_rect, QtCore.Qt.AlignCenter, self.tr("Sin datos de gama 3D"))
                 return
 
             all_points = np.vstack([item["points"] for item in self._series])
@@ -2199,7 +2199,7 @@ if QtWidgets is not None:
                 painter.drawPolygon(polygon)
             painter.setBrush(QtCore.Qt.NoBrush)
             for _depth, polygon, color in sorted(solid_quads, key=lambda entry: entry[0]):
-                edge = QtGui.QColor("#0f172a")
+                edge = QtGui.QColor("#202020")
                 edge.setAlpha(46)
                 painter.setPen(QtGui.QPen(edge, 0.45))
                 painter.drawPolygon(polygon)
@@ -2212,7 +2212,7 @@ if QtWidgets is not None:
                 painter.drawEllipse(point, 2.0, 2.0)
 
             self._draw_legend(painter, plot_rect)
-            painter.setPen(QtGui.QColor("#9ca3af"))
+            painter.setPen(QtGui.QColor("#a6a6a6"))
             painter.drawText(
                 self.rect().adjusted(8, 0, -8, -6),
                 QtCore.Qt.AlignLeft | QtCore.Qt.AlignBottom,
@@ -2224,13 +2224,13 @@ if QtWidgets is not None:
             if plot_rect.width() <= 40 or plot_rect.height() <= 40:
                 return
 
-            painter.setPen(QtGui.QPen(QtGui.QColor("#313842"), 1))
+            painter.setPen(QtGui.QPen(QtGui.QColor("#454545"), 1))
             painter.drawRect(plot_rect)
 
             if not self._series:
                 self._draw_lab_xy_grid(painter, plot_rect, 120.0)
-                painter.setPen(QtGui.QColor("#9ca3af"))
-                painter.drawText(plot_rect, QtCore.Qt.AlignCenter, self.tr("Sin datos de gamut Lab 2D"))
+                painter.setPen(QtGui.QColor("#a6a6a6"))
+                painter.drawText(plot_rect, QtCore.Qt.AlignCenter, self.tr("Sin datos de gama Lab 2D"))
                 return
 
             all_points = np.vstack([item["points"] for item in self._series])
@@ -2322,7 +2322,7 @@ if QtWidgets is not None:
                     painter.drawEllipse(marker, 4.2, 4.2)
 
             self._draw_legend(painter, plot_rect)
-            painter.setPen(QtGui.QColor("#9ca3af"))
+            painter.setPen(QtGui.QColor("#a6a6a6"))
             footer = f"Lab 2D | L* {self._l_slice:.0f} +/- {self._l_slice_half_width:.0f}"
             if outside_summary:
                 footer += " | fuera: " + ", ".join(outside_summary[:2])
@@ -2336,13 +2336,13 @@ if QtWidgets is not None:
             center = rect.center()
             scale = min(rect.width(), rect.height()) * 0.46 / max(float(limit), 1.0)
             painter.setBrush(QtCore.Qt.NoBrush)
-            painter.setPen(QtGui.QPen(QtGui.QColor("#27313b"), 1))
+            painter.setPen(QtGui.QPen(QtGui.QColor("#3a3a3a"), 1))
             ring = 40
             while ring <= limit:
                 radius = float(ring) * scale
                 painter.drawEllipse(QtCore.QPointF(center), radius, radius)
                 ring += 40
-            painter.setPen(QtGui.QPen(QtGui.QColor("#4b5563"), 1))
+            painter.setPen(QtGui.QPen(QtGui.QColor("#5c5c5c"), 1))
             painter.drawLine(
                 self._lab_xy_to_screen(-limit, 0.0, rect, limit),
                 self._lab_xy_to_screen(limit, 0.0, rect, limit),
@@ -2351,7 +2351,7 @@ if QtWidgets is not None:
                 self._lab_xy_to_screen(0.0, -limit, rect, limit),
                 self._lab_xy_to_screen(0.0, limit, rect, limit),
             )
-            painter.setPen(QtGui.QColor("#cbd5e1"))
+            painter.setPen(QtGui.QColor("#d8d8d8"))
             painter.drawText(self._lab_xy_to_screen(limit, 0.0, rect, limit) + QtCore.QPointF(-18, -6), "a*")
             painter.drawText(self._lab_xy_to_screen(0.0, limit, rect, limit) + QtCore.QPointF(4, 12), "b*")
 
@@ -2422,11 +2422,11 @@ if QtWidgets is not None:
                 dtype=np.float64,
             )
             projected, _depth = self._project_points(axis_points, center, scale, rect)
-            painter.setPen(QtGui.QPen(QtGui.QColor("#4b5563"), 1))
+            painter.setPen(QtGui.QPen(QtGui.QColor("#5c5c5c"), 1))
             painter.drawLine(projected[0], projected[1])
             painter.drawLine(projected[2], projected[3])
             painter.drawLine(projected[4], projected[5])
-            painter.setPen(QtGui.QColor("#cbd5e1"))
+            painter.setPen(QtGui.QColor("#d8d8d8"))
             painter.drawText(projected[1] + QtCore.QPointF(4, -4), "L*")
             painter.drawText(projected[3] + QtCore.QPointF(4, 0), "a*")
             painter.drawText(projected[5] + QtCore.QPointF(4, 0), "b*")
@@ -2446,7 +2446,7 @@ if QtWidgets is not None:
                     painter.setBrush(QtCore.Qt.NoBrush)
                     painter.setPen(QtGui.QPen(color, 1.2))
                     painter.drawRect(QtCore.QRectF(x + 1, y + 2, 9, 9))
-                painter.setPen(QtGui.QColor("#d1d5db"))
+                painter.setPen(QtGui.QColor("#d8d8d8"))
                 painter.drawText(QtCore.QPointF(x + 16, y + 10), f"{item['label']} ({len(item['points'])})")
                 y += 16
 
@@ -2547,14 +2547,14 @@ if QtWidgets is not None:
         def paintEvent(self, _event) -> None:  # noqa: N802
             painter = QtGui.QPainter(self)
             painter.setRenderHint(QtGui.QPainter.Antialiasing)
-            painter.fillRect(self.rect(), QtGui.QColor("#171a1f"))
+            painter.fillRect(self.rect(), QtGui.QColor("#202020"))
             plot = self.rect().adjusted(8, 8, -116, -24)
             if plot.width() <= 50 or plot.height() <= 50:
                 return
             valid = [group for group in self._groups if group["points"].size]
             if not valid:
                 self._draw_grid(painter, plot, 120.0)
-                painter.setPen(QtGui.QColor("#9ca3af"))
+                painter.setPen(QtGui.QColor("#a6a6a6"))
                 painter.drawText(plot, QtCore.Qt.AlignCenter, self.tr("Sin conjuntos de muestras"))
                 return
 
@@ -2591,14 +2591,14 @@ if QtWidgets is not None:
                 painter.setPen(QtCore.Qt.NoPen)
                 painter.setBrush(color)
                 painter.drawRect(QtCore.QRectF(legend_x, legend_y + 4, 9, 9))
-                painter.setPen(QtGui.QColor("#d1d5db"))
+                painter.setPen(QtGui.QColor("#d8d8d8"))
                 l_min = float(np.min(points[:, 0]))
                 l_max = float(np.max(points[:, 0]))
                 text = f"{group['name']} ({points.shape[0]}) L* {l_min:.0f}-{l_max:.0f}"
                 painter.drawText(QtCore.QRectF(legend_x + 14, legend_y, 94, 20), QtCore.Qt.AlignLeft, text)
                 legend_y += 22
 
-            painter.setPen(QtGui.QColor("#9ca3af"))
+            painter.setPen(QtGui.QColor("#a6a6a6"))
             painter.drawText(
                 self.rect().adjusted(8, 0, -8, -4),
                 QtCore.Qt.AlignLeft | QtCore.Qt.AlignBottom,
@@ -2606,7 +2606,7 @@ if QtWidgets is not None:
             )
 
         def _draw_grid(self, painter: QtGui.QPainter, rect: QtCore.QRect, limit: float) -> None:
-            painter.setPen(QtGui.QPen(QtGui.QColor("#27313b"), 1))
+            painter.setPen(QtGui.QPen(QtGui.QColor("#3a3a3a"), 1))
             painter.setBrush(QtCore.Qt.NoBrush)
             center = rect.center()
             scale = min(rect.width(), rect.height()) * 0.46 / max(limit, 1.0)
@@ -2615,10 +2615,10 @@ if QtWidgets is not None:
                 radius = float(ring) * scale
                 painter.drawEllipse(QtCore.QPointF(center), radius, radius)
                 ring += 40
-            painter.setPen(QtGui.QPen(QtGui.QColor("#4b5563"), 1))
+            painter.setPen(QtGui.QPen(QtGui.QColor("#5c5c5c"), 1))
             painter.drawLine(self._ab_to_screen(-limit, 0, rect, limit), self._ab_to_screen(limit, 0, rect, limit))
             painter.drawLine(self._ab_to_screen(0, -limit, rect, limit), self._ab_to_screen(0, limit, rect, limit))
-            painter.setPen(QtGui.QColor("#cbd5e1"))
+            painter.setPen(QtGui.QColor("#d8d8d8"))
             painter.drawText(self._ab_to_screen(limit, 0, rect, limit) + QtCore.QPointF(-18, -6), "a*")
             painter.drawText(self._ab_to_screen(0, limit, rect, limit) + QtCore.QPointF(4, 12), "b*")
 
@@ -3223,7 +3223,7 @@ if QtWidgets is not None:
 
             if self._framed:
                 painter.setBrush(QtCore.Qt.NoBrush)
-                painter.setPen(QtGui.QPen(QtGui.QColor("#4b5563"), 1))
+                painter.setPen(QtGui.QPen(QtGui.QColor("#5c5c5c"), 1))
                 painter.drawRect(self.rect().adjusted(0, 0, -1, -1))
             painter.end()
 
@@ -3317,8 +3317,8 @@ if QtWidgets is not None:
                         + 0.7152 * float(fill.green())
                         + 0.0722 * float(fill.blue())
                     ) / 255.0
-                    text_color = QtGui.QColor("#0f172a" if luminance >= 0.62 else "#ffffff")
-                outline = QtGui.QColor("#ffffff" if text_color.lightnessF() < 0.5 else "#0f172a")
+                    text_color = QtGui.QColor("#202020" if luminance >= 0.62 else "#ffffff")
+                outline = QtGui.QColor("#ffffff" if text_color.lightnessF() < 0.5 else "#202020")
                 painter.setPen(QtGui.QPen(outline, 3))
                 painter.setBrush(fill)
                 painter.drawEllipse(label_rect)
@@ -3372,7 +3372,7 @@ if QtWidgets is not None:
 
             painter.save()
             painter.setRenderHint(QtGui.QPainter.Antialiasing)
-            painter.setPen(QtGui.QPen(QtGui.QColor("#64748b"), 1))
+            painter.setPen(QtGui.QPen(QtGui.QColor("#7a7a7a"), 1))
             painter.setBrush(QtGui.QColor(15, 23, 42, 235))
             painter.drawRoundedRect(lens, 6, 6)
 
@@ -3424,7 +3424,7 @@ if QtWidgets is not None:
             painter.drawLine(center.center() + QtCore.QPointF(-pixel_size * 0.35, 0), center.center() + QtCore.QPointF(pixel_size * 0.35, 0))
             painter.drawLine(center.center() + QtCore.QPointF(0, -pixel_size * 0.35), center.center() + QtCore.QPointF(0, pixel_size * 0.35))
 
-            painter.setPen(QtGui.QColor("#e5e7eb"))
+            painter.setPen(QtGui.QColor("#e6e6e6"))
             font = painter.font()
             font.setPointSize(max(8, font.pointSize() - 1))
             painter.setFont(font)
@@ -3470,7 +3470,7 @@ if QtWidgets is not None:
             painter.setBrush(QtCore.Qt.NoBrush)
             painter.drawLine(start, end)
             painter.setBrush(QtGui.QBrush(QtGui.QColor(245, 158, 11, 180)))
-            painter.setPen(QtGui.QPen(QtGui.QColor("#111827"), 1))
+            painter.setPen(QtGui.QPen(QtGui.QColor("#202020"), 1))
             painter.drawEllipse(start, 5, 5)
             painter.drawEllipse(end, 5, 5)
 

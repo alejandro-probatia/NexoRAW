@@ -684,7 +684,7 @@ class BrowserMetadataMixin:
         painter.setRenderHint(QtGui.QPainter.Antialiasing)
         painter.drawPixmap(0, 0, pixmap)
         if badges:
-            painter.fillRect(0, content_h, content_w, strip_h, QtGui.QColor("#111418"))
+            painter.fillRect(0, content_h, content_w, strip_h, QtGui.QColor("#1f1f1f"))
             max_badge_side = int(np.clip(strip_h - 4, 6, 18))
             spacing = max(1, int(round(max_badge_side * 0.25)))
             available = max(1, content_w - 4)
@@ -703,14 +703,14 @@ class BrowserMetadataMixin:
 
     def _draw_thumbnail_profile_badge(self, painter: QtGui.QPainter, rect: QtCore.QRectF, badge: str) -> None:
         if badge == "icc":
-            painter.setPen(QtGui.QPen(QtGui.QColor("#cbd5e1"), 1))
-            painter.setBrush(QtGui.QColor("#1f2937"))
+            painter.setPen(QtGui.QPen(QtGui.QColor("#d4d4d4"), 1))
+            painter.setBrush(QtGui.QColor("#303030"))
             painter.drawRoundedRect(rect.adjusted(0.5, 0.5, -0.5, -0.5), 2.0, 2.0)
             font = painter.font()
             font.setBold(True)
             font.setPixelSize(max(6, int(rect.height() * 0.38)))
             painter.setFont(font)
-            painter.setPen(QtGui.QColor("#e5e7eb"))
+            painter.setPen(QtGui.QColor("#e6e6e6"))
             painter.drawText(rect, QtCore.Qt.AlignCenter, "ICC")
             return
         if badge == "color_contrast":
@@ -727,7 +727,7 @@ class BrowserMetadataMixin:
             return
         if badge == "detail":
             ellipse = rect.adjusted(1.0, 1.0, -1.0, -1.0)
-            painter.setPen(QtGui.QPen(QtGui.QColor("#cbd5e1"), 1))
+            painter.setPen(QtGui.QPen(QtGui.QColor("#d4d4d4"), 1))
             painter.setBrush(QtGui.QColor("#ffffff"))
             painter.drawPie(ellipse, 90 * 16, 180 * 16)
             painter.setBrush(QtGui.QColor("#050505"))
@@ -740,7 +740,7 @@ class BrowserMetadataMixin:
             cell = (rect.width() - gap) / 2.0
             cells = [
                 (0, 0, "#22c55e"),
-                (1, 0, "#2563eb"),
+                (1, 0, "#4a4a4a"),
                 (0, 1, "#ef4444"),
                 (1, 1, "#22c55e"),
             ]
@@ -1108,7 +1108,7 @@ class BrowserMetadataMixin:
         self._refresh_selected_icc_profile_info()
         self._queue_metadata_load(self._selected_file, include_c2pa=False)
         if self._selected_file.suffix.lower() in BROWSABLE_EXTENSIONS:
-            self._set_status(self.tr("Seleccionado:") + f" {self._selected_file.name}. " + self.tr("Cargando preview..."))
+            self._set_status(self.tr("Seleccionado:") + f" {self._selected_file.name}. " + self.tr("Cargando vista previa..."))
             self._selection_load_timer.start(250)
 
     def _on_file_double_clicked(self, _item) -> None:

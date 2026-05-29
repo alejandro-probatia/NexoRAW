@@ -60,7 +60,7 @@ class PreviewMenuMixin:
             self.tr("Revelado RAW tecnico, trazable y reproducible para entornos cientificos.")
         )
         subtitle.setWordWrap(True)
-        subtitle.setStyleSheet("font-size: 12px; color: #4b5563;")
+        subtitle.setStyleSheet("font-size: 12px; color: #d4d4d4;")
         layout.addWidget(subtitle)
 
         grid = QtWidgets.QGridLayout()
@@ -69,7 +69,7 @@ class PreviewMenuMixin:
 
         def add_row(row: int, label: str, value: str, *, rich: bool = False) -> QtWidgets.QLabel:
             k = QtWidgets.QLabel(label)
-            k.setStyleSheet("font-weight: 600; color: #374151;")
+            k.setStyleSheet("font-weight: 600; color: #f0f0f0;")
             v = QtWidgets.QLabel(value)
             if rich:
                 v.setTextFormat(QtCore.Qt.RichText)
@@ -105,7 +105,7 @@ class PreviewMenuMixin:
             )
         )
         status_note.setWordWrap(True)
-        status_note.setStyleSheet("font-size: 12px; color: #6b7280;")
+        status_note.setStyleSheet("font-size: 12px; color: #d4d4d4;")
         layout.addWidget(status_note)
 
         button_row = QtWidgets.QHBoxLayout()
@@ -126,7 +126,7 @@ class PreviewMenuMixin:
         def refresh_about_payload(payload: dict[str, Any] | None) -> None:
             p = payload or {}
             latest_label.setText(self._update_status_summary(p))
-            latest_label.setStyleSheet("color: #dc2626;" if p.get("error") else "color: #1f2937;")
+            latest_label.setStyleSheet("color: #f87171;" if p.get("error") else "color: #f0f0f0;")
             can_auto = bool(p.get("update_available") and p.get("asset_url"))
             btn_update.setEnabled(can_auto)
 
@@ -195,7 +195,7 @@ class PreviewMenuMixin:
             )
         )
         intro.setWordWrap(True)
-        intro.setStyleSheet("font-size: 12px; color: #4b5563;")
+        intro.setStyleSheet("font-size: 12px; color: #d4d4d4;")
         layout.addWidget(intro)
 
         status_box = QtWidgets.QGroupBox(self.tr("Estado"))
@@ -207,7 +207,7 @@ class PreviewMenuMixin:
         details_label = QtWidgets.QLabel("")
         details_label.setWordWrap(True)
         details_label.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse)
-        details_label.setStyleSheet("font-size: 12px; color: #4b5563;")
+        details_label.setStyleSheet("font-size: 12px; color: #d4d4d4;")
         status_layout.addWidget(details_label)
         layout.addWidget(status_box)
 
@@ -223,7 +223,7 @@ class PreviewMenuMixin:
             )
         )
         steps_label.setWordWrap(True)
-        steps_label.setStyleSheet("font-size: 12px; color: #374151;")
+        steps_label.setStyleSheet("font-size: 12px; color: #d8d8d8;")
         steps_layout.addWidget(steps_label)
         layout.addWidget(steps_box)
 
@@ -273,7 +273,7 @@ class PreviewMenuMixin:
             state["payload"] = p
             self._update_check_last = p if p else self._update_check_last
             status_label.setText(self._update_status_summary(p))
-            status_label.setStyleSheet("color: #dc2626;" if p.get("error") else "color: #111827;")
+            status_label.setStyleSheet("color: #f87171;" if p.get("error") else "color: #f0f0f0;")
             lines: list[str] = []
             if p:
                 lines.append(self.tr("Version actual:") + f" {p.get('current_version') or __version__}")
@@ -491,7 +491,7 @@ class PreviewMenuMixin:
             )
             return
         if status == "rejected":
-            self._log_preview(self.tr("Perfil ICC cargado manualmente pese a estado QA rejected:") + f" {profile_path}")
+            self._log_preview(self.tr("Perfil ICC cargado manualmente pese a estado QA rechazada:") + f" {profile_path}")
         self.path_profile_active.setText(path)
         self.chk_apply_profile.setChecked(True)
         profile_id = self._register_icc_profile(
@@ -509,7 +509,7 @@ class PreviewMenuMixin:
             self._active_icc_profile_id = profile_id
             self._refresh_profile_management_views()
         if status == "rejected":
-            self._set_status(self.tr("Perfil activo manualmente (QA rejected):") + f" {path}")
+            self._set_status(self.tr("Perfil activo manualmente (QA rechazada):") + f" {path}")
         else:
             self._set_status(self.tr("Perfil activo:") + f" {path}")
         self._refresh_preview()

@@ -146,6 +146,24 @@ zip.
 8. If a published asset turns out to be defective and GitHub does not allow it to be replaced,
    create a new revision of the release and mark the previous one with a warning.
 
+## Release 0.4.1
+
+Release 0.4.1 is a Linux Arch/CachyOS corrective release for the Lab sample and
+GUI workflow:
+
+- saved Lab samples are invalidated and recalculated after color, exposure and
+  contrast changes,
+- partial interactive preview updates also refresh saved sample readings,
+- sample RGB values are shown as 0-255 integers,
+- the interface is consistently Spanish and uses a neutral dark-gray theme,
+- precision and workflow notes are exposed through compact information buttons
+  where possible.
+
+Expected artifacts for the Linux Arch/CachyOS release:
+
+- `probraw-0.4.1-1-x86_64.pkg.tar.zst`
+- `probraw-0.4.1-1-x86_64.pkg.tar.zst.sha256`
+
 ## Release 0.4.0
 
 Release 0.4.0 adds Lab sample diagnostics:

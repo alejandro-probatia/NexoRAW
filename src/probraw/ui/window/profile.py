@@ -419,7 +419,7 @@ class ProfileWorkflowMixin:
             rgb = (0, 0, 0)
         color = QtGui.QColor(*rgb)
         swatch.setBackground(color)
-        swatch.setToolTip(f"sRGB preview: #{rgb[0]:02x}{rgb[1]:02x}{rgb[2]:02x}")
+        swatch.setToolTip(f"Vista previa sRGB: #{rgb[0]:02x}{rgb[1]:02x}{rgb[2]:02x}")
 
     def _reference_payload_from_table(
         self,
@@ -1172,7 +1172,7 @@ class ProfileWorkflowMixin:
         generated_profile = profile_out or self._candidate_generated_gamut_profile()
         snapshot = self._gamut_selection_snapshot(generated_profile=generated_profile)
         if hasattr(self, "gamut_status_label"):
-            self.gamut_status_label.setText(self.tr("Gamut: calculando..."))
+            self.gamut_status_label.setText(self.tr("Gama: calculando..."))
 
         def task():
             task_monitor_profile = snapshot["monitor_profile"]
@@ -1215,7 +1215,7 @@ class ProfileWorkflowMixin:
                 if index >= 0:
                     self.analysis_tabs.setCurrentIndex(index)
 
-        self._start_background_task(self.tr("Diagnostico gamut 3D"), task, on_success)
+        self._start_background_task(self.tr("Diagnostico de gama 3D"), task, on_success)
 
     def _sync_gamut_custom_controls(self, *_args: object) -> None:
         for suffix in ("a", "b"):
@@ -1280,7 +1280,7 @@ class ProfileWorkflowMixin:
                 "kind": "icc",
                 "label": str(profile.get("name") or path.stem),
                 "path": str(path),
-                "color": "#e5e7eb" if label_suffix == "A" else "#22d3ee",
+                "color": "#e6e6e6" if label_suffix == "A" else "#22d3ee",
             }
         if value.startswith("standard:"):
             return {"kind": "standard", "key": value.split(":", 1)[1]}
@@ -1291,7 +1291,7 @@ class ProfileWorkflowMixin:
                 "kind": "icc",
                 "label": "ICC generado",
                 "path": str(generated_profile),
-                "color": "#e5e7eb",
+                "color": "#e6e6e6",
             }
         if value == "monitor":
             if monitor_profile is None or not monitor_profile.exists():
@@ -1378,7 +1378,7 @@ class ProfileWorkflowMixin:
                 f"{float(health.get('chroma_max') or 0.0):.0f}"
             )
         if warnings:
-            parts.append(self.tr("gamut ICC extremo:") + f" {', '.join(warnings[:2])}")
+            parts.append(self.tr("gama ICC extrema:") + f" {', '.join(warnings[:2])}")
         if skipped:
             labels = ", ".join(str(item.get("label") or "?") for item in skipped[:3] if isinstance(item, dict))
             if labels:
@@ -1494,7 +1494,7 @@ class ProfileWorkflowMixin:
         self._manual_chart_points_source = self._selected_file.expanduser().resolve(strict=False) if self._selected_file else None
         self._update_viewer_interaction_cursor()
         self._sync_manual_chart_overlay()
-        self._set_status(self.tr("Marcado manual activo sobre preview de revelado: selecciona 4 esquinas en el visor"))
+        self._set_status(self.tr("Marcado manual activo sobre vista previa de revelado: selecciona 4 esquinas en el visor"))
 
     def _clear_manual_chart_points(self) -> None:
         self._manual_chart_marking = False

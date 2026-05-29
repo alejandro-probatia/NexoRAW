@@ -42,10 +42,13 @@ except ImportError:  # pragma: no cover
     QtCore = None
     QtWidgets = None
 
-# Idiomas soportados: código ISO 639-1 → nombre legible
+# Idiomas soportados: código ISO 639-1 → nombre legible.
+#
+# La aplicación tiene el español como idioma fuente. Mientras la traducción
+# inglesa no cubra todas las cadenas de la interfaz, resolvemos siempre a
+# español para evitar mezclar idiomas en la UI.
 SUPPORTED_LANGUAGES: dict[str, str] = {
     "es": "Español",
-    "en": "English",
 }
 
 # Valor especial para QSettings "app/language": sigue al idioma del SO.
@@ -56,27 +59,21 @@ _active_lang: str = "es"
 
 
 def detect_system_language() -> str:
-    """Devuelve "es" si el SO está en español, "en" en cualquier otro caso."""
-    if QtCore is None:
-        return "es"
-    try:
-        name = QtCore.QLocale.system().name() or ""
-    except Exception:
-        return "es"
-    return "es" if name.lower().startswith("es") else "en"
+    """Devuelve el idioma efectivo soportado por la interfaz."""
+    return "es"
 
 
 def resolve_language(setting_value: str | None) -> str:
     """Convierte el valor guardado en QSettings al idioma efectivo a instalar.
 
-    - "" / None / "auto" → detección por SO.
-    - "es" / "en" → respeta la elección manual.
-    - Cualquier otro valor desconocido → fallback a auto.
+    - "" / None / "auto" → español.
+    - "es" → respeta la elección manual.
+    - Cualquier otro valor desconocido → español.
     """
     raw = (setting_value or "").strip().lower()
     if raw in SUPPORTED_LANGUAGES:
         return raw
-    return detect_system_language()
+    return "es"
 
 
 def install_translator(

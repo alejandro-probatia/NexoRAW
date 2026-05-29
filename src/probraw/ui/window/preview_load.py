@@ -57,7 +57,7 @@ class PreviewLoadMixin:
         estimate = self._preview_load_estimate_seconds(selected, fast_raw, max_preview_side)
         self._preview_load_progress_started_at = time.perf_counter()
         self._preview_load_progress_estimated_seconds = float(estimate)
-        self._preview_load_progress_label = self.tr("Preview: cargando") + f" {selected.name}"
+        self._preview_load_progress_label = self.tr("Vista previa: cargando") + f" {selected.name}"
         self._preview_load_progress_visible = bool(estimate >= 1.0)
         timer = getattr(self, "_preview_load_progress_timer", None)
         if timer is not None and not timer.isActive():
@@ -73,7 +73,7 @@ class PreviewLoadMixin:
         if not bool(getattr(self, "_preview_load_progress_visible", False)) and elapsed < 1.0:
             return
         self._preview_load_progress_visible = True
-        label = str(getattr(self, "_preview_load_progress_label", "") or self.tr("Preview: cargando"))
+        label = str(getattr(self, "_preview_load_progress_label", "") or self.tr("Vista previa: cargando"))
         if estimate is not None and float(estimate) > 0.0:
             remaining = max(0.0, float(estimate) - elapsed)
             time_text = (
@@ -89,7 +89,7 @@ class PreviewLoadMixin:
                 "preview",
                 label,
                 time_text=time_text,
-                phase_text=self.tr("RAW/archivo: activo | Preview: pendiente | Caché: pendiente"),
+                phase_text=self.tr("RAW/archivo: activo | Vista previa: pendiente | Caché: pendiente"),
                 minimum=0,
                 maximum=100,
                 value=value,
@@ -99,7 +99,7 @@ class PreviewLoadMixin:
                 "preview",
                 label,
                 time_text=self.tr("Transcurrido") + f" {self._preview_load_format_duration(elapsed)}",
-                phase_text=self.tr("RAW/archivo: activo | Preview: pendiente | Caché: pendiente"),
+                phase_text=self.tr("RAW/archivo: activo | Vista previa: pendiente | Caché: pendiente"),
                 minimum=0,
                 maximum=0,
                 value=0,
@@ -128,9 +128,9 @@ class PreviewLoadMixin:
                 detail,
                 time_text=self.tr("Total:") + f" {self._preview_load_format_duration(elapsed)}",
                 phase_text=(
-                    self.tr("RAW/archivo: listo | Preview: lista | Caché: actualizada")
+                    self.tr("RAW/archivo: listo | Vista previa: lista | Caché: actualizada")
                     if success
-                    else self.tr("RAW/archivo: error | Preview: detenida | Caché: sin actualizar")
+                    else self.tr("RAW/archivo: error | Vista previa: detenida | Caché: sin actualizar")
                 ),
                 minimum=0,
                 maximum=100,
@@ -145,6 +145,7 @@ class PreviewLoadMixin:
             return
         self._original_linear = None
         self._adjusted_linear = None
+        self._adjusted_linear_signature = None
         self._preview_srgb = None
         self._last_loaded_preview_key = None
         self._loaded_preview_base_signature = None
@@ -301,8 +302,8 @@ class PreviewLoadMixin:
             compare_enabled=bool(self.chk_compare.isChecked()),
             bypass_profile=False,
         )
-        self.preview_analysis.setPlainText(self.tr("Preview RAW embebida provisional; revelando imagen colorimetrica..."))
-        self._set_status(self.tr("Preview embebida RAW:") + f" {selected.name}")
+        self.preview_analysis.setPlainText(self.tr("Vista previa RAW embebida provisional; revelando imagen colorimetrica..."))
+        self._set_status(self.tr("Vista previa RAW embebida:") + f" {selected.name}")
 
     def _on_load_selected(self, _checked: bool = False, *, show_message: bool = True) -> None:
         if self._selected_file is None:
@@ -383,6 +384,7 @@ class PreviewLoadMixin:
         if cached is not None:
             self._original_linear = cached.copy()
             self._adjusted_linear = self._original_linear
+            self._adjusted_linear_signature = None
             self._last_loaded_preview_key = cache_key
             self._loaded_preview_base_signature = base_signature
             self._loaded_preview_fast_raw = bool(fast_raw)
@@ -398,8 +400,8 @@ class PreviewLoadMixin:
                 self._load_color_picker_samples_for_selected(selected)
                 if getattr(self, "_color_picker_samples", None):
                     self._ensure_color_picker_real_pixel_source()
-            self._log_preview(f"Preview cargada desde cache: {selected.name}")
-            self._set_status(self.tr("Preview en cache:") + f" {selected.name}")
+            self._log_preview(f"Vista previa cargada desde caché: {selected.name}")
+            self._set_status(self.tr("Vista previa en caché:") + f" {selected.name}")
             self._schedule_export_parity_preview_if_needed(
                 selected=selected,
                 max_preview_side=max_preview_side,
@@ -438,7 +440,7 @@ class PreviewLoadMixin:
             return
         self._preview_load_pending_request = None
         self._start_preview_load_task(request)
-        self._set_status(self.tr("Cargando preview:") + f" {selected.name}")
+        self._set_status(self.tr("Cargando vista previa:") + f" {selected.name}")
 
     def _preempt_preview_load_task(
         self,
@@ -450,7 +452,7 @@ class PreviewLoadMixin:
         self._preview_load_inflight_key = None
         self._preview_load_pending_request = None
         self._start_preview_load_task(request)
-        self._set_status(self.tr("Cargando preview:") + f" {selected.name}")
+        self._set_status(self.tr("Cargando vista previa:") + f" {selected.name}")
 
     def _start_preview_load_task(
         self,
@@ -512,12 +514,13 @@ class PreviewLoadMixin:
                 if self._selected_file != loaded_selected:
                     self._finish_preview_load_progress(
                         success=False,
-                        detail=self.tr("Preview descartada:") + f" {loaded_selected.name}",
+                        detail=self.tr("Vista previa descartada:") + f" {loaded_selected.name}",
                         elapsed_seconds=elapsed,
                     )
                     return
                 self._original_linear = np.asarray(image_linear, dtype=np.float32)
                 self._adjusted_linear = self._original_linear
+                self._adjusted_linear_signature = None
                 self._last_loaded_preview_key = loaded_key
                 self._loaded_preview_base_signature = self._preview_base_signature(
                     selected=selected,
@@ -541,10 +544,10 @@ class PreviewLoadMixin:
                     if getattr(self, "_color_picker_samples", None):
                         self._ensure_color_picker_real_pixel_source()
                 self._log_preview(msg)
-                self._set_status(self.tr("Preview cargada:") + f" {loaded_selected.name}")
+                self._set_status(self.tr("Vista previa cargada:") + f" {loaded_selected.name}")
                 self._finish_preview_load_progress(
                     success=True,
-                    detail=self.tr("Preview cargada:") + f" {loaded_selected.name}",
+                    detail=self.tr("Vista previa cargada:") + f" {loaded_selected.name}",
                     elapsed_seconds=elapsed,
                 )
                 self._schedule_export_parity_preview_if_needed(
@@ -574,10 +577,10 @@ class PreviewLoadMixin:
                     return
                 self._log_preview(trace[-1200:])
                 if self._selected_file == selected:
-                    self._set_status(self.tr("Error de preview:") + f" {selected.name}")
+                    self._set_status(self.tr("Error de vista previa:") + f" {selected.name}")
                 self._finish_preview_load_progress(
                     success=False,
-                    detail=self.tr("Error de preview:") + f" {selected.name}",
+                    detail=self.tr("Error de vista previa:") + f" {selected.name}",
                 )
             finally:
                 cleanup()
@@ -697,15 +700,15 @@ class PreviewLoadMixin:
                 if int(payload_generation) != int(getattr(self, "_preview_prefetch_generation", 0)):
                     return
                 if built:
-                    self._log_preview("Prefetch previews: " + ", ".join(built))
+                    self._log_preview("Precarga de vistas previas: " + ", ".join(built))
                 if errors:
-                    self._log_preview("Aviso: prefetch preview omitido: " + errors[0])
+                    self._log_preview("Aviso: precarga de vista previa omitida: " + errors[0])
             finally:
                 cleanup()
 
         def fail(trace: str) -> None:
             try:
-                self._log_preview(f"Aviso: prefetch preview fallido: {trace.strip().splitlines()[-1] if trace.strip() else 'error'}")
+                self._log_preview(f"Aviso: precarga de vista previa fallida: {trace.strip().splitlines()[-1] if trace.strip() else 'error'}")
             finally:
                 cleanup()
 
@@ -778,7 +781,7 @@ class PreviewLoadMixin:
             if getattr(self, "_selected_file", selected) != selected:
                 return
         self._preview_export_parity_requested = True
-        self._set_status(self.tr("Refinando preview exacta de exportacion:") + f" {selected.name}")
+        self._set_status(self.tr("Refinando vista previa exacta de exportacion:") + f" {selected.name}")
         try:
             self._on_load_selected(show_message=False)
         finally:
@@ -787,14 +790,14 @@ class PreviewLoadMixin:
     def _on_precache_visible_previews(self, *, full_resolution: bool) -> None:
         files = [p for p in self._file_list_paths() if p.suffix.lower() in RAW_EXTENSIONS]
         if not files:
-            QtWidgets.QMessageBox.information(self, self.tr("Info"), "No hay RAW visibles para precache.")
+            QtWidgets.QMessageBox.information(self, self.tr("Info"), "No hay RAW visibles para precalcular.")
             return
         mode_label = "1:1" if full_resolution else "normal"
         reply = QtWidgets.QMessageBox.question(
             self,
-            self.tr("Precache de previews"),
+            self.tr("Precálculo de vistas previas"),
             (
-                self.tr("Se van a precalcular") + f" {len(files)} " + self.tr("previews RAW en modo") + f" {mode_label}.\n\n"
+                self.tr("Se van a precalcular") + f" {len(files)} " + self.tr("vistas previas RAW en modo") + f" {mode_label}.\n\n"
                 + self.tr("Este proceso puede tardar, pero mejora la respuesta posterior.\nContinuar?")
             ),
             QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,

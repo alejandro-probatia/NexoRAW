@@ -11,7 +11,7 @@ class ControlPanelsMixin:
         name_edit = QtWidgets.QLineEdit(default_name)
         status = QtWidgets.QLabel(self.tr("Sin perfiles guardados"))
         status.setWordWrap(True)
-        status.setStyleSheet("font-size: 12px; color: #374151;")
+        status.setStyleSheet("font-size: 12px; color: #d8d8d8;")
 
         if category == "color_contrast":
             self.color_contrast_profile_combo = combo
@@ -78,7 +78,7 @@ class ControlPanelsMixin:
         neutral_row.addWidget(self.btn_neutral_picker)
         self.label_neutral_picker = QtWidgets.QLabel(self.tr("Punto neutro: sin muestra"))
         self.label_neutral_picker.setWordWrap(True)
-        self.label_neutral_picker.setStyleSheet("font-size: 12px; color: #cbd5e1;")
+        self.label_neutral_picker.setStyleSheet("font-size: 12px; color: #d4d4d4;")
         neutral_row.addWidget(self.label_neutral_picker, 1)
         grid.addLayout(neutral_row, 3, 0, 1, 3)
 
@@ -456,15 +456,11 @@ class ControlPanelsMixin:
 
         grid.addWidget(self._button(self.tr("Restablecer revelado base"), self._reset_libraw_color_adjustments), 12, 0, 1, 3)
 
-        note = QtWidgets.QLabel(
-            self.tr(
-                "Ajustes de revelado RAW para casos sin carta. No generan ICC ni calibran la sesion; quedan guardados "
-                "como receta de revelado para reproducir el resultado."
-            )
+        note_text = self.tr(
+            "Ajustes de revelado RAW para casos sin carta. No generan ICC ni calibran la sesion; quedan guardados "
+            "como receta de revelado para reproducir el resultado."
         )
-        note.setWordWrap(True)
-        note.setStyleSheet("font-size: 12px; color: #6b7280;")
-        grid.addWidget(note, 13, 0, 1, 3)
+        grid.addWidget(self._info_row(self.tr("Revelado base"), note_text), 13, 0, 1, 3)
         return tab
 
     def _build_tab_preview_settings(self) -> QtWidgets.QWidget:
@@ -476,7 +472,7 @@ class ControlPanelsMixin:
             maximum=300,
             value=0,
             on_change=self._on_slider_change,
-            formatter=lambda v: self.tr("Nitidez (amount)") + f": {v / 100:.2f}",
+            formatter=lambda v: self.tr("Cantidad de nitidez") + f": {v / 100:.2f}",
         )
         grid.addWidget(self.label_sharpen, 0, 0, 1, 3)
         grid.addWidget(self.slider_sharpen, 1, 0, 1, 3)
@@ -545,16 +541,12 @@ class ControlPanelsMixin:
         )
         grid.addWidget(self.check_precision_detail_preview, 12, 0, 1, 3)
 
-        recipe_filter_note = QtWidgets.QLabel(
-            self.tr(
-                "Los filtros reales de nitidez, ruido y aberración cromática se aplican "
-                "con los controles superiores. Los campos de receta quedan sólo como "
-                "metadatos de compatibilidad."
-            )
+        recipe_filter_note = self.tr(
+            "Los filtros reales de nitidez, ruido y aberración cromática se aplican "
+            "con los controles superiores. Los campos de receta quedan sólo como "
+            "metadatos de compatibilidad."
         )
-        recipe_filter_note.setWordWrap(True)
-        recipe_filter_note.setStyleSheet("font-size: 12px; color: #6b7280; padding-top: 6px;")
-        grid.addWidget(recipe_filter_note, 13, 0, 1, 3)
+        grid.addWidget(self._info_row(self.tr("Filtros de receta"), recipe_filter_note), 13, 0, 1, 3)
 
         grid.addWidget(QtWidgets.QLabel(self.tr("Denoise modo receta")), 14, 0)
         self.combo_recipe_denoise = QtWidgets.QComboBox()
@@ -639,7 +631,7 @@ class ControlPanelsMixin:
 
         self.raw_algorithm_options_status_label = QtWidgets.QLabel("")
         self.raw_algorithm_options_status_label.setWordWrap(True)
-        self.raw_algorithm_options_status_label.setStyleSheet("font-size: 12px; color: #6b7280;")
+        self.raw_algorithm_options_status_label.setStyleSheet("font-size: 12px; color: #d4d4d4;")
         grid.addWidget(self.raw_algorithm_options_status_label, 5, 0, 1, 3)
         outer.addWidget(demosaic_box)
 
@@ -657,16 +649,12 @@ class ControlPanelsMixin:
         black_grid.addWidget(self.spin_black_value, 0, 2)
         outer.addWidget(black_box)
 
-        raw_note = QtWidgets.QLabel(
-            self.tr(
-                "Este panel controla solo la lectura y el destramado del RAW. El ICC de cámara se decide en "
-                "Color / calibración; la conversión al monitor se aplica solo para visualizar. Exposición, color, "
-                "contraste, ruido y nitidez pertenecen a sus paneles específicos."
-            )
+        raw_note = self.tr(
+            "Este panel controla solo la lectura y el destramado del RAW. El ICC de cámara se decide en "
+            "Color / calibración; la conversión al monitor se aplica solo para visualizar. Exposición, color, "
+            "contraste, ruido y nitidez pertenecen a sus paneles específicos."
         )
-        raw_note.setWordWrap(True)
-        raw_note.setStyleSheet("font-size: 12px; color: #6b7280;")
-        outer.addWidget(raw_note)
+        outer.addWidget(self._info_row(self.tr("Lectura RAW"), raw_note))
 
         tiff_box = QtWidgets.QGroupBox(self.tr("Exportacion TIFF"))
         tiff_grid = QtWidgets.QGridLayout(tiff_box)
@@ -682,20 +670,16 @@ class ControlPanelsMixin:
         self.spin_tiff_maxworkers = QtWidgets.QSpinBox()
         self.spin_tiff_maxworkers.setRange(0, 64)
         self.spin_tiff_maxworkers.setValue(0)
-        self.spin_tiff_maxworkers.setSpecialValueText(self.tr("Auto"))
+        self.spin_tiff_maxworkers.setSpecialValueText(self.tr("Automático"))
         self.spin_tiff_maxworkers.setToolTip(
             self.tr("0 reparte CPU automaticamente en lote; valores mayores fuerzan hilos por TIFF.")
         )
         tiff_grid.addWidget(self.spin_tiff_maxworkers, 1, 1)
-        tiff_note = QtWidgets.QLabel(
-            self.tr(
-                "ZIP, LZW y ZSTD son compresiones sin perdida. JPEG reduce tamano pero puede alterar pixeles. "
-                "Auto usa varios nucleos sin saturar el equipo durante lotes."
-            )
+        tiff_note = self.tr(
+            "ZIP, LZW y ZSTD son compresiones sin perdida. JPEG reduce tamano pero puede alterar pixeles. "
+            "Automático usa varios nucleos sin saturar el equipo durante lotes."
         )
-        tiff_note.setWordWrap(True)
-        tiff_note.setStyleSheet("font-size: 12px; color: #6b7280;")
-        tiff_grid.addWidget(tiff_note, 2, 0, 1, 2)
+        tiff_grid.addWidget(self._info_row(self.tr("Compresión TIFF"), tiff_note), 2, 0, 1, 2)
         outer.addWidget(tiff_box)
 
         self._build_hidden_raw_compatibility_controls(tab)
@@ -794,7 +778,7 @@ class ControlPanelsMixin:
 
         self.icc_profile_status_label = QtWidgets.QLabel(self.tr("Sin perfiles ICC de sesión"))
         self.icc_profile_status_label.setWordWrap(True)
-        self.icc_profile_status_label.setStyleSheet("font-size: 12px; color: #d1d5db;")
+        self.icc_profile_status_label.setStyleSheet("font-size: 12px; color: #d8d8d8;")
         grid.addWidget(self.icc_profile_status_label, 4, 0, 1, 3)
 
         self._refresh_icc_profile_combo()
@@ -837,18 +821,18 @@ class ControlPanelsMixin:
 
         self.icc_existing_availability_label = QtWidgets.QLabel("")
         self.icc_existing_availability_label.setWordWrap(True)
-        self.icc_existing_availability_label.setStyleSheet("font-size: 12px; color: #6b7280; padding-left: 18px;")
+        self.icc_existing_availability_label.setStyleSheet("font-size: 12px; color: #d4d4d4; padding-left: 18px;")
         grid.addWidget(self.icc_existing_availability_label, 4, 0, 1, 3)
 
         self.icc_profile_status_label = QtWidgets.QLabel(self.tr("Sin perfiles ICC de sesion"))
         self.icc_profile_status_label.setWordWrap(True)
-        self.icc_profile_status_label.setStyleSheet("font-size: 12px; color: #374151; padding-left: 18px;")
+        self.icc_profile_status_label.setStyleSheet("font-size: 12px; color: #d8d8d8; padding-left: 18px;")
         grid.addWidget(self.icc_profile_status_label, 5, 0, 1, 3)
 
         grid.addWidget(self.radio_icc_generate, 6, 0, 1, 3)
         self.icc_workflow_decision_label = QtWidgets.QLabel("")
         self.icc_workflow_decision_label.setWordWrap(True)
-        self.icc_workflow_decision_label.setStyleSheet("font-size: 12px; color: #374151;")
+        self.icc_workflow_decision_label.setStyleSheet("font-size: 12px; color: #d8d8d8;")
         grid.addWidget(self.icc_workflow_decision_label, 7, 0, 1, 3)
 
         self.radio_icc_generic.toggled.connect(lambda _checked: self._on_icc_workflow_choice_changed())
@@ -867,29 +851,25 @@ class ControlPanelsMixin:
         self.icc_selected_file_info_label = QtWidgets.QLabel(self.tr("Imagen seleccionada: ninguna"))
         self.icc_selected_file_info_label.setWordWrap(True)
         self.icc_selected_file_info_label.setStyleSheet(
-            "font-size: 12px; color: #111827; background-color: #f8fafc; "
-            "border: 1px solid #d1d5db; border-radius: 4px; padding: 6px;"
+            "font-size: 12px; color: #f0f0f0; background-color: #262626; "
+            "border: 1px solid #505050; border-radius: 4px; padding: 6px;"
         )
         layout.addWidget(self.icc_selected_file_info_label)
 
         self.icc_session_info_label = QtWidgets.QLabel(self.tr("Perfiles ICC de sesion: 0 | Activo: ninguno"))
         self.icc_session_info_label.setWordWrap(True)
-        self.icc_session_info_label.setStyleSheet("font-size: 12px; color: #374151;")
+        self.icc_session_info_label.setStyleSheet("font-size: 12px; color: #d8d8d8;")
         layout.addWidget(self.icc_session_info_label)
 
-        note = QtWidgets.QLabel(
-            self.tr(
-                "El ICC elegido aqui se usa como perfil de la imagen para visualizar y exportar. "
-                "Si no eliges un ICC de sesion, se usa un perfil ICC RGB estandar; ProPhoto RGB "
-                "es el valor predeterminado. "
-                "La correccion final de pantalla usa aparte el perfil ICC del monitor detectado "
-                "por el sistema operativo. Los perfiles de ajuste de color/contraste se guardan "
-                "en la pestana Color y contraste."
-            )
+        note = self.tr(
+            "El ICC elegido aqui se usa como perfil de la imagen para visualizar y exportar. "
+            "Si no eliges un ICC de sesion, se usa un perfil ICC RGB estandar; ProPhoto RGB "
+            "es el valor predeterminado. "
+            "La correccion final de pantalla usa aparte el perfil ICC del monitor detectado "
+            "por el sistema operativo. Los perfiles de ajuste de color/contraste se guardan "
+            "en la pestana Color y contraste."
         )
-        note.setWordWrap(True)
-        note.setStyleSheet("font-size: 12px; color: #6b7280;")
-        layout.addWidget(note)
+        layout.addWidget(self._info_row(self.tr("Uso de ICC"), note))
         self._refresh_selected_icc_profile_info()
         return box
 

@@ -592,11 +592,11 @@ class PreviewRecipeMixin:
 
     def _color_picker_source_is_real_pixels(self) -> bool:
         base = getattr(self, "_original_linear", None)
-        source = getattr(self, "_adjusted_linear", None)
-        if base is None or source is None:
+        if base is None:
             return False
         try:
-            if tuple(source.shape[:2]) != tuple(base.shape[:2]):
+            source_shape = tuple(np.asarray(base).shape[:2])
+            if len(source_shape) != 2 or min(source_shape) <= 0:
                 return False
         except Exception:
             return False
@@ -619,19 +619,44 @@ class PreviewRecipeMixin:
         return False
 
     def _sample_color_patch(self, x: float, y: float, *, radius: int) -> dict[str, Any]:
-        image = getattr(self, "_adjusted_linear", None)
-        if image is None:
-            image = getattr(self, "_original_linear", None)
-        if image is None:
+        base = getattr(self, "_original_linear", None)
+        if base is None:
+            base = getattr(self, "_adjusted_linear", None)
+        if base is None:
             raise ValueError("No hay imagen cargada para muestrear.")
-        rgb_image = np.asarray(image, dtype=np.float32)
+        rgb_image = np.asarray(base, dtype=np.float32)
         if rgb_image.ndim != 3 or rgb_image.shape[2] < 3:
             raise ValueError("La imagen cargada no contiene datos RGB.")
         h, w = rgb_image.shape[:2]
         xi = int(round(float(np.clip(x, 0, max(0, w - 1)))))
         yi = int(round(float(np.clip(y, 0, max(0, h - 1)))))
         r = max(0, int(radius))
-        crop = rgb_image[max(0, yi - r) : min(h, yi + r + 1), max(0, xi - r) : min(w, xi + r + 1), :3]
+        if self._color_picker_detail_adjustments_active():
+            adjusted = getattr(self, "_adjusted_linear", None)
+            current_signature = (
+                self._current_adjusted_linear_signature()
+                if hasattr(self, "_current_adjusted_linear_signature")
+                else ""
+            )
+            if (
+                adjusted is None
+                or tuple(np.asarray(adjusted).shape[:2]) != (h, w)
+                or str(getattr(self, "_adjusted_linear_signature", "") or "") != current_signature
+            ):
+                raise RuntimeError("La lectura necesita un recalculo exacto de nitidez/ruido/CA a tamano real.")
+            adjusted_image = np.asarray(adjusted, dtype=np.float32)
+            crop = adjusted_image[
+                max(0, yi - r) : min(h, yi + r + 1),
+                max(0, xi - r) : min(w, xi + r + 1),
+                :3,
+            ]
+        else:
+            crop_source = rgb_image[
+                max(0, yi - r) : min(h, yi + r + 1),
+                max(0, xi - r) : min(w, xi + r + 1),
+                :3,
+            ]
+            crop = apply_render_adjustments(crop_source, **self._render_adjustment_kwargs())
         flat = crop.reshape((-1, 3))
         valid = np.all(np.isfinite(flat), axis=1)
         flat = np.clip(flat[valid], 0.0, 1.0)
@@ -655,6 +680,33 @@ class PreviewRecipeMixin:
             "marker_color": marker_color,
             "marker_text_color": marker_text_color,
         }
+
+    def _color_picker_detail_adjustments_active(self) -> bool:
+        try:
+            detail_kwargs = {
+                "denoise_luminance": float(self.slider_noise_luma.value() / 100.0),
+                "denoise_color": float(self.slider_noise_color.value() / 100.0),
+                "sharpen_amount": float(self.slider_sharpen.value() / 100.0),
+                "sharpen_radius": float(self.slider_radius.value() / 10.0),
+            }
+            ca_red, ca_blue = self._ca_scale_factors()
+            detail_kwargs["lateral_ca_red_scale"] = float(ca_red)
+            detail_kwargs["lateral_ca_blue_scale"] = float(ca_blue)
+            if hasattr(self, "_detail_kwargs_have_effect"):
+                return bool(self._detail_kwargs_have_effect(detail_kwargs))
+            return any(
+                abs(float(detail_kwargs.get(name, default)) - float(default)) > 1e-6
+                for name, default in (
+                    ("denoise_luminance", 0.0),
+                    ("denoise_color", 0.0),
+                    ("sharpen_amount", 0.0),
+                    ("sharpen_radius", 1.0),
+                    ("lateral_ca_red_scale", 1.0),
+                    ("lateral_ca_blue_scale", 1.0),
+                )
+            )
+        except Exception:
+            return False
 
     def _color_picker_marker_color_for_patch(
         self,
@@ -689,7 +741,7 @@ class PreviewRecipeMixin:
         rgb = np.clip(np.round(rgb), 0, 255).astype(int)
         fill = f"#{int(rgb[0]):02x}{int(rgb[1]):02x}{int(rgb[2]):02x}"
         luminance = (0.2126 * float(rgb[0]) + 0.7152 * float(rgb[1]) + 0.0722 * float(rgb[2])) / 255.0
-        text = "#0f172a" if luminance >= 0.62 else "#ffffff"
+        text = "#202020" if luminance >= 0.62 else "#ffffff"
         return fill, text
 
     def _color_picker_source_profile(self) -> Path:
@@ -751,8 +803,21 @@ class PreviewRecipeMixin:
         label = getattr(self, "label_color_picker_precision", None)
         if label is not None:
             label.setText(text)
-            label.setStyleSheet(
-                "font-size: 12px; color: #86efac;" if precise else "font-size: 12px; color: #fbbf24;"
+        button = getattr(self, "color_picker_precision_info_button", None)
+        if button is not None:
+            button.setToolTip(text)
+            button.setStyleSheet(
+                (
+                    "QToolButton { border: 1px solid #86efac; border-radius: 11px; color: #bbf7d0; "
+                    "background: #123524; font-weight: 700; padding: 0; }"
+                    "QToolButton:hover { background: #047857; color: #ffffff; }"
+                )
+                if precise
+                else (
+                    "QToolButton { border: 1px solid #fbbf24; border-radius: 11px; color: #fde68a; "
+                    "background: #3a2a12; font-weight: 700; padding: 0; }"
+                    "QToolButton:hover { background: #b45309; color: #ffffff; }"
+                )
             )
         return precise
 
@@ -789,7 +854,7 @@ class PreviewRecipeMixin:
                 "kind": "icc",
                 "label": "ICC imagen",
                 "path": str(source_profile),
-                "color": "#e5e7eb",
+                "color": "#e6e6e6",
             }
         return spec_a, spec_b, task_monitor_profile
 
@@ -862,10 +927,11 @@ class PreviewRecipeMixin:
         chroma = float(np.linalg.norm(lab[1:3])) if lab.size >= 3 else 0.0
         deltas = self._color_picker_delta_summary(lab)
         delta_text = f" | {deltas}" if deltas else ""
+        rgb_text = self._format_rgb_triplet(rgb)
         return (
             f"Color Lab x={int(payload.get('x', 0))}, y={int(payload.get('y', 0))} "
             f"{payload.get('matrix', '1x1')} ({int(payload.get('count', 0))} px) | "
-            f"RGB {float(rgb[0]):.4f}, {float(rgb[1]):.4f}, {float(rgb[2]):.4f} | "
+            f"RGB {rgb_text} | "
             f"Lab {float(lab[0]):.2f}, {float(lab[1]):+.2f}, {float(lab[2]):+.2f}; C* {chroma:.2f}{delta_text} | "
             f"{label_a}: {inside_text('inside_a')}; {label_b}: {inside_text('inside_b')}; "
             f"gama comun: {common}"
@@ -887,6 +953,7 @@ class PreviewRecipeMixin:
             "y": int(payload.get("y", 0)),
             "matrix": str(payload.get("matrix") or "1x1"),
             "count": int(payload.get("count", 0)),
+            "reading_status": "ok",
             "rgb": np.asarray(payload.get("rgb"), dtype=np.float64).reshape(-1)[:3].tolist(),
             "lab": np.asarray(payload.get("lab"), dtype=np.float64).reshape(-1)[:3].tolist(),
             "chroma": self._lab_chroma(payload.get("lab")),
@@ -1132,6 +1199,151 @@ class PreviewRecipeMixin:
         self._push_color_picker_history_snapshot("color_sample_group_add")
         self._set_status(self.tr("Conjunto activo:") + f" {group}")
 
+    def _color_sample_radius_from_matrix(self, matrix: Any) -> int:
+        text = str(matrix or "").strip().lower()
+        if "x" in text:
+            try:
+                side = int(text.split("x", 1)[0])
+                return max(0, (side - 1) // 2)
+            except Exception:
+                pass
+        return self._color_picker_radius()
+
+    def _schedule_color_picker_samples_refresh(self) -> None:
+        if not getattr(self, "_color_picker_samples", []):
+            return
+        timer = getattr(self, "_color_sample_refresh_timer", None)
+        if timer is None:
+            timer = QtCore.QTimer(self)
+            timer.setSingleShot(True)
+            timer.timeout.connect(self._refresh_color_picker_samples_from_current_image)
+            self._color_sample_refresh_timer = timer
+        timer.start(150)
+
+    def _color_sample_reading_is_current(self, sample: dict[str, Any]) -> bool:
+        return str(sample.get("reading_status") or "ok").strip().lower() == "ok"
+
+    def _mark_color_picker_samples_reading_status(self, status: str, message: str) -> None:
+        samples = getattr(self, "_color_picker_samples", [])
+        if not isinstance(samples, list) or not samples:
+            return
+        for sample in samples:
+            if isinstance(sample, dict):
+                sample["reading_status"] = str(status or "pending")
+        if hasattr(self, "label_color_picker"):
+            self.label_color_picker.setText(message)
+        self._refresh_color_samples_table()
+
+    def _mark_color_picker_samples_pending_for_adjustment_change(self) -> None:
+        samples = getattr(self, "_color_picker_samples", [])
+        if not isinstance(samples, list) or not samples:
+            return
+        pending_message = self.tr("Color Lab: muestras pendientes de recalculo")
+        already_pending = all(
+            not isinstance(sample, dict) or str(sample.get("reading_status") or "ok").strip().lower() == "pending"
+            for sample in samples
+        )
+        if already_pending:
+            if hasattr(self, "label_color_picker"):
+                self.label_color_picker.setText(pending_message)
+            return
+        self._mark_color_picker_samples_reading_status("pending", pending_message)
+
+    def _refresh_color_picker_samples_from_current_image(self) -> None:
+        samples = getattr(self, "_color_picker_samples", [])
+        if not isinstance(samples, list) or not samples:
+            return
+        if bool(getattr(self, "_color_picker_samples_refreshing", False)):
+            return
+        if not self._color_picker_source_is_real_pixels():
+            self._mark_color_picker_samples_reading_status(
+                "pending",
+                self.tr("Color Lab: muestras pendientes de recalculo a tamano real"),
+            )
+            return
+
+        self._color_picker_samples_refreshing = True
+        updates: list[tuple[int, dict[str, Any]]] = []
+        sample_error: Exception | None = None
+        try:
+            for index, sample in enumerate(samples):
+                if not isinstance(sample, dict):
+                    continue
+                radius = self._color_sample_radius_from_matrix(sample.get("matrix"))
+                try:
+                    refreshed = self._sample_color_patch(
+                        float(sample.get("x", 0)),
+                        float(sample.get("y", 0)),
+                        radius=radius,
+                    )
+                except Exception as exc:
+                    sample_error = exc
+                    continue
+                updates.append((index, refreshed))
+
+            if not updates:
+                if sample_error is not None:
+                    message = self.tr("Color Lab: muestras pendientes de recalculo exacto")
+                    self._mark_color_picker_samples_reading_status("pending", message)
+                    self._set_status(f"{message}: {sample_error}")
+                return
+
+            try:
+                source_profile = self._color_picker_source_profile()
+                rgb_rows = np.vstack(
+                    [
+                        np.asarray(refreshed.get("rgb"), dtype=np.float64).reshape(-1)[:3]
+                        for _index, refreshed in updates
+                    ]
+                )
+                lab_rows = np.asarray(lookup_lab_with_icc(source_profile, rgb_rows), dtype=np.float64).reshape((-1, 3))
+                profile_generated_by_app, precision_note = self._color_picker_precision_warning(source_profile)
+                generated_profile = self._candidate_generated_gamut_profile() if hasattr(self, "_candidate_generated_gamut_profile") else None
+                snapshot = self._gamut_selection_snapshot(generated_profile=generated_profile)
+                spec_a, spec_b, monitor_profile = self._color_picker_gamut_specs_from_snapshot(
+                    snapshot,
+                    source_profile=source_profile,
+                )
+                membership = evaluate_lab_gamut_membership(lab_rows, profile_a=spec_a, profile_b=spec_b)
+            except Exception as exc:
+                message = self.tr("Color Lab: no se actualizaron las muestras; falta recalculo ICC exacto")
+                self._mark_color_picker_samples_reading_status("pending", message)
+                self._set_status(f"{message}: {exc}")
+                return
+
+            inside_a = np.asarray(membership.get("inside_a"), dtype=bool).reshape(-1)
+            inside_b = np.asarray(membership.get("inside_b"), dtype=bool).reshape(-1)
+            inside_common = np.asarray(membership.get("inside_common"), dtype=bool).reshape(-1)
+            for offset, (index, refreshed) in enumerate(updates):
+                if offset >= lab_rows.shape[0] or not (0 <= index < len(samples)):
+                    continue
+                sample = samples[index]
+                if not isinstance(sample, dict):
+                    continue
+                for key in ("x", "y", "rgb", "count", "matrix", "image_size", "marker_color", "marker_text_color"):
+                    sample[key] = refreshed.get(key, sample.get(key))
+                lab = lab_rows[offset]
+                sample["lab"] = lab.tolist()
+                sample["chroma"] = self._lab_chroma(lab)
+                sample["inside_a"] = bool(inside_a[offset]) if offset < inside_a.size else False
+                sample["inside_b"] = bool(inside_b[offset]) if offset < inside_b.size else False
+                sample["inside_common"] = bool(inside_common[offset]) if offset < inside_common.size else False
+                sample["label_a"] = str(membership.get("label_a") or sample.get("label_a") or "A")
+                sample["label_b"] = str(membership.get("label_b") or sample.get("label_b") or "B")
+                sample["source_profile"] = str(source_profile)
+                sample["monitor_profile"] = str(monitor_profile) if monitor_profile else ""
+                sample["profile_generated_by_app"] = bool(profile_generated_by_app)
+                sample["profile_precision_note"] = precision_note
+                sample["reading_status"] = "ok"
+
+            self._refresh_color_samples_table()
+            if hasattr(self, "label_color_picker"):
+                self.label_color_picker.setText(
+                    self.tr("Color Lab:") + f" {len(samples)} " + self.tr("muestras actualizadas")
+                )
+        finally:
+            self._color_picker_samples_refreshing = False
+
     def _on_color_samples_table_section_resized(
         self,
         _section: int,
@@ -1171,6 +1383,7 @@ class PreviewRecipeMixin:
         table.blockSignals(True)
         table.setRowCount(len(samples))
         for row, sample in enumerate(samples):
+            reading_current = self._color_sample_reading_is_current(sample)
             values = [
                 f"{row + 1}",
                 self._color_sample_group_name(sample.get("group")),
@@ -1180,13 +1393,13 @@ class PreviewRecipeMixin:
                 str(sample.get("matrix") or "1x1"),
                 self._color_sample_rgb_text(sample),
                 self._color_sample_lab_text(sample),
-                f"{float(sample.get('chroma') or 0.0):.2f}",
-                self.tr("dentro") if bool(sample.get("inside_a")) else self.tr("fuera"),
-                self.tr("dentro") if bool(sample.get("inside_b")) else self.tr("fuera"),
-                self.tr("si") if bool(sample.get("inside_common")) else "no",
-                self._color_sample_delta_e_text(sample.get("lab"), reference_lab, method="76"),
-                self._color_sample_delta_e_text(sample.get("lab"), reference_lab, method="00"),
-                self._color_sample_delta_c_text(sample.get("lab"), reference_lab),
+                f"{float(sample.get('chroma') or 0.0):.2f}" if reading_current else "--",
+                self.tr("dentro") if reading_current and bool(sample.get("inside_a")) else (self.tr("fuera") if reading_current else "--"),
+                self.tr("dentro") if reading_current and bool(sample.get("inside_b")) else (self.tr("fuera") if reading_current else "--"),
+                self.tr("si") if reading_current and bool(sample.get("inside_common")) else ("no" if reading_current else "--"),
+                self._color_sample_delta_e_text(sample.get("lab"), reference_lab, method="76") if reading_current else "--",
+                self._color_sample_delta_e_text(sample.get("lab"), reference_lab, method="00") if reading_current else "--",
+                self._color_sample_delta_c_text(sample.get("lab"), reference_lab) if reading_current else "--",
             ]
             for column, value in enumerate(values):
                 item = QtWidgets.QTableWidgetItem(str(value))
@@ -1236,7 +1449,7 @@ class PreviewRecipeMixin:
         reference_lab = self._color_sample_reference_lab()
         if not samples:
             label = QtWidgets.QLabel(self.tr("Sin muestras"))
-            label.setStyleSheet("color: #9ca3af; padding: 8px;")
+            label.setStyleSheet("color: #a6a6a6; padding: 8px;")
             layout.addWidget(label)
             layout.addStretch(1)
             return
@@ -1253,7 +1466,7 @@ class PreviewRecipeMixin:
         frame = QtWidgets.QFrame()
         frame.setFrameShape(QtWidgets.QFrame.StyledPanel)
         frame.setStyleSheet(
-            "QFrame { background: #1f242c; border: 1px solid #3b4250; border-radius: 6px; }"
+            "QFrame { background: #262626; border: 1px solid #4a4a4a; border-radius: 6px; }"
             "QLabel { border: none; background: transparent; }"
         )
         card = QtWidgets.QGridLayout(frame)
@@ -1267,12 +1480,12 @@ class PreviewRecipeMixin:
         fill = str(sample.get("marker_color") or "#22d3ee")
         text = str(sample.get("marker_text_color") or "#ffffff")
         swatch.setStyleSheet(
-            f"background: {fill}; color: {text}; border: 1px solid #e5e7eb; border-radius: 4px; font-weight: 700;"
+            f"background: {fill}; color: {text}; border: 1px solid #e6e6e6; border-radius: 4px; font-weight: 700;"
         )
         card.addWidget(swatch, 0, 0, 2, 1)
 
         title = QtWidgets.QLabel(f"{row + 1} - " + str(sample.get("name") or f"Muestra {row + 1}"))
-        title.setStyleSheet("color: #f9fafb; font-weight: 700;")
+        title.setStyleSheet("color: #f7f7f7; font-weight: 700;")
         card.addWidget(title, 0, 1, 1, 2)
 
         group = self._color_sample_group_name(sample.get("group"))
@@ -1280,41 +1493,46 @@ class PreviewRecipeMixin:
             f"{group} | x={int(sample.get('x', 0))}, y={int(sample.get('y', 0))} | "
             f"{sample.get('matrix', '1x1')} ({int(sample.get('count', 0))} px)"
         )
-        meta.setStyleSheet("color: #cbd5e1;")
+        meta.setStyleSheet("color: #d4d4d4;")
         card.addWidget(meta, 1, 1, 1, 2)
 
         rgb_lab = QtWidgets.QLabel(
             f"RGB {self._color_sample_rgb_text(sample)}\n"
-            f"Lab {self._color_sample_lab_text(sample)} | C* {float(sample.get('chroma') or 0.0):.2f}"
+            f"Lab {self._color_sample_lab_text(sample)} | C* "
+            + (f"{float(sample.get('chroma') or 0.0):.2f}" if self._color_sample_reading_is_current(sample) else "--")
         )
-        rgb_lab.setStyleSheet("color: #d1d5db;")
+        rgb_lab.setStyleSheet("color: #d8d8d8;")
         card.addWidget(rgb_lab, 2, 0, 1, 3)
 
-        delta = (
-            f"DE76 ref {self._color_sample_delta_e_text(sample.get('lab'), reference_lab, method='76')} | "
-            f"DE00 ref {self._color_sample_delta_e_text(sample.get('lab'), reference_lab, method='00')} | "
-            f"DC* ref {self._color_sample_delta_c_text(sample.get('lab'), reference_lab)}"
-        )
-        gamut = (
-            f"{sample.get('label_a') or 'A'}: "
-            + (self.tr("dentro") if bool(sample.get("inside_a")) else self.tr("fuera"))
-            + " | "
-            + f"{sample.get('label_b') or 'B'}: "
-            + (self.tr("dentro") if bool(sample.get("inside_b")) else self.tr("fuera"))
-            + " | "
-            + self.tr("comun")
-            + ": "
-            + (self.tr("si") if bool(sample.get("inside_common")) else "no")
-        )
+        if self._color_sample_reading_is_current(sample):
+            delta = (
+                f"DE76 ref {self._color_sample_delta_e_text(sample.get('lab'), reference_lab, method='76')} | "
+                f"DE00 ref {self._color_sample_delta_e_text(sample.get('lab'), reference_lab, method='00')} | "
+                f"DC* ref {self._color_sample_delta_c_text(sample.get('lab'), reference_lab)}"
+            )
+            gamut = (
+                f"{sample.get('label_a') or 'A'}: "
+                + (self.tr("dentro") if bool(sample.get("inside_a")) else self.tr("fuera"))
+                + " | "
+                + f"{sample.get('label_b') or 'B'}: "
+                + (self.tr("dentro") if bool(sample.get("inside_b")) else self.tr("fuera"))
+                + " | "
+                + self.tr("comun")
+                + ": "
+                + (self.tr("si") if bool(sample.get("inside_common")) else "no")
+            )
+        else:
+            delta = self.tr("Lectura pendiente de recalculo a tamano real")
+            gamut = self.tr("Sin valores colorimetricos actuales")
         detail = QtWidgets.QLabel(delta + "\n" + gamut)
-        detail.setStyleSheet("color: #d1d5db;")
+        detail.setStyleSheet("color: #d8d8d8;")
         card.addWidget(detail, 3, 0, 1, 3)
 
         note_text = str(sample.get("note") or "").strip()
         if note_text:
             note = QtWidgets.QLabel(note_text)
             note.setWordWrap(True)
-            note.setStyleSheet("color: #9ca3af;")
+            note.setStyleSheet("color: #a6a6a6;")
             card.addWidget(note, 4, 0, 1, 3)
 
         select_button = QtWidgets.QPushButton(self.tr("Seleccionar"))
@@ -1336,6 +1554,8 @@ class PreviewRecipeMixin:
             labs = []
             rgbs = []
             for sample in group_samples:
+                if not self._color_sample_reading_is_current(sample):
+                    continue
                 try:
                     lab = np.asarray(sample.get("lab"), dtype=np.float64).reshape(-1)[:3]
                     rgb = np.asarray(sample.get("rgb"), dtype=np.float64).reshape(-1)[:3]
@@ -1402,6 +1622,8 @@ class PreviewRecipeMixin:
         labs: list[np.ndarray] = []
         for sample in getattr(self, "_color_picker_samples", []) or []:
             if not isinstance(sample, dict) or self._color_sample_group_name(sample.get("group")) != group:
+                continue
+            if not self._color_sample_reading_is_current(sample):
                 continue
             try:
                 lab = np.asarray(sample.get("lab"), dtype=np.float64).reshape(-1)[:3]
@@ -1483,7 +1705,7 @@ class PreviewRecipeMixin:
             reference_points = self._color_sample_group_lab_points(reference_group)
             is_reference = group == reference_group
             if count:
-                rgb_text = self._format_color_triplet(rgb, precision=4, sign=False)
+                rgb_text = self._format_rgb_triplet(rgb)
                 lab_text = self._format_color_triplet(lab, precision=2, sign=True)
                 chroma_text = f"{float(stat.get('chroma') or 0.0):.2f}"
                 dispersion_mean = f"{float(stat.get('dispersion_de00_mean') or 0.0):.2f}"
@@ -1527,7 +1749,7 @@ class PreviewRecipeMixin:
                     font = item.font()
                     font.setBold(True)
                     item.setFont(font)
-                    item.setBackground(QtGui.QColor("#243042"))
+                    item.setBackground(QtGui.QColor("#303030"))
                 table.setItem(row, column, item)
         table.blockSignals(False)
         table.resizeColumnsToContents()
@@ -1543,6 +1765,23 @@ class PreviewRecipeMixin:
             return f"{float(arr[0]):.{precision}f}, {float(arr[1]):.{precision}f}, {float(arr[2]):.{precision}f}"
         except Exception:
             return "--"
+
+    def _rgb_u8_values(self, values: Any) -> np.ndarray | None:
+        try:
+            arr = np.asarray(values, dtype=np.float64).reshape(-1)[:3]
+            if arr.size < 3 or not np.all(np.isfinite(arr)):
+                return None
+            if float(np.nanmax(arr)) <= 1.0001:
+                arr = arr * 255.0
+            return np.clip(np.rint(arr), 0, 255).astype(int)
+        except Exception:
+            return None
+
+    def _format_rgb_triplet(self, values: Any) -> str:
+        rgb = self._rgb_u8_values(values)
+        if rgb is None:
+            return "--"
+        return f"{int(rgb[0])}, {int(rgb[1])}, {int(rgb[2])}"
 
     def _sync_color_sample_overlay(self) -> None:
         samples = list(getattr(self, "_color_picker_samples", []) or [])
@@ -1700,6 +1939,7 @@ class PreviewRecipeMixin:
             "y": int(sample.get("y", 0)),
             "matrix": str(sample.get("matrix") or "1x1"),
             "count": int(sample.get("count", 0)),
+            "reading_status": str(sample.get("reading_status") or "ok"),
             "rgb": [float(v) for v in rgb[:3]] if rgb.size >= 3 else [0.0, 0.0, 0.0],
             "lab": [float(v) for v in lab[:3]] if lab.size >= 3 else [0.0, 0.0, 0.0],
             "chroma": float(sample.get("chroma") or self._lab_chroma(sample.get("lab"))),
@@ -1739,6 +1979,7 @@ class PreviewRecipeMixin:
             "y": int(sample.get("y", 0)),
             "matrix": str(sample.get("matrix") or "1x1"),
             "count": int(sample.get("count", 0)),
+            "reading_status": str(sample.get("reading_status") or "ok"),
             "rgb": np.clip(rgb, 0.0, 1.0).astype(np.float64).tolist(),
             "lab": lab.astype(np.float64).tolist(),
             "chroma": float(sample.get("chroma") or self._lab_chroma(lab)),
@@ -1761,12 +2002,13 @@ class PreviewRecipeMixin:
         }
 
     def _color_sample_rgb_text(self, sample: dict[str, Any]) -> str:
-        rgb = np.asarray(sample.get("rgb"), dtype=np.float64).reshape(-1)
-        if rgb.size < 3:
-            return "--"
-        return f"{float(rgb[0]):.4f}, {float(rgb[1]):.4f}, {float(rgb[2]):.4f}"
+        if not self._color_sample_reading_is_current(sample):
+            return self.tr("pendiente")
+        return self._format_rgb_triplet(sample.get("rgb"))
 
     def _color_sample_lab_text(self, sample: dict[str, Any]) -> str:
+        if not self._color_sample_reading_is_current(sample):
+            return self.tr("pendiente")
         lab = np.asarray(sample.get("lab"), dtype=np.float64).reshape(-1)
         if lab.size < 3:
             return "--"
@@ -1849,10 +2091,11 @@ class PreviewRecipeMixin:
         self.spin_render_tint.blockSignals(False)
 
         if hasattr(self, "label_neutral_picker"):
+            rgb_text = self._format_rgb_triplet(sample)
             self.label_neutral_picker.setText(
                 (
                     "Punto neutro: "
-                    f"RGB {sample[0]:.3f}, {sample[1]:.3f}, {sample[2]:.3f} "
+                    f"RGB {rgb_text} "
                     f"({count} px) -> {temperature} K / matiz {tint:+.1f}"
                 )
             )
@@ -2336,7 +2579,7 @@ class PreviewRecipeMixin:
     def _preview_histogram_source_label(self) -> str:
         if self._active_session_icc_for_settings() is not None:
             return self.tr("Histograma: sRGB colorimétrico tras ICC de entrada, antes del ICC del monitor.")
-        return self.tr("Histograma: sRGB de preview, antes del ICC del monitor.")
+        return self.tr("Histograma: sRGB de vista previa, antes del ICC del monitor.")
 
     def _update_viewer_histogram(self, colorimetric_u8: np.ndarray | None) -> None:
         if not hasattr(self, "viewer_histogram"):
@@ -2359,8 +2602,8 @@ class PreviewRecipeMixin:
         if metrics is None:
             self.histogram_shadow_label.setText(self.tr("Sombras: --"))
             self.histogram_highlight_label.setText(self.tr("Luces: --"))
-            self.histogram_shadow_label.setStyleSheet("font-size: 12px; color: #6b7280;")
-            self.histogram_highlight_label.setStyleSheet("font-size: 12px; color: #6b7280;")
+            self.histogram_shadow_label.setStyleSheet("font-size: 12px; color: #d4d4d4;")
+            self.histogram_highlight_label.setStyleSheet("font-size: 12px; color: #d4d4d4;")
             return
 
         shadow_pct = float(metrics.get("shadow_any", 0.0)) * 100.0
@@ -2371,10 +2614,10 @@ class PreviewRecipeMixin:
         shadow_alert = shadow_pct > alert_pct
         highlight_alert = highlight_pct > alert_pct
         self.histogram_shadow_label.setStyleSheet(
-            "font-size: 12px; color: #60a5fa;" if shadow_alert else "font-size: 12px; color: #94a3b8;"
+            "font-size: 12px; color: #707070;" if shadow_alert else "font-size: 12px; color: #a8a8a8;"
         )
         self.histogram_highlight_label.setStyleSheet(
-            "font-size: 12px; color: #f87171;" if highlight_alert else "font-size: 12px; color: #94a3b8;"
+            "font-size: 12px; color: #f87171;" if highlight_alert else "font-size: 12px; color: #a8a8a8;"
         )
 
     def _normalize_recipe_output_for_color_management(self, recipe: Recipe) -> Recipe:

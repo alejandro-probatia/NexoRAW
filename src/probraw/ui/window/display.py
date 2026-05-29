@@ -679,7 +679,7 @@ class DisplayControlsMixin:
         if self._original_srgb_cache_key == source_key and self._original_srgb_cache is not None:
             return self._original_srgb_cache
         if self._original_linear is None:
-            raise RuntimeError("No hay imagen original cargada para preview.")
+            raise RuntimeError("No hay imagen original cargada para la vista previa.")
         srgb = linear_to_srgb_display(self._original_linear)
         self._original_srgb_cache = srgb
         self._original_srgb_cache_key = source_key
@@ -710,6 +710,7 @@ class DisplayControlsMixin:
     def _clear_adjustment_caches(self) -> None:
         self._detail_adjusted_linear = None
         self._detail_adjustment_cache_key = None
+        self._adjusted_linear_signature = None
         self._original_srgb_cache = None
         self._original_srgb_cache_key = None
         self._original_display_u8_cache = None
@@ -1023,6 +1024,8 @@ class DisplayControlsMixin:
             self._sync_mtf_roi_overlay()
         if hasattr(self, "_sync_color_sample_overlay"):
             self._sync_color_sample_overlay()
+        if hasattr(self, "_schedule_color_picker_samples_refresh"):
+            self._schedule_color_picker_samples_refresh()
         if hasattr(self, "_sync_viewer_real_pixel_scale_if_requested"):
             self._sync_viewer_real_pixel_scale_if_requested()
         if hasattr(self, "_maybe_update_mtf_after_preview"):
@@ -1097,6 +1100,8 @@ class DisplayControlsMixin:
             )
         if hasattr(self, "_sync_viewer_real_pixel_scale_if_requested"):
             self._sync_viewer_real_pixel_scale_if_requested()
+        if hasattr(self, "_schedule_color_picker_samples_refresh"):
+            self._schedule_color_picker_samples_refresh()
         return True
 
     def _ensure_original_compare_panel(self, *, bypass_profile: bool) -> None:
@@ -1128,9 +1133,9 @@ class DisplayControlsMixin:
         if self._manual_override_active():
             profile_path = self._active_display_profile_path()
             if profile_path is None or not profile_path.exists():
-                self.display_profile_status.setText(self.tr("Monitor: override - perfil no encontrado"))
+                self.display_profile_status.setText(self.tr("Monitor: perfil manual no encontrado"))
                 return
-            self.display_profile_status.setText(self.tr("Monitor: override ICC -") + f" {display_profile_label(profile_path)}")
+            self.display_profile_status.setText(self.tr("Monitor: ICC manual -") + f" {display_profile_label(profile_path)}")
             return
         # Auto: intentar Qt, luego ctypes, luego fallback sRGB
         from_qt = self._monitor_profile_from_qt()
@@ -1154,4 +1159,4 @@ class DisplayControlsMixin:
         if detected is not None:
             self.display_profile_status.setText(self.tr("Monitor: detectado -") + f" {display_profile_label(detected)}")
             return
-        self.display_profile_status.setText(self.tr("Monitor: sin perfil ICC (fallback sRGB visual)"))
+        self.display_profile_status.setText(self.tr("Monitor: sin perfil ICC (respaldo visual sRGB)"))

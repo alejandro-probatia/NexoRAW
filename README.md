@@ -10,7 +10,7 @@ Reproducible and auditable RAW/TIFF development for scientific, forensic and
 heritage photography, with session ICC profiling, per-file parametric settings
 and open AGPL traceability.
 
-![AGPL-3.0-or-later License](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue) ![CI](https://img.shields.io/badge/CI-pending-lightgrey) ![Version](https://img.shields.io/badge/version-v0.4.0-brightgreen) ![Python](https://img.shields.io/badge/python-3.11%2B-blue) ![Platforms](https://img.shields.io/badge/platforms-Linux%20%7C%20macOS%20%7C%20Windows-informational)
+![AGPL-3.0-or-later License](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue) ![CI](https://img.shields.io/badge/CI-pending-lightgrey) ![Version](https://img.shields.io/badge/version-v0.4.1-brightgreen) ![Python](https://img.shields.io/badge/python-3.11%2B-blue) ![Platforms](https://img.shields.io/badge/platforms-Linux%20%7C%20macOS%20%7C%20Windows-informational)
 
 ![ProbRAW main interface](docs/assets/screenshots/probraw-portada.png)
 
@@ -33,19 +33,19 @@ The current workflow is intentionally ICC-centered:
 
 ## Current Status
 
-ProbRAW 0.4.0 is suitable for controlled testing, method review and release
+ProbRAW 0.4.1 is suitable for controlled testing, method review and release
 candidate validation. It is not yet a certified scientific or forensic
 production system.
 
-The current version adds Lab sample diagnostics: real-pixel eyedropper,
-per-image sample persistence, sample sets, DeltaE comparison and Lab 2D gamut
-inspection, while preserving the signed TIFF output path and the MTF analysis
-guarantees.
+The current version stabilizes the Lab sample workflow: readings are refreshed
+after color/exposure/contrast changes from current real-pixel values, RGB is
+reported as 0-255 integers, and the GUI uses a neutral dark-gray Spanish
+interface with compact information buttons for precision notes.
 
 The latest packaging validation passed with:
 
 ```text
-Release validation is recorded in docs/releases/0.4.0.md.
+Release validation is recorded in docs/releases/0.4.1.md.
 CachyOS probraw 0.3.18-3: pacman -Qkk -> 18160 files, 0 altered; validate_cachyos_install -> OK
 ```
 

@@ -54,6 +54,18 @@ class SessionDevelopmentMixin:
                 return profile
         return None
 
+    def _icc_profile_catalog_path_allowed(self, path: Path, source: str) -> bool:
+        if self._active_session_root is None:
+            return True
+        if self._path_is_inside(path, self._active_session_root):
+            return True
+        return source.strip().lower() == "loaded"
+
+    def _session_scoped_profile_metadata_path(self, path: Path | None) -> Path | None:
+        if path is None or self._active_session_root is None:
+            return path
+        return path if self._path_is_inside(path, self._active_session_root) else None
+
     def _normalize_icc_profile_descriptor(self, descriptor: dict[str, Any]) -> dict[str, Any] | None:
         if not isinstance(descriptor, dict):
             return None
@@ -65,10 +77,19 @@ class SessionDevelopmentMixin:
         path = self._session_stored_path(raw_path)
         if path is None or path.suffix.lower() not in self._icc_profile_suffixes() or not path.exists():
             return None
+        source = str(descriptor.get("source") or "generated")
+        if not self._icc_profile_catalog_path_allowed(path, source):
+            return None
 
-        report_path = self._session_stored_path(descriptor.get("profile_report_path"))
-        development_profile_path = self._session_stored_path(descriptor.get("development_profile_path"))
-        recipe_path = self._session_stored_path(descriptor.get("recipe_path"))
+        report_path = self._session_scoped_profile_metadata_path(
+            self._session_stored_path(descriptor.get("profile_report_path"))
+        )
+        development_profile_path = self._session_scoped_profile_metadata_path(
+            self._session_stored_path(descriptor.get("development_profile_path"))
+        )
+        recipe_path = self._session_scoped_profile_metadata_path(
+            self._session_stored_path(descriptor.get("recipe_path"))
+        )
         status = str(descriptor.get("status") or self._profile_status_for_path(path) or "").strip().lower()
         if not status:
             status = "unknown"
@@ -79,7 +100,7 @@ class SessionDevelopmentMixin:
         normalized = {
             "id": str(descriptor.get("id") or self._icc_profile_id_for_path(path)),
             "name": name,
-            "source": str(descriptor.get("source") or "generated"),
+            "source": source,
             "path": self._session_relative_or_absolute(path),
             "profile_report_path": self._session_relative_or_absolute(report_path) if report_path is not None else "",
             "development_profile_id": str(descriptor.get("development_profile_id") or ""),
@@ -479,10 +500,10 @@ class SessionDevelopmentMixin:
         status = self._profile_status_for_path(path) if path is not None else ""
         if status == "rejected":
             self._log_preview(
-                self.tr("Perfil ICC activado manualmente pese a estado QA rejected:") + f" {path}"
+                self.tr("Perfil ICC activado manualmente pese a estado QA rechazada:") + f" {path}"
             )
             self._set_status(
-                self.tr("Perfil ICC de sesion activo manualmente (QA rejected):")
+                self.tr("Perfil ICC de sesion activo manualmente (QA rechazada):")
                 + f" {self._icc_profile_combo_label(profile) if profile else profile_id}"
             )
         else:

@@ -10,7 +10,7 @@ Revelado RAW/TIFF reproducible y auditable para fotografía científica, forense
 patrimonial, con perfilado ICC por sesión, ajustes paramétricos por archivo y
 trazabilidad abierta AGPL.
 
-![Licencia AGPL-3.0-or-later](https://img.shields.io/badge/licencia-AGPL--3.0--or--later-blue) ![CI](https://img.shields.io/badge/CI-pendiente-lightgrey) ![Versión](https://img.shields.io/badge/version-v0.4.0-brightgreen) ![Python](https://img.shields.io/badge/python-3.11%2B-blue) ![Plataformas](https://img.shields.io/badge/plataformas-Linux%20%7C%20macOS%20%7C%20Windows-informational)
+![Licencia AGPL-3.0-or-later](https://img.shields.io/badge/licencia-AGPL--3.0--or--later-blue) ![CI](https://img.shields.io/badge/CI-pendiente-lightgrey) ![Versión](https://img.shields.io/badge/version-v0.4.1-brightgreen) ![Python](https://img.shields.io/badge/python-3.11%2B-blue) ![Plataformas](https://img.shields.io/badge/plataformas-Linux%20%7C%20macOS%20%7C%20Windows-informational)
 
 ![Interfaz principal de ProbRAW](docs/assets/screenshots/probraw-portada.png)
 
@@ -33,19 +33,20 @@ El flujo actual está centrado de forma deliberada en ICC:
 
 ## Estado Actual
 
-ProbRAW 0.4.0 es adecuado para pruebas controladas, revisión metodológica y
+ProbRAW 0.4.1 es adecuado para pruebas controladas, revisión metodológica y
 validación de candidata a release. Todavía no es un sistema certificado para
 producción científica o forense.
 
-La version actual anade diagnostico de muestras Lab: cuentagotas de pixel real,
-persistencia por imagen, conjuntos de muestras, comparacion DeltaE e inspeccion
-de gamut Lab 2D, preservando la ruta de TIFF firmado y las garantias del
-analisis MTF.
+La version actual estabiliza el flujo de muestras Lab: las lecturas se
+refrescan tras cambios de color/exposicion/contraste desde valores actuales de
+pixel real, el RGB se informa como enteros 0-255, y la GUI usa una interfaz
+espanola gris oscuro neutra con botones compactos de informacion para notas de
+precision.
 
 La última validación de empaquetado pasó con:
 
 ```text
-La validacion de release esta documentada en docs/releases/0.4.0.es.md.
+La validacion de release esta documentada en docs/releases/0.4.1.es.md.
 CachyOS probraw 0.3.18-3: pacman -Qkk -> 18160 ficheros, 0 alterados; validate_cachyos_install -> OK
 ```
 

@@ -8,6 +8,11 @@ from ._imports import *  # noqa: F401,F403
 _SHUTDOWN_THREAD_GRAVEYARD: list[Any] = []
 
 
+def _bounded_shutdown_wait_ms(deadline: float, *, cap_ms: int, floor_ms: int = 1) -> int:
+    remaining_ms = int((deadline - time.monotonic()) * 1000.0)
+    return max(int(floor_ms), min(int(cap_ms), remaining_ms))
+
+
 class TaskStatusMixin:
     def _shutdown_background_threads(self, *, timeout_ms: int = 8000) -> None:
         if bool(getattr(self, "_background_threads_shutdown", False)):
@@ -56,9 +61,8 @@ class TaskStatusMixin:
                                 thread.terminate()
                             except Exception:
                                 pass
-                            remaining_ms = int(max(1.0, (deadline - time.monotonic()) * 1000.0))
                             try:
-                                thread.wait(min(100, remaining_ms))
+                                thread.wait(_bounded_shutdown_wait_ms(deadline, cap_ms=1000, floor_ms=100))
                             except Exception:
                                 pass
                 if thread in self._threads:
@@ -256,7 +260,7 @@ class TaskStatusMixin:
         self._interactive_preview_spinner.setFixedWidth(84)
         self._interactive_preview_spinner.setMaximumHeight(9)
         self._interactive_preview_time_label = QtWidgets.QLabel(self.tr("Ultimo ajuste: -- ms"))
-        self._interactive_preview_time_label.setStyleSheet("color: #4b5563;")
+        self._interactive_preview_time_label.setStyleSheet("color: #d4d4d4;")
         self._interactive_preview_global_timer = QtCore.QTimer(self)
         self._interactive_preview_global_timer.setInterval(250)
         self._interactive_preview_global_timer.timeout.connect(self._update_interactive_preview_global_progress)
@@ -287,7 +291,7 @@ class TaskStatusMixin:
                     "preview",
                     self.tr("Ajuste completado"),
                     time_text=(self.tr("Total:") + f" {elapsed:.1f} s") if elapsed is not None else self.tr("Finalizado"),
-                    phase_text=self.tr("Preview actualizada"),
+                    phase_text=self.tr("Vista previa actualizada"),
                     minimum=0,
                     maximum=1,
                     value=1,
@@ -319,7 +323,7 @@ class TaskStatusMixin:
         self._interactive_preview_global_visible = True
         self._set_global_operation_progress(
             "preview",
-            self.tr("Ajustando preview..."),
+            self.tr("Ajustando vista previa..."),
             time_text=self.tr("Tiempo:") + f" {elapsed:.1f} s",
             phase_text=self.tr("Aplicando ajustes de color y contraste"),
             minimum=0,

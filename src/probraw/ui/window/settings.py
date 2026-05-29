@@ -19,7 +19,7 @@ class SettingsMixin:
             )
         )
         intro.setWordWrap(True)
-        intro.setStyleSheet("font-size: 12px; color: #6b7280;")
+        intro.setStyleSheet("font-size: 12px; color: #d4d4d4;")
         layout.addWidget(intro)
 
         self.global_settings_tabs = QtWidgets.QTabWidget()
@@ -33,7 +33,7 @@ class SettingsMixin:
         )
         self.global_settings_tabs.addTab(
             self._settings_scroll_area(self._build_preview_monitor_settings_panel()),
-            self.tr("Preview / monitor"),
+            self.tr("Vista previa / monitor"),
         )
         layout.addWidget(self.global_settings_tabs, 1)
 
@@ -50,7 +50,7 @@ class SettingsMixin:
         return scroll
 
     def _build_general_settings_panel(self) -> QtWidgets.QWidget:
-        from ...i18n import AUTO_LANG, detect_system_language
+        from ...i18n import SUPPORTED_LANGUAGES
 
         tab = QtWidgets.QWidget()
         layout = QtWidgets.QVBoxLayout(tab)
@@ -60,40 +60,36 @@ class SettingsMixin:
 
         lang_grid.addWidget(QtWidgets.QLabel(self.tr("Idioma de la interfaz")), 0, 0)
         self.combo_app_language = QtWidgets.QComboBox()
-        detected = detect_system_language()
-        self.combo_app_language.addItem(
-            self.tr("Sistema") + f" (Auto: {detected})", AUTO_LANG
-        )
-        self.combo_app_language.addItem(self.tr("Español"), "es")
-        self.combo_app_language.addItem("English", "en")
+        for code, label in SUPPORTED_LANGUAGES.items():
+            self.combo_app_language.addItem(self.tr(label), code)
+        self.combo_app_language.setEnabled(self.combo_app_language.count() > 1)
 
-        current_pref = str(self._settings.value("app/language", AUTO_LANG) or AUTO_LANG).strip().lower()
+        current_pref = str(self._settings.value("app/language", "es") or "es").strip().lower()
         idx = self.combo_app_language.findData(current_pref)
         self.combo_app_language.setCurrentIndex(idx if idx >= 0 else 0)
         self.combo_app_language.currentIndexChanged.connect(self._on_app_language_changed)
         lang_grid.addWidget(self.combo_app_language, 0, 1)
 
-        lang_note = QtWidgets.QLabel(
-            self.tr(
-                "El cambio de idioma se aplica al reiniciar ProbRAW. No se cierra automáticamente "
-                "para no perder cambios sin guardar de la sesión actual."
-            )
+        lang_grid.addWidget(
+            self._info_row(
+                self.tr("Idioma"),
+                self.tr("La interfaz se mantiene en español para evitar mezclar traducciones parciales."),
+            ),
+            1,
+            0,
+            1,
+            2,
         )
-        lang_note.setWordWrap(True)
-        lang_note.setStyleSheet("font-size: 12px; color: #6b7280; padding-top: 4px;")
-        lang_grid.addWidget(lang_note, 1, 0, 1, 2)
 
         layout.addWidget(lang_box)
         layout.addStretch(1)
         return tab
 
     def _on_app_language_changed(self, _index: int) -> None:
-        from ...i18n import AUTO_LANG
-
         value = self.combo_app_language.currentData()
         if not isinstance(value, str) or not value:
-            value = AUTO_LANG
-        previous = str(self._settings.value("app/language", AUTO_LANG) or AUTO_LANG).strip().lower()
+            value = "es"
+        previous = str(self._settings.value("app/language", "es") or "es").strip().lower()
         if value == previous:
             return
         self._settings.setValue("app/language", value)
@@ -136,7 +132,7 @@ class SettingsMixin:
             )
         )
         proof_note.setWordWrap(True)
-        proof_note.setStyleSheet("font-size: 12px; color: #6b7280; padding-top: 4px;")
+        proof_note.setStyleSheet("font-size: 12px; color: #d4d4d4; padding-top: 4px;")
         proof_grid.addWidget(proof_note, 5, 0, 1, 3)
         layout.addWidget(proof_box)
 
@@ -178,7 +174,7 @@ class SettingsMixin:
             )
         )
         c2pa_note.setWordWrap(True)
-        c2pa_note.setStyleSheet("font-size: 12px; color: #6b7280; padding-top: 4px;")
+        c2pa_note.setStyleSheet("font-size: 12px; color: #d4d4d4; padding-top: 4px;")
         c2pa_grid.addWidget(c2pa_note, 6, 0, 1, 3)
         layout.addWidget(c2pa_box)
 
@@ -209,31 +205,31 @@ class SettingsMixin:
             )
         )
         note.setWordWrap(True)
-        note.setStyleSheet("font-size: 12px; color: #6b7280; padding-bottom: 6px;")
+        note.setStyleSheet("font-size: 12px; color: #d4d4d4; padding-bottom: 6px;")
         grid.addWidget(note, 0, 0, 1, 3)
 
         preview_policy = QtWidgets.QLabel(
-            self.tr("Politica fija: preview RAW exacta 1:1, sin saltos automaticos de resolucion.")
+            self.tr("Politica fija: vista previa RAW exacta 1:1, sin saltos automaticos de resolucion.")
         )
         preview_policy.setWordWrap(True)
-        preview_policy.setStyleSheet("font-size: 12px; color: #9ca3af;")
+        preview_policy.setStyleSheet("font-size: 12px; color: #a6a6a6;")
         grid.addWidget(preview_policy, 1, 0, 1, 3)
 
         # Compat attribute kept for tests/legacy sessions. Policy is now fixed.
         self.check_fast_raw_preview = QtWidgets.QCheckBox(
-            self.tr("Modo preview RAW rapido")
+            self.tr("Modo de vista previa RAW rapido")
         )
         self.check_fast_raw_preview.setChecked(False)
         self.check_fast_raw_preview.setEnabled(False)
         self.check_fast_raw_preview.hide()
         grid.addWidget(self.check_fast_raw_preview, 1, 0, 1, 3)
 
-        grid.addWidget(QtWidgets.QLabel(self.tr("Resolucion de preview")), 2, 0)
+        grid.addWidget(QtWidgets.QLabel(self.tr("Resolucion de vista previa")), 2, 0)
         self.preview_resolution_policy_label = QtWidgets.QLabel(
             self.tr("Fija: siempre usa la fuente completa a 100% de pixeles reales.")
         )
         self.preview_resolution_policy_label.setWordWrap(True)
-        self.preview_resolution_policy_label.setStyleSheet("font-size: 12px; color: #9ca3af;")
+        self.preview_resolution_policy_label.setStyleSheet("font-size: 12px; color: #a6a6a6;")
         grid.addWidget(self.preview_resolution_policy_label, 2, 1, 1, 2)
 
         # Legacy backing value kept for session compatibility; no longer user-editable.
@@ -247,7 +243,7 @@ class SettingsMixin:
         self.check_display_color_management.setToolTip(
             self.tr(
                 "Siempre activo: ProbRAW obtiene el perfil ICC del monitor desde el SO/Qt "
-                "cuando esta disponible y convierte la preview con LittleCMS. "
+                "cuando esta disponible y convierte la vista previa con LittleCMS. "
                 "Los pixeles ya convertidos se entregan como RGB de dispositivo para evitar "
                 "una segunda conversion del compositor. El TIFF no usa este perfil."
             )
@@ -258,12 +254,12 @@ class SettingsMixin:
         grid.addWidget(self.check_display_color_management, 3, 0, 1, 3)
 
         self.check_manual_profile_override = QtWidgets.QCheckBox(
-            self.tr("Override manual: usar perfil ICC especifico")
+            self.tr("Perfil manual: usar un ICC especifico")
         )
         self.check_manual_profile_override.setToolTip(
             self.tr(
                 "Activa para usar este ICC como destino de monitor en LittleCMS. "
-                "Util para soft-proofing o cuando el SO no reporta el perfil correcto."
+                "Util para prueba en pantalla o cuando el SO no reporta el perfil correcto."
             )
         )
         self.check_manual_profile_override.setChecked(
@@ -280,7 +276,7 @@ class SettingsMixin:
         display_row.addWidget(self._button(self.tr("Detectar"), self._detect_display_profile))
         self.display_profile_status = QtWidgets.QLabel(self.tr(""))
         self.display_profile_status.setWordWrap(True)
-        self.display_profile_status.setStyleSheet("font-size: 12px; color: #6b7280;")
+        self.display_profile_status.setStyleSheet("font-size: 12px; color: #d4d4d4;")
         display_row.addWidget(self.display_profile_status, 1)
         grid.addLayout(display_row, 6, 0, 1, 3)
         self._ensure_display_profile_if_enabled()
@@ -291,14 +287,14 @@ class SettingsMixin:
         self.path_preview_png.editingFinished.connect(self._save_preview_monitor_settings)
 
         self.preview_png_policy_label = QtWidgets.QLabel(
-            self.tr("Exportacion PNG: se elige destino con 'Guardar preview PNG' (Guardar como...).")
+            self.tr("Exportacion PNG: se elige destino con 'Guardar vista previa PNG' (Guardar como...).")
         )
         self.preview_png_policy_label.setWordWrap(True)
-        self.preview_png_policy_label.setStyleSheet("font-size: 12px; color: #9ca3af;")
+        self.preview_png_policy_label.setStyleSheet("font-size: 12px; color: #a6a6a6;")
         grid.addWidget(self.preview_png_policy_label, 7, 0, 1, 3)
 
         cache_row = QtWidgets.QHBoxLayout()
-        cache_row.addWidget(self._button(self.tr("Limpiar cache"), self._on_clear_preview_caches))
+        cache_row.addWidget(self._button(self.tr("Limpiar caché"), self._on_clear_preview_caches))
         cache_row.addStretch(1)
         grid.addLayout(cache_row, 8, 0, 1, 3)
 
@@ -364,9 +360,9 @@ class SettingsMixin:
     def _on_clear_preview_caches(self) -> None:
         reply = QtWidgets.QMessageBox.question(
             self,
-            self.tr("Limpiar cache"),
+            self.tr("Limpiar caché"),
             self.tr(
-                "Se eliminaran caches de previews y miniaturas (sesion y usuario).\n"
+                "Se eliminaran cachés de vistas previas y miniaturas (sesion y usuario).\n"
                 "Se regeneraran cuando sea necesario.\n\n"
                 "¿Continuar?"
             ),
@@ -403,12 +399,12 @@ class SettingsMixin:
         if self._selected_file is not None:
             self._on_load_selected(show_message=False)
 
-        self._set_status(self.tr("Cache limpiada:") + f" {removed_dirs} " + self.tr("carpetas,") + f" {removed_files} " + self.tr("archivos."))
-        self._log_preview(f"Cache limpiada ({removed_dirs} carpetas, {removed_files} archivos).")
+        self._set_status(self.tr("Caché limpiada:") + f" {removed_dirs} " + self.tr("carpetas,") + f" {removed_files} " + self.tr("archivos."))
+        self._log_preview(f"Caché limpiada ({removed_dirs} carpetas, {removed_files} archivos).")
         if errors:
             QtWidgets.QMessageBox.warning(
                 self,
-                self.tr("Cache parcialmente limpiada"),
+                self.tr("Caché parcialmente limpiada"),
                 "\n".join(errors[:6]),
             )
 

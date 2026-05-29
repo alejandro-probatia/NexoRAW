@@ -452,7 +452,7 @@ class BatchWorkflowMixin:
             self._save_active_session(silent=True)
             return
         if status == "rejected":
-            self._log_preview(self.tr("Perfil ICC generado activado manualmente pese a estado QA rejected:") + f" {p}")
+            self._log_preview(self.tr("Perfil ICC generado activado manualmente pese a estado QA rechazada:") + f" {p}")
         self.path_profile_active.setText(str(p))
         recipe_path = Path(self.calibrated_recipe_out.text().strip())
         if recipe_path.exists():
@@ -477,7 +477,7 @@ class BatchWorkflowMixin:
         self._invalidate_preview_cache()
         self._schedule_preview_refresh()
         if status == "rejected":
-            self._set_status(self.tr("Perfil activo manualmente (QA rejected):") + f" {p}")
+            self._set_status(self.tr("Perfil activo manualmente (QA rechazada):") + f" {p}")
         else:
             self._set_status(self.tr("Perfil activo:") + f" {p}")
         self._save_active_session(silent=True)
