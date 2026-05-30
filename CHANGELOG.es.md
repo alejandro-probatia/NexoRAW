@@ -51,8 +51,8 @@ Sin entradas todavia.
 
 ### Tests
 
-- Validado con regresiones GUI/perfilado/deteccion focalizadas, compilacion
-  Python y builds de instaladores Windows y Linux.
+- Validado con la suite local completa (`537 passed, 1 skipped, 2 warnings`),
+  compilacion Python y builds de instaladores Windows y Linux.
 
 ## [0.4.1] - 2026-05-29
 

@@ -52,8 +52,8 @@ No entries yet.
 
 ### Tests
 
-- Validated with focused GUI/profile/detection regressions, Python compilation
-  and release installer builds for Windows and Linux.
+- Validated with the full local suite (`537 passed, 1 skipped, 2 warnings`),
+  Python compilation and release installer builds for Windows and Linux.
 
 ## [0.4.1] - 2026-05-29
 

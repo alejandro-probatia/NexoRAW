@@ -19,10 +19,11 @@ manual de cartas y diagnostico Lab. Antes de publicar los artefactos, verificar:
 - las miniaturas mantienen el nombre de archivo por encima de los iconos de
   perfil;
 - la build Linux Debian/Ubuntu genera `probraw_0.4.3_amd64.deb`, valida con
-  `packaging/debian/validate_deb.sh` y su SHA256 se documenta en
-  `docs/releases/0.4.3.es.md`;
+  `packaging/debian/validate_deb.sh` y su SHA256 es
+  `16e1329bff4514374f0d6d7866b602a1866bd6f95035422d3f51211df4f4050c`;
 - la build Windows genera `ProbRAW-0.4.3-Setup.exe` y su `.sha256`, documentados
-  en `docs/releases/0.4.3.es.md`.
+  en `docs/releases/0.4.3.es.md`; su SHA256 es
+  `c171576e88add213e812a3b13ea8f0f46ba529a170c3bc1b6d54a4d6f9639c57`.
 
 ## Release 0.4.2
 
