@@ -57,10 +57,12 @@ jobs:
         shell: pwsh
         working-directory: tmp/rawpy-demosaic
         run: |
-          $vsDevCmd = "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\Common7\Tools\VsDevCmd.bat"
-          if (-not (Test-Path $vsDevCmd)) {
-            $vsDevCmd = "C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\Tools\VsDevCmd.bat"
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          if (-not (Test-Path $vswhere)) {
+            throw "vswhere.exe not found"
           }
+          $vsInstall = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          $vsDevCmd = Join-Path $vsInstall "Common7\Tools\VsDevCmd.bat"
           if (-not (Test-Path $vsDevCmd)) {
             throw "No Visual Studio developer command prompt found"
           }
