@@ -50,10 +50,12 @@ class PreviewRecipeMixin:
             self.edit_illuminant.setText(recipe.illuminant_metadata or "")
 
             if recipe.argyll_colprof_args:
-                self._apply_argyll_args_to_controls(recipe.argyll_colprof_args)
+                self._apply_argyll_args_to_controls(
+                    self._migrate_legacy_default_colprof_args(recipe.argyll_colprof_args)
+                )
             else:
                 self._set_combo_data(self.combo_profile_quality, "m")
-                self._set_combo_data(self.combo_profile_algo, "-as")
+                self._set_combo_data(self.combo_profile_algo, "-al")
                 self.edit_colprof_args.setText("-u -R")
         finally:
             self._suspend_raw_export_autosave = raw_autosave_suspend
@@ -309,6 +311,12 @@ class PreviewRecipeMixin:
         if algo is not None:
             self._set_combo_data(self.combo_profile_algo, algo)
         self.edit_colprof_args.setText(" ".join(extra))
+
+    def _migrate_legacy_default_colprof_args(self, args: list[str]) -> list[str]:
+        normalized = [str(arg).strip() for arg in list(args or []) if str(arg).strip()]
+        if normalized == ["-qm", "-as", "-u", "-R"]:
+            return ["-qm", "-al", "-u", "-R"]
+        return normalized
 
     def _set_combo_data(self, combo: QtWidgets.QComboBox, data_value: str) -> None:
         for i in range(combo.count()):
@@ -618,6 +626,17 @@ class PreviewRecipeMixin:
             self._on_load_selected(show_message=False)
         return False
 
+    def _color_picker_detail_kwargs(self) -> dict[str, float]:
+        ca_red, ca_blue = self._ca_scale_factors()
+        return {
+            "denoise_luminance": float(self.slider_noise_luma.value() / 100.0),
+            "denoise_color": float(self.slider_noise_color.value() / 100.0),
+            "sharpen_amount": float(self.slider_sharpen.value() / 100.0),
+            "sharpen_radius": float(self.slider_radius.value() / 10.0),
+            "lateral_ca_red_scale": float(ca_red),
+            "lateral_ca_blue_scale": float(ca_blue),
+        }
+
     def _sample_color_patch(self, x: float, y: float, *, radius: int) -> dict[str, Any]:
         base = getattr(self, "_original_linear", None)
         if base is None:
@@ -631,20 +650,35 @@ class PreviewRecipeMixin:
         xi = int(round(float(np.clip(x, 0, max(0, w - 1)))))
         yi = int(round(float(np.clip(y, 0, max(0, h - 1)))))
         r = max(0, int(radius))
-        if self._color_picker_detail_adjustments_active():
+        detail_kwargs = self._color_picker_detail_kwargs()
+        if self._color_picker_detail_adjustments_active(detail_kwargs):
             adjusted = getattr(self, "_adjusted_linear", None)
             current_signature = (
                 self._current_adjusted_linear_signature()
                 if hasattr(self, "_current_adjusted_linear_signature")
                 else ""
             )
-            if (
-                adjusted is None
-                or tuple(np.asarray(adjusted).shape[:2]) != (h, w)
-                or str(getattr(self, "_adjusted_linear_signature", "") or "") != current_signature
-            ):
-                raise RuntimeError("La lectura necesita un recalculo exacto de nitidez/ruido/CA a tamano real.")
-            adjusted_image = np.asarray(adjusted, dtype=np.float32)
+            adjusted_is_current = (
+                adjusted is not None
+                and tuple(np.asarray(adjusted).shape[:2]) == (h, w)
+                and str(getattr(self, "_adjusted_linear_signature", "") or "") == current_signature
+            )
+            if adjusted_is_current:
+                adjusted_image = np.asarray(adjusted, dtype=np.float32)
+            else:
+                self._set_status(self.tr("Cuentagotas Lab: recalculando lectura exacta a tamano real..."))
+                detail_adjusted = apply_adjustments(
+                    rgb_image,
+                    denoise_luminance=float(detail_kwargs.get("denoise_luminance", 0.0)),
+                    denoise_color=float(detail_kwargs.get("denoise_color", 0.0)),
+                    sharpen_amount=float(detail_kwargs.get("sharpen_amount", 0.0)),
+                    sharpen_radius=float(detail_kwargs.get("sharpen_radius", 1.0)),
+                    lateral_ca_red_scale=float(detail_kwargs.get("lateral_ca_red_scale", 1.0)),
+                    lateral_ca_blue_scale=float(detail_kwargs.get("lateral_ca_blue_scale", 1.0)),
+                )
+                adjusted_image = apply_render_adjustments(detail_adjusted, **self._render_adjustment_kwargs())
+                self._adjusted_linear = adjusted_image
+                self._adjusted_linear_signature = current_signature
             crop = adjusted_image[
                 max(0, yi - r) : min(h, yi + r + 1),
                 max(0, xi - r) : min(w, xi + r + 1),
@@ -681,30 +715,24 @@ class PreviewRecipeMixin:
             "marker_text_color": marker_text_color,
         }
 
-    def _color_picker_detail_adjustments_active(self) -> bool:
+    def _color_picker_detail_adjustments_active(self, detail_kwargs: dict[str, float] | None = None) -> bool:
         try:
-            detail_kwargs = {
-                "denoise_luminance": float(self.slider_noise_luma.value() / 100.0),
-                "denoise_color": float(self.slider_noise_color.value() / 100.0),
-                "sharpen_amount": float(self.slider_sharpen.value() / 100.0),
-                "sharpen_radius": float(self.slider_radius.value() / 10.0),
-            }
-            ca_red, ca_blue = self._ca_scale_factors()
-            detail_kwargs["lateral_ca_red_scale"] = float(ca_red)
-            detail_kwargs["lateral_ca_blue_scale"] = float(ca_blue)
+            if detail_kwargs is None:
+                detail_kwargs = self._color_picker_detail_kwargs()
             if hasattr(self, "_detail_kwargs_have_effect"):
                 return bool(self._detail_kwargs_have_effect(detail_kwargs))
+            sharpen_amount = float(detail_kwargs.get("sharpen_amount", 0.0))
+            sharpen_radius = float(detail_kwargs.get("sharpen_radius", 1.0))
             return any(
                 abs(float(detail_kwargs.get(name, default)) - float(default)) > 1e-6
                 for name, default in (
                     ("denoise_luminance", 0.0),
                     ("denoise_color", 0.0),
                     ("sharpen_amount", 0.0),
-                    ("sharpen_radius", 1.0),
                     ("lateral_ca_red_scale", 1.0),
                     ("lateral_ca_blue_scale", 1.0),
                 )
-            )
+            ) or (sharpen_amount > 1e-6 and abs(sharpen_radius - 1.0) > 1e-6)
         except Exception:
             return False
 
@@ -1059,6 +1087,42 @@ class PreviewRecipeMixin:
         self._push_color_picker_history_snapshot("color_sample_delete")
         self._set_status(self.tr("Toma de color eliminada") + f": {row + 1}")
 
+    def _choose_color_sample_marker_color(self, row: int | None = None) -> None:
+        if row is None:
+            row = self._selected_color_sample_row()
+        if row is None:
+            self._set_status(self.tr("Selecciona una muestra para cambiar el color del marcador"))
+            return
+        samples = getattr(self, "_color_picker_samples", [])
+        if not isinstance(samples, list) or not (0 <= int(row) < len(samples)):
+            return
+        self._select_color_sample_row(int(row))
+        current = QtGui.QColor(str(samples[int(row)].get("marker_color") or "#22d3ee"))
+        if not current.isValid():
+            current = QtGui.QColor("#22d3ee")
+        color = QtWidgets.QColorDialog.getColor(current, self, self.tr("Color del marcador"))
+        if not color.isValid():
+            return
+        self._set_color_sample_marker_color(int(row), color.name())
+
+    def _set_color_sample_marker_color(self, row: int, color_name: str) -> bool:
+        samples = getattr(self, "_color_picker_samples", [])
+        if not isinstance(samples, list) or not (0 <= int(row) < len(samples)):
+            return False
+        color = QtGui.QColor(str(color_name))
+        if not color.isValid():
+            return False
+        marker_color = color.name()
+        marker_text = self._color_picker_marker_color_strings([color.red(), color.green(), color.blue()])[1]
+        samples[int(row)]["marker_color"] = marker_color
+        samples[int(row)]["marker_text_color"] = marker_text
+        self._refresh_color_sample_cards()
+        self._sync_color_sample_overlay()
+        self._persist_color_picker_samples_for_selected()
+        self._push_color_picker_history_snapshot("color_sample_marker_color")
+        self._set_status(self.tr("Color de marcador actualizado") + f": {int(row) + 1}")
+        return True
+
     def _on_color_sample_table_item_changed(self, item: QtWidgets.QTableWidgetItem | None) -> None:
         if item is None or item.column() not in (1, 2, 3):
             return
@@ -1092,6 +1156,23 @@ class PreviewRecipeMixin:
             return
         view = str(combo.currentData() or "table")
         stack.setCurrentIndex(1 if view == "cards" else 0)
+
+    def _show_color_sample_gamut_dialog(self) -> None:
+        source = getattr(self, "color_sample_gamut_widget", None)
+        groups = source.groups() if source is not None and hasattr(source, "groups") else []
+        dialog = QtWidgets.QDialog(self)
+        dialog.setWindowTitle(self.tr("Grafico de muestras Lab a*b*"))
+        layout = QtWidgets.QVBoxLayout(dialog)
+        widget = ColorSampleGamutWidget()
+        widget.setMinimumSize(720, 520)
+        widget.setMaximumHeight(16777215)
+        widget.set_groups(groups)
+        layout.addWidget(widget, 1)
+        buttons = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Close)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+        dialog.resize(820, 620)
+        dialog.exec()
 
     def _default_color_sample_group(self) -> str:
         return self.tr("Conjunto 1")
@@ -1429,6 +1510,10 @@ class PreviewRecipeMixin:
             return
         if 0 <= int(row) < table.rowCount():
             table.selectRow(int(row))
+            item = table.item(int(row), 0)
+            if item is not None:
+                table.scrollToItem(item, QtWidgets.QAbstractItemView.PositionAtCenter)
+            self._sync_color_sample_overlay()
 
     def _clear_color_sample_cards(self) -> None:
         layout = getattr(self, "color_sample_cards_layout", None)
@@ -1468,24 +1553,29 @@ class PreviewRecipeMixin:
         frame.setStyleSheet(
             "QFrame { background: #262626; border: 1px solid #4a4a4a; border-radius: 6px; }"
             "QLabel { border: none; background: transparent; }"
+            "QToolButton { border: 1px solid #5a5a5a; border-radius: 4px; padding: 2px 7px; }"
+            "QToolButton:hover { border-color: #7dd3fc; }"
         )
         card = QtWidgets.QGridLayout(frame)
-        card.setContentsMargins(8, 8, 8, 8)
+        card.setContentsMargins(7, 6, 7, 6)
         card.setHorizontalSpacing(8)
-        card.setVerticalSpacing(4)
+        card.setVerticalSpacing(2)
 
-        swatch = QtWidgets.QLabel(str(row + 1))
-        swatch.setAlignment(QtCore.Qt.AlignCenter)
-        swatch.setFixedSize(30, 30)
+        swatch = QtWidgets.QToolButton()
+        swatch.setText(str(row + 1))
+        swatch.setFixedSize(28, 28)
         fill = str(sample.get("marker_color") or "#22d3ee")
         text = str(sample.get("marker_text_color") or "#ffffff")
         swatch.setStyleSheet(
             f"background: {fill}; color: {text}; border: 1px solid #e6e6e6; border-radius: 4px; font-weight: 700;"
         )
+        swatch.setToolTip(self.tr("Cambiar color del marcador"))
+        swatch.clicked.connect(lambda _checked=False, sample_row=row: self._choose_color_sample_marker_color(sample_row))
         card.addWidget(swatch, 0, 0, 2, 1)
 
         title = QtWidgets.QLabel(f"{row + 1} - " + str(sample.get("name") or f"Muestra {row + 1}"))
         title.setStyleSheet("color: #f7f7f7; font-weight: 700;")
+        title.setWordWrap(False)
         card.addWidget(title, 0, 1, 1, 2)
 
         group = self._color_sample_group_name(sample.get("group"))
@@ -1494,15 +1584,17 @@ class PreviewRecipeMixin:
             f"{sample.get('matrix', '1x1')} ({int(sample.get('count', 0))} px)"
         )
         meta.setStyleSheet("color: #d4d4d4;")
+        meta.setWordWrap(False)
         card.addWidget(meta, 1, 1, 1, 2)
 
         rgb_lab = QtWidgets.QLabel(
-            f"RGB {self._color_sample_rgb_text(sample)}\n"
+            f"RGB {self._color_sample_rgb_text(sample)} | "
             f"Lab {self._color_sample_lab_text(sample)} | C* "
             + (f"{float(sample.get('chroma') or 0.0):.2f}" if self._color_sample_reading_is_current(sample) else "--")
         )
         rgb_lab.setStyleSheet("color: #d8d8d8;")
-        card.addWidget(rgb_lab, 2, 0, 1, 3)
+        rgb_lab.setWordWrap(False)
+        card.addWidget(rgb_lab, 2, 0, 1, 4)
 
         if self._color_sample_reading_is_current(sample):
             delta = (
@@ -1524,21 +1616,30 @@ class PreviewRecipeMixin:
         else:
             delta = self.tr("Lectura pendiente de recalculo a tamano real")
             gamut = self.tr("Sin valores colorimetricos actuales")
-        detail = QtWidgets.QLabel(delta + "\n" + gamut)
+        detail = QtWidgets.QLabel(delta + " | " + gamut)
         detail.setStyleSheet("color: #d8d8d8;")
-        card.addWidget(detail, 3, 0, 1, 3)
+        detail.setWordWrap(False)
+        card.addWidget(detail, 3, 0, 1, 4)
 
         note_text = str(sample.get("note") or "").strip()
         if note_text:
             note = QtWidgets.QLabel(note_text)
-            note.setWordWrap(True)
+            note.setWordWrap(False)
             note.setStyleSheet("color: #a6a6a6;")
-            card.addWidget(note, 4, 0, 1, 3)
+            card.addWidget(note, 4, 0, 1, 4)
 
-        select_button = QtWidgets.QPushButton(self.tr("Seleccionar"))
+        select_button = QtWidgets.QToolButton()
+        select_button.setText(self.tr("Ver"))
+        select_button.setToolTip(self.tr("Seleccionar muestra en la imagen"))
         select_button.clicked.connect(lambda _checked=False, sample_row=row: self._select_color_sample_row(sample_row))
-        card.addWidget(select_button, 5, 2)
+        card.addWidget(select_button, 0, 3, 1, 1)
+        color_button = QtWidgets.QToolButton()
+        color_button.setText(self.tr("Color"))
+        color_button.setToolTip(self.tr("Cambiar color del marcador"))
+        color_button.clicked.connect(lambda _checked=False, sample_row=row: self._choose_color_sample_marker_color(sample_row))
+        card.addWidget(color_button, 1, 3, 1, 1)
         card.setColumnStretch(1, 1)
+        card.setColumnStretch(2, 0)
         return frame
 
     def _color_sample_group_stats(self) -> dict[str, dict[str, Any]]:
@@ -1785,6 +1886,7 @@ class PreviewRecipeMixin:
 
     def _sync_color_sample_overlay(self) -> None:
         samples = list(getattr(self, "_color_picker_samples", []) or [])
+        selected_row = self._selected_color_sample_row()
         markers = [
             {
                 "x": int(sample.get("x", 0)),
@@ -1793,6 +1895,7 @@ class PreviewRecipeMixin:
                 "label": str(index),
                 "color": str(sample.get("marker_color") or "#22d3ee"),
                 "text_color": str(sample.get("marker_text_color") or "#ffffff"),
+                "selected": selected_row is not None and int(selected_row) == index - 1,
             }
             for index, sample in enumerate(samples, start=1)
         ]
@@ -2711,7 +2814,7 @@ class PreviewRecipeMixin:
 
     def _build_colprof_args(self) -> list[str]:
         quality = str(self.combo_profile_quality.currentData() or "m")
-        algo = str(self.combo_profile_algo.currentData() or "-as")
+        algo = str(self.combo_profile_algo.currentData() or "-al")
         args = [f"-q{quality}", algo]
         custom = self.edit_colprof_args.text().strip()
         if custom:

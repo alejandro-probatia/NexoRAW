@@ -33,7 +33,7 @@ from .provenance.probraw_proof import ProbRawProofConfig
 from .raw.pipeline import develop_image_array
 
 
-PROFILE_CHART_EXTENSIONS = RAW_EXTENSIONS | {".tif", ".tiff"}
+PROFILE_CHART_EXTENSIONS = set(RAW_EXTENSIONS)
 NEUTRAL_PATCH_IDS = ("P19", "P20", "P21", "P22", "P23", "P24")
 LUMA_WEIGHTS = np.asarray([0.2126, 0.7152, 0.0722], dtype=np.float64)
 LOW_SIGNAL_BRIGHT_NEUTRAL_MIN = 0.25
@@ -41,6 +41,8 @@ LOW_SIGNAL_MEDIAN_LUMA_MIN = 0.05
 NEUTRAL_DENSITY_SPREAD_EV_MAX = 0.35
 NEUTRAL_ILLUMINATION_GRADIENT_EV_MAX = 0.25
 NEUTRAL_AB_RESIDUAL_WARN = 3.0
+PROFILE_NEUTRAL_MAX_SATURATED_PIXEL_RATIO = 0.02
+PROFILE_PATCH_MAX_SATURATED_PIXEL_RATIO = 0.20
 PROFILE_MODEL_FLAGS = {
     "-as": "shaper+matrix",
     "-ag": "gamma+matrix",
@@ -48,7 +50,7 @@ PROFILE_MODEL_FLAGS = {
     "-al": "Lab cLUT",
     "-ax": "XYZ cLUT",
 }
-CLUT_PROFILE_FLAGS = {"-al", "-ax"}
+SPARSE_CHART_RISKY_PROFILE_FLAGS = {"-ax"}
 PROFILE_STATUS_DRAFT = "draft"
 PROFILE_STATUS_VALIDATED = "validated"
 PROFILE_STATUS_REJECTED = "rejected"
@@ -390,7 +392,7 @@ def auto_generate_profile_from_charts(
             progress_callback,
             90,
             "Sin validacion independiente",
-            "No hay capturas reservadas para holdout; el perfil quedara como draft",
+            "No hay capturas reservadas para holdout; se usara la QA contra la referencia colorimetrica de la carta",
         )
 
     _emit_workflow_progress(
@@ -575,6 +577,19 @@ def sanitize_recipe_for_profiling(recipe: Recipe) -> tuple[Recipe, list[dict[str
     changes: list[dict[str, str]] = []
     updates: dict[str, Any] = {}
 
+    if recipe.white_balance_mode.strip().lower() != "fixed":
+        changes.append({"field": "white_balance_mode", "from": str(recipe.white_balance_mode), "to": "fixed"})
+        updates["white_balance_mode"] = "fixed"
+    try:
+        wb_values = [float(v) for v in (recipe.wb_multipliers or [])]
+    except (TypeError, ValueError):
+        wb_values = []
+    if len(wb_values) != 4 or any(abs(value - 1.0) > 1e-6 for value in wb_values):
+        changes.append({"field": "wb_multipliers", "from": str(recipe.wb_multipliers), "to": "[1.0, 1.0, 1.0, 1.0]"})
+        updates["wb_multipliers"] = [1.0, 1.0, 1.0, 1.0]
+    if abs(float(recipe.exposure_compensation)) > 1e-6:
+        changes.append({"field": "exposure_compensation", "from": str(recipe.exposure_compensation), "to": "0.0"})
+        updates["exposure_compensation"] = 0.0
     if recipe.denoise.lower() != "off":
         changes.append({"field": "denoise", "from": str(recipe.denoise), "to": "off"})
         updates["denoise"] = "off"
@@ -666,9 +681,9 @@ def _build_profile_status(
     validation_status: str | None = None
     training_status: str | None = None
 
+    status = PROFILE_STATUS_DRAFT
     if validation_payload is None:
-        status = PROFILE_STATUS_DRAFT
-        reasons.append("sin_validacion_independiente")
+        reasons.append("validacion_independiente_no_disponible")
     else:
         qa_report = validation_payload.get("qa_report") if isinstance(validation_payload.get("qa_report"), dict) else {}
         validation_status = str(qa_report.get("status") or "not_validated")
@@ -695,6 +710,9 @@ def _build_profile_status(
             reasons.append("error_entrenamiento_colorimetrico_alto")
         else:
             training_status = "passed"
+            if status == PROFILE_STATUS_DRAFT:
+                status = PROFILE_STATUS_VALIDATED
+                reasons.append("qa_entrenamiento_colorimetrico_superada")
 
     if status == PROFILE_STATUS_VALIDATED and valid_until:
         now_dt = _parse_iso_datetime(now) if now else datetime.now(timezone.utc)
@@ -799,13 +817,13 @@ def _build_session_qa_report(
             "id": "validation_samples_available",
             "severity": "warning",
             "passed": validation_result is not None,
-            "message": (
-                "hay muestras independientes de validacion"
-                if validation_result
-                else "no hay muestras independientes validas; el ICC se conserva como draft utilizable"
-            ),
-        }
-    )
+                "message": (
+                    "hay muestras independientes de validacion"
+                    if validation_result
+                    else "no hay muestras independientes validas; la validacion independiente queda como diagnostico no concluyente"
+                ),
+            }
+        )
 
     if validation_error:
         mean_de = float(validation_error.get("mean_delta_e2000", float("inf")))
@@ -960,21 +978,23 @@ def _profile_workflow_recommendations(
                 "blocking": False,
                 "message": (
                     "Hay suficientes capturas para trabajar, pero no hay validacion independiente utilizable. "
-                    "El ICC queda como draft y puede activarse manualmente si el operador acepta el riesgo."
+                    "El estado operativo se decide por la QA contra la referencia colorimetrica de la carta; "
+                    "usa otra captura solo como diagnostico adicional cuando sea posible."
                 ),
             }
         )
 
     model_flag = _colprof_profile_model_flag(recipe.argyll_colprof_args)
-    if str(chart_type or "").strip().lower() == "colorchecker24" and model_flag in CLUT_PROFILE_FLAGS:
+    if str(chart_type or "").strip().lower() == "colorchecker24" and model_flag in SPARSE_CHART_RISKY_PROFILE_FLAGS:
         recommendations.append(
             {
-                "id": "colorchecker24_clut_overfit_risk",
+                "id": "colorchecker24_xyz_clut_sparse_risk",
                 "severity": "warning",
                 "blocking": False,
                 "message": (
-                    "Con ColorChecker 24, los perfiles cLUT pueden sobreajustar. "
-                    "Para flujo rapido se permite, pero shaper+matrix (-as) es la opcion conservadora."
+                    "Con ColorChecker 24, XYZ cLUT (-ax) puede ser menos robusto si la carta es escasa "
+                    "o irregular. Lab cLUT (-al) es el preset recomendado; matriz (-am) queda como "
+                    "opcion tecnica para RAW lineal cuando se busca maxima simplicidad."
                 ),
             }
         )
@@ -1015,7 +1035,7 @@ def _colprof_profile_model_flag(args: list[str] | None) -> str:
     for arg in raw_args:
         if str(arg) in PROFILE_MODEL_FLAGS:
             return str(arg)
-    return "-as"
+    return "-al"
 
 
 def _reference_is_generic_colorchecker(reference: ReferenceCatalog) -> bool:
@@ -1171,6 +1191,39 @@ def _single_capture_quality(samples: SampleSet) -> dict[str, Any]:
         "neutral_illumination_gradient_ev": _neutral_illumination_gradient(neutral_density),
         "neutral_density_residuals_ev": neutral_density,
     }
+
+
+def _profile_sample_quality_rejection(samples: SampleSet) -> dict[str, Any] | None:
+    failures: list[dict[str, Any]] = []
+    for sample in samples.samples:
+        patch_id = str(sample.patch_id)
+        saturated = float(sample.saturated_pixel_ratio)
+        is_neutral = patch_id in NEUTRAL_PATCH_IDS
+        limit = (
+            PROFILE_NEUTRAL_MAX_SATURATED_PIXEL_RATIO
+            if is_neutral
+            else PROFILE_PATCH_MAX_SATURATED_PIXEL_RATIO
+        )
+        if saturated <= limit:
+            continue
+        failures.append(
+            {
+                "reason": "neutral_patch_saturation" if is_neutral else "patch_saturation",
+                "patch_id": patch_id,
+                "saturated_pixel_ratio": saturated,
+                "limit": float(limit),
+                "excluded_pixel_ratio": float(sample.excluded_pixel_ratio),
+                "sample_center": sample.sample_center,
+                "severity": saturated / max(limit, 1e-6),
+            }
+        )
+
+    if not failures:
+        return None
+    failures.sort(key=lambda item: float(item.get("severity") or 0.0), reverse=True)
+    failure = dict(failures[0])
+    failure.pop("severity", None)
+    return failure
 
 
 def _capture_quality_checks(label: str, quality: dict[str, Any]) -> list[dict[str, Any]]:
@@ -1353,6 +1406,18 @@ def _skipped_capture_summary(skipped: list[dict[str, Any]], *, limit: int = 5) -
                 fields.append(f"min={float(item['min_confidence']):.3f}")
             except Exception:
                 fields.append(f"min={item.get('min_confidence')}")
+        if item.get("patch_id"):
+            fields.append(f"parche={item.get('patch_id')}")
+        if item.get("saturated_pixel_ratio") is not None:
+            try:
+                fields.append(f"saturacion={float(item['saturated_pixel_ratio']):.3f}")
+            except Exception:
+                fields.append(f"saturacion={item.get('saturated_pixel_ratio')}")
+        if item.get("limit") is not None:
+            try:
+                fields.append(f"limite={float(item['limit']):.3f}")
+            except Exception:
+                fields.append(f"limite={item.get('limit')}")
         warnings = item.get("warnings") if isinstance(item.get("warnings"), list) else []
         if warnings:
             fields.append(f"aviso={str(warnings[0])}")
@@ -1616,6 +1681,26 @@ def _process_chart_sample_job(job: tuple[Any, ...]) -> dict[str, Any]:
             reject_saturated=recipe.sampling_reject_saturated,
         )
         write_json(Path(sample_path), samples)
+        quality_rejection = _profile_sample_quality_rejection(samples)
+        if quality_rejection is not None:
+            return {
+                "index": int(idx),
+                "detection_key": str(detection_key),
+                "detection": detection,
+                "accepted_sample": None,
+                "skipped": [
+                    {
+                        "pass": pass_name,
+                        "capture": str(chart_file),
+                        **quality_rejection,
+                        "confidence": float(detection.confidence_score),
+                        "detection_mode": str(detection.detection_mode),
+                        "warnings": [str(w) for w in detection.warnings],
+                        "detection_json": str(detection_path),
+                        "sample_json": str(sample_path),
+                    }
+                ],
+            }
         return {
             "index": int(idx),
             "detection_key": str(detection_key),
@@ -1823,7 +1908,7 @@ def _normalize_chart_capture_files(files: list[Path]) -> list[Path]:
         suffix = "" if len(invalid) <= 5 else f" (+{len(invalid) - 5} más)"
         raise RuntimeError(
             "Capturas de carta invalidas o incompatibles para perfilado cientifico "
-            f"(solo RAW/DNG/TIFF lineal): {preview}{suffix}"
+            f"(solo RAW/DNG originales): {preview}{suffix}"
         )
 
     return sorted(set(normalized), key=lambda p: str(p))

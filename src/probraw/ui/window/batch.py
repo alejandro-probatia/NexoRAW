@@ -361,7 +361,8 @@ class BatchWorkflowMixin:
             self._show_signature_config_error(exc)
             return
 
-        def task():
+        def task(progress_emit=None):
+            progress_emit = progress_emit or (lambda _event: None)
             payload = self._process_batch_files(
                 files=files,
                 out_dir=out_dir,
@@ -383,6 +384,7 @@ class BatchWorkflowMixin:
                 development_profile=self._profile_payload_from_development_settings(settings),
                 tiff_compression=tiff_compression,
                 tiff_maxworkers=tiff_maxworkers,
+                progress_callback=progress_emit,
             )
             payload["task"] = task_label
             return payload
@@ -406,7 +408,7 @@ class BatchWorkflowMixin:
             self._sync_selected_after_batch_render(payload)
             self._save_active_session(silent=True)
 
-        self._start_background_task(task_label, task, on_success)
+        self._start_background_task(task_label, task, on_success, on_progress=lambda _event: None)
 
     def _sync_selected_after_batch_render(self, payload: dict[str, Any]) -> None:
         selected = getattr(self, "_selected_file", None)
@@ -449,10 +451,11 @@ class BatchWorkflowMixin:
                 self._save_active_session(silent=True)
                 return
         if not self._profile_can_be_active(p, allow_rejected=allow_rejected):
+            status_label = self._profile_status_label(status)
             QtWidgets.QMessageBox.warning(
                 self,
                 self.tr("Perfil no activable"),
-                self.tr("No se activa el perfil generado porque su estado QA es") + f" '{status}'. "
+                self.tr("No se activa el perfil generado porque su estado QA es") + f" '{status_label}'. "
                 + self.tr("Regenera el perfil con referencias RAW/DNG originales."),
             )
             self.path_profile_active.clear()

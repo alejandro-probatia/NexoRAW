@@ -21,6 +21,7 @@ import probraw.ui.window.preview_recipe as preview_recipe_module  # noqa: E402
 import probraw.ui.window.preview_render as preview_render_module  # noqa: E402
 import probraw.ui.window.tasks as tasks_module  # noqa: E402
 from probraw.analysis.mtf import MTFResult  # noqa: E402
+from probraw.chart.detection import detect_chart_from_corners_array  # noqa: E402
 from probraw.chart.sampling import ReferenceCatalog  # noqa: E402
 from probraw.core.models import Recipe  # noqa: E402
 from probraw.core.utils import write_tiff16  # noqa: E402
@@ -1432,6 +1433,7 @@ def test_thumbnail_size_control_resizes_file_list(qapp):
         assert window.file_list.horizontalScrollBarPolicy() == QtCore.Qt.ScrollBarAsNeeded
         assert window.file_list.verticalScrollBarPolicy() == QtCore.Qt.ScrollBarAlwaysOff
         assert not window.file_list.uniformItemSizes()
+        assert window.file_list.textElideMode() == QtCore.Qt.ElideMiddle
         window.thumbnail_size_slider.setValue(180)
         assert window.file_list.iconSize().width() == 180
         assert not window.file_list.gridSize().isValid()
@@ -1456,12 +1458,51 @@ def test_thumbnail_icon_uses_image_aspect_instead_of_square_canvas(tmp_path: Pat
         display_icon = window._display_icon_for_path(image_path, base_icon)
         display_pixmap = display_icon.pixmap(window.file_list.iconSize())
         assert display_pixmap.width() == 120
-        assert display_pixmap.height() == 40
+        assert display_pixmap.height() == 40 + window._thumbnail_filename_label_height() + window._thumbnail_badge_strip_height(120)
 
-        item = QtWidgets.QListWidgetItem("")
+        item = QtWidgets.QListWidgetItem(image_path.name)
         window._set_file_item_display_icon(item, image_path, base_icon)
-        assert item.sizeHint().width() == 124
-        assert item.sizeHint().height() == 44
+        assert item.text() == ""
+        assert item.data(QtCore.Qt.UserRole + 1) == image_path.name
+        assert item.sizeHint().width() == 128
+        assert item.sizeHint().height() == 48 + window._thumbnail_filename_label_height() + window._thumbnail_badge_strip_height(120)
+    finally:
+        window.close()
+
+
+def test_thumbnail_filename_stays_above_profile_badge_strip(tmp_path: Path, qapp):
+    image_path = tmp_path / "capture.NEF"
+    image_path.write_bytes(b"raw")
+
+    window = ICCRawMainWindow()
+    try:
+        window._apply_thumbnail_size(120)
+        base_icon = window._icon_from_thumbnail_array(
+            gui_module.np.full((40, 120, 3), 128, dtype=gui_module.np.uint8),
+            target_size=QtCore.QSize(120, 120),
+        )
+        label_h = window._thumbnail_filename_label_height()
+        badge_h = window._thumbnail_badge_strip_height(120)
+        expected_h = 40 + label_h + badge_h
+
+        plain = window._icon_with_thumbnail_markers(
+            base_icon,
+            size=120,
+            label=image_path.name,
+            badges=[],
+            reserve_badge_space=True,
+        ).pixmap(window.file_list.iconSize())
+        badged = window._icon_with_thumbnail_markers(
+            base_icon,
+            size=120,
+            label=image_path.name,
+            badges=["icc"],
+            reserve_badge_space=True,
+        ).pixmap(window.file_list.iconSize())
+
+        assert plain.height() == expected_h
+        assert badged.height() == expected_h
+        assert plain.width() == badged.width() == 120
     finally:
         window.close()
 
@@ -1501,6 +1542,7 @@ def test_legacy_raw_directory_selection_maps_to_new_org_directory(tmp_path: Path
         assert window._current_dir == raw_dir.resolve()
         assert window.file_list.count() == 1
         assert Path(window.file_list.item(0).data(QtCore.Qt.UserRole)) == raw_path.resolve()
+        assert window.file_list.item(0).data(QtCore.Qt.UserRole + 1) == raw_path.name
     finally:
         window.close()
 
@@ -2035,20 +2077,23 @@ def test_thumbnail_batch_limits_background_work(tmp_path: Path, qapp):
         window.close()
 
 
-def test_selected_color_reference_images_update_reference_label_without_profile_marker(tmp_path: Path, qapp):
-    image_path = tmp_path / "reference.tiff"
-    Image.new("RGB", (96, 48), (20, 120, 220)).save(image_path)
+def test_selected_color_reference_raws_update_reference_label_without_profile_marker(tmp_path: Path, qapp):
+    image_path = tmp_path / "reference.NEF"
+    image_path.write_bytes(b"raw chart")
 
     window = ICCRawMainWindow()
     try:
-        window._set_current_directory(tmp_path)
+        window.file_list.setIconSize(QtCore.QSize(72, 72))
+        item = QtWidgets.QListWidgetItem(image_path.name)
+        item.setData(QtCore.Qt.UserRole, str(image_path))
+        window.file_list.addItem(item)
+        window._file_items_by_key[window._normalized_path_key(image_path)] = item
         base_icon = window._icon_from_thumbnail_array(
             gui_module.np.full((64, 64, 3), (48, 48, 48), dtype=gui_module.np.uint8)
         )
         window._image_thumb_cache[window._thumbnail_cache_key(image_path, 72)] = base_icon
         window._apply_cached_thumbnails([image_path], 72)
 
-        item = window.file_list.item(0)
         item.setSelected(True)
         window.file_list.setCurrentItem(item)
         window._use_selected_files_as_profile_charts()
@@ -3869,7 +3914,10 @@ def test_tone_curve_editor_uses_active_rgb_channel_histogram_and_keeps_overlays(
 def test_colprof_args_default_to_restricted_input_gamut(qapp):
     window = ICCRawMainWindow()
     try:
-        assert window._build_colprof_args() == ["-qm", "-as", "-u", "-R"]
+        assert window._build_colprof_args() == ["-qm", "-al", "-u", "-R"]
+
+        window._apply_recipe_to_controls(Recipe(argyll_colprof_args=["-qm", "-as", "-u", "-R"]))
+        assert window._build_colprof_args() == ["-qm", "-al", "-u", "-R"]
 
         window._apply_recipe_to_controls(Recipe(argyll_colprof_args=["-qh", "-al"]))
 
@@ -3880,18 +3928,18 @@ def test_colprof_args_default_to_restricted_input_gamut(qapp):
         window.close()
 
 
-def test_recommended_colprof_preset_restores_conservative_colorchecker_defaults(qapp):
+def test_recommended_colprof_preset_restores_colorchecker_defaults(qapp):
     window = ICCRawMainWindow()
     try:
-        window._apply_recipe_to_controls(Recipe(argyll_colprof_args=["-qh", "-al"]))
+        window._apply_recipe_to_controls(Recipe(argyll_colprof_args=["-qh", "-ax"]))
         assert window._uses_risky_colorchecker24_colprof_model()
 
         window._set_recommended_colprof_args()
 
         assert window.combo_profile_quality.currentData() == "m"
-        assert window.combo_profile_algo.currentData() == "-as"
+        assert window.combo_profile_algo.currentData() == "-al"
         assert window.edit_colprof_args.text() == "-u -R"
-        assert window._build_colprof_args() == ["-qm", "-as", "-u", "-R"]
+        assert window._build_colprof_args() == ["-qm", "-al", "-u", "-R"]
         assert not window._uses_risky_colorchecker24_colprof_model()
     finally:
         window.close()
@@ -4012,16 +4060,21 @@ def test_use_generated_profile_rejected_manual_activation_requires_confirmation(
         profile.parent.mkdir(parents=True, exist_ok=True)
         profile.write_bytes(b"generated profile" * 32)
         profile.with_suffix(".profile.json").write_text('{"profile_status": "rejected"}', encoding="utf-8")
-        monkeypatch.setattr(
-            QtWidgets.QMessageBox,
-            "question",
-            lambda *_args, **_kwargs: QtWidgets.QMessageBox.No,
-        )
+        question_payload: dict[str, str] = {}
+
+        def fake_question(_parent, title, text, *_args, **_kwargs):
+            question_payload["title"] = str(title)
+            question_payload["text"] = str(text)
+            return QtWidgets.QMessageBox.No
+
+        monkeypatch.setattr(QtWidgets.QMessageBox, "question", fake_question)
 
         window._use_generated_profile_as_active()
 
         assert not window.chk_apply_profile.isChecked()
         assert window._active_session_icc_for_settings() is None
+        assert "rechazado" in question_payload["text"]
+        assert "rejected" not in question_payload["text"]
         saved_state = load_session(root)["state"]
         assert saved_state["profile_active_path"] == ""
     finally:
@@ -4070,9 +4123,76 @@ def test_activate_session_loads_generated_icc_profile_catalog(tmp_path: Path, mo
         window.close()
 
 
+def test_legacy_draft_due_only_to_missing_validation_is_treated_as_validated(tmp_path: Path, qapp):
+    root = tmp_path / "session"
+    payload = create_session(root, name="Sesion perfiles")
+    window = ICCRawMainWindow()
+    try:
+        window._activate_session(root, payload)
+        paths = window._session_paths_from_root(root)
+        profile = paths["profiles"] / "legacy.icc"
+        profile.parent.mkdir(parents=True, exist_ok=True)
+        profile.write_bytes(b"legacy profile" * 32)
+        legacy_status = {
+            "status": "draft",
+            "training_status": "passed",
+            "reasons": ["sin_validacion_independiente"],
+            "training_error_summary": {"mean_delta_e2000": 1.2, "max_delta_e2000": 3.4},
+            "thresholds": {"mean_delta_e2000_max": 5.0, "max_delta_e2000_max": 10.0},
+        }
+        profile.with_suffix(".profile.json").write_text(
+            json.dumps({"profile_status": legacy_status}),
+            encoding="utf-8",
+        )
+
+        profile_id = window._register_icc_profile(
+            {"name": "legacy", "source": "generated", "path": str(profile)},
+            activate=False,
+        )
+        window._sync_session_icc_profiles_from_disk()
+
+        registered = window._icc_profile_by_id(profile_id)
+        assert registered is not None
+        assert window._profile_status_for_path(profile) == "validated"
+        assert "validado" in window._icc_profile_combo_label(registered)
+        assert "pendiente QA" not in window._icc_profile_combo_label(registered)
+
+        recipe_path = paths["config"] / "development_profiles" / "legacy" / "recipe.yml"
+        manifest_path = recipe_path.with_name("development_profile.json")
+        manifest_path.parent.mkdir(parents=True, exist_ok=True)
+        gui_module.save_recipe(Recipe(output_space="scene_linear_camera_rgb", output_linear=True), recipe_path)
+        manifest_path.write_text(
+            json.dumps(
+                {
+                    "id": "legacy-dev",
+                    "name": "Legacy dev",
+                    "kind": "chart",
+                    "profile_status": legacy_status,
+                    "recipe_path": window._session_relative_or_absolute(recipe_path),
+                    "icc_profile_path": window._session_relative_or_absolute(profile),
+                }
+            ),
+            encoding="utf-8",
+        )
+        window._register_development_profile(
+            {
+                "id": "legacy-dev",
+                "name": "Legacy dev",
+                "kind": "chart",
+                "recipe_path": window._session_relative_or_absolute(recipe_path),
+                "manifest_path": window._session_relative_or_absolute(manifest_path),
+                "icc_profile_path": window._session_relative_or_absolute(profile),
+            },
+            activate=False,
+        )
+        assert window._development_profile_status(window._development_profile_by_id("legacy-dev")) == "validated"
+    finally:
+        window.close()
+
+
 def test_profile_generation_versions_session_icc_outputs_and_registers_profile(tmp_path: Path, monkeypatch, qapp):
-    chart = tmp_path / "chart.tiff"
-    Image.new("RGB", (16, 16), (20, 120, 220)).save(chart)
+    chart = tmp_path / "chart.NEF"
+    chart.write_bytes(b"raw chart")
     root = tmp_path / "session"
     payload = create_session(root, name="Sesion perfiles")
     captured: dict[str, Path] = {}
@@ -4212,6 +4332,9 @@ def test_rejected_session_icc_remains_selectable_for_manual_activation(tmp_path:
 
         index = window.icc_profile_combo.findData(profile_id)
         assert index >= 0
+        combo_text = window.icc_profile_combo.itemText(index)
+        assert "rechazado" in combo_text
+        assert "rejected" not in combo_text
         window.icc_profile_combo.setCurrentIndex(index)
 
         assert window.radio_icc_existing.isChecked()
@@ -4265,6 +4388,103 @@ def test_selecting_generated_session_icc_assigns_profile_to_active_raw_sidecar(t
         assert sidecar["recipe"]["output_space"] == "scene_linear_camera_rgb"
         assert window._active_icc_profile_id == profile_id
         assert window._active_session_icc_for_settings() == profile
+    finally:
+        window.close()
+
+
+def test_selecting_generated_session_icc_assigns_linked_development_profile(tmp_path: Path, monkeypatch, qapp):
+    root = tmp_path / "session"
+    payload = create_session(root, name="perfil_sesion")
+    raw = root / "01_ORG" / "target.NEF"
+    raw.parent.mkdir(parents=True, exist_ok=True)
+    raw.write_bytes(b"raw bytes")
+
+    window = ICCRawMainWindow()
+    try:
+        window._activate_session(root, payload)
+        window._selected_file = raw
+        write_raw_sidecar(
+            raw,
+            recipe=Recipe(output_space="scene_linear_camera_rgb", output_linear=True, exposure_compensation=-1.0),
+            development_profile={"id": "old-profile", "name": "Perfil antiguo", "kind": "manual", "profile_type": "basic"},
+            detail_adjustments={},
+            render_adjustments={},
+            icc_profile_path=None,
+            session_root=root,
+            session_name="perfil_sesion",
+            status="configured",
+        )
+
+        profile = root / "00_configuraciones" / "profiles" / "perfil_sesion.icc"
+        profile.parent.mkdir(parents=True, exist_ok=True)
+        profile.write_bytes(b"fake icc profile bytes" * 16)
+        profile.with_suffix(".profile.json").write_text('{"profile_status": "draft"}', encoding="utf-8")
+        recipe_path = root / "00_configuraciones" / "profile_runs" / "perfil_sesion" / "recipe_calibrated.yml"
+        recipe_path.parent.mkdir(parents=True, exist_ok=True)
+        gui_module.save_recipe(
+            Recipe(
+                output_space="scene_linear_camera_rgb",
+                output_linear=True,
+                exposure_compensation=0.77,
+                wb_multipliers=[1.11, 1.0, 2.22, 1.0],
+            ),
+            recipe_path,
+        )
+        manifest_path = recipe_path.parent / "development_profile.json"
+        report_path = recipe_path.parent / "profile_report.json"
+        report_path.write_text("{}", encoding="utf-8")
+        development_profile_id = window._register_chart_development_profile(
+            name="Perfil carta",
+            development_profile_path=manifest_path,
+            calibrated_recipe_path=recipe_path,
+            icc_profile_path=profile,
+            profile_report_path=report_path,
+            profile_status={"status": "draft"},
+            activate=False,
+        )
+        icc_profile_id = window._register_icc_profile(
+            {
+                "name": "perfil_sesion",
+                "source": "generated",
+                "path": str(profile),
+                "status": "draft",
+                "development_profile_id": development_profile_id,
+                "development_profile_path": str(manifest_path),
+                "recipe_path": str(recipe_path),
+            },
+            activate=False,
+        )
+
+        reload_seen: dict[str, str] = {}
+
+        def fake_reload() -> None:
+            sidecar = load_raw_sidecar(raw)
+            reload_seen["development_profile_id"] = sidecar["development_profile"]["id"]
+            reload_seen["icc_profile_id"] = sidecar["adjustment_profiles"]["icc"]["id"]
+
+        monkeypatch.setattr(window, "_reload_preview_source_for_color_management", fake_reload)
+
+        index = window.icc_profile_combo.findData(icc_profile_id)
+        assert index >= 0
+        window.icc_profile_combo.setCurrentIndex(index)
+
+        sidecar = load_raw_sidecar(raw)
+        color = sidecar["color_management"]
+        stored_profile = window._session_stored_path(color["icc_profile_path"])
+        assert stored_profile is not None
+        assert window._paths_equivalent(stored_profile, profile)
+        assert color["mode"] == "camera_rgb_with_input_icc"
+        assert sidecar["development_profile"]["id"] == development_profile_id
+        assert sidecar["development_profile"]["kind"] == "chart"
+        assert sidecar["development_profile"]["profile_type"] == "advanced"
+        assert sidecar["adjustment_profiles"]["icc"]["id"] == icc_profile_id
+        assert sidecar["recipe"]["exposure_compensation"] == pytest.approx(0.77)
+        assert sidecar["recipe"]["wb_multipliers"][0] == pytest.approx(1.11)
+        assert reload_seen["development_profile_id"] == development_profile_id
+        assert reload_seen["icc_profile_id"] == icc_profile_id
+        assert window._active_development_profile_id == development_profile_id
+        assert window.spin_exposure.value() == pytest.approx(0.77)
+        assert Path(window.path_recipe.text()) == recipe_path
     finally:
         window.close()
 
@@ -4543,13 +4763,70 @@ def test_start_manual_chart_marking_is_immediate_and_sets_crosshair(tmp_path: Pa
 
         assert not window._manual_chart_marking
         assert window.image_result_single.cursor().shape() != QtCore.Qt.CrossCursor
+        assert len(window._manual_chart_sample_regions) == 24
+        assert len(window.image_result_single._editable_sample_regions) == 24
+        assert window.image_result_single._editable_sample_regions_enabled
+        assert "Zonas centrales de lectura" in window.manual_chart_points_label.text()
+    finally:
+        window.close()
+
+
+def test_manual_chart_sample_region_moves_feed_profile_detection(tmp_path: Path, qapp):
+    root = tmp_path / "session"
+    raw = root / "01_ORG" / "chart.NEF"
+    raw.parent.mkdir(parents=True)
+    raw.write_bytes(b"raw")
+    payload = create_session(root, name="manual")
+
+    window = ICCRawMainWindow()
+    try:
+        window._activate_session(root, payload)
+        window._selected_file = raw
+        window._original_linear = gui_module.np.zeros((100, 200, 3), dtype=gui_module.np.float32)
+        window.image_result_single.set_rgb_u8_image(
+            gui_module.np.zeros((100, 200, 3), dtype=gui_module.np.uint8)
+        )
+        window._manual_chart_points_source = raw.resolve()
+        window._manual_chart_points = [(20.0, 10.0), (180.0, 10.0), (180.0, 90.0), (20.0, 90.0)]
+        window._manual_chart_sample_regions = window._manual_chart_sample_regions_from_points(window._manual_chart_points)
+        assert len(window._manual_chart_sample_regions) == 24
+
+        moved_region = {
+            "id": "P01",
+            "label": "P01",
+            "points": [(11.0, 12.0), (13.0, 12.0), (13.0, 14.0), (11.0, 14.0)],
+        }
+        window._on_manual_chart_sample_region_moved("P01", moved_region["points"])
+        pending = window._pending_manual_detection_request([raw])
+
+        assert pending is not None
+        regions = pending["sample_regions_preview"]
+        p01 = next(region for region in regions if region["id"] == "P01")
+        assert p01["points"] == moved_region["points"]
+
+        detection = detect_chart_from_corners_array(
+            gui_module.np.zeros((200, 400, 3), dtype=gui_module.np.float32),
+            corners=[(40.0, 20.0), (360.0, 20.0), (360.0, 180.0), (40.0, 180.0)],
+            chart_type="colorchecker24",
+        )
+        window._apply_manual_chart_sample_regions_to_detection(
+            detection,
+            regions,
+            scale_x=2.0,
+            scale_y=3.0,
+        )
+
+        patch = next(patch for patch in detection.patches if patch.patch_id == "P01")
+        scaled = [(point.x, point.y) for point in patch.sample_region]
+        assert scaled == [(22.0, 36.0), (26.0, 36.0), (26.0, 42.0), (22.0, 42.0)]
+        assert any("zonas de lectura ajustadas" in warning for warning in detection.warnings)
     finally:
         window.close()
 
 
 def test_generate_profile_draft_does_not_auto_activate(tmp_path: Path, monkeypatch, qapp):
-    chart = tmp_path / "chart.tiff"
-    Image.new("RGB", (16, 16), (20, 120, 220)).save(chart)
+    chart = tmp_path / "chart.NEF"
+    chart.write_bytes(b"raw chart")
 
     def fake_auto_generate_profile_from_charts(**_kwargs):
         return {
@@ -4599,6 +4876,83 @@ def test_generate_profile_draft_does_not_auto_activate(tmp_path: Path, monkeypat
         assert window.chart_diagnostics_table.rowCount() == 1
         assert window.chart_diagnostics_table.item(0, 0).text() == "P01"
         assert "DeltaE2000 media 2.00" in window.chart_diagnostics_summary.text()
+    finally:
+        window.close()
+
+
+def test_generate_profile_rejected_keeps_advanced_profile_inactive(tmp_path: Path, monkeypatch, qapp):
+    chart = tmp_path / "chart.NEF"
+    chart.write_bytes(b"raw chart")
+    root = tmp_path / "session"
+    payload = create_session(root, name="Sesion perfiles")
+    captured: dict[str, Path] = {}
+
+    def fake_auto_generate_profile_from_charts(**kwargs):
+        captured.update(
+            {
+                "profile_out": kwargs["profile_out"],
+                "profile_report_out": kwargs["profile_report_out"],
+                "development_profile_out": kwargs["development_profile_out"],
+                "calibrated_recipe_out": kwargs["calibrated_recipe_out"],
+            }
+        )
+        kwargs["profile_out"].parent.mkdir(parents=True, exist_ok=True)
+        kwargs["profile_out"].write_bytes(b"rejected profile" * 32)
+        kwargs["profile_report_out"].parent.mkdir(parents=True, exist_ok=True)
+        kwargs["profile_report_out"].write_text(
+            json.dumps(
+                {
+                    "output_icc": str(kwargs["profile_out"]),
+                    "error_summary": {"mean_delta_e2000": 12.0, "max_delta_e2000": 38.0},
+                    "metadata": {"profile_status": "rejected"},
+                }
+            ),
+            encoding="utf-8",
+        )
+        kwargs["development_profile_out"].parent.mkdir(parents=True, exist_ok=True)
+        kwargs["development_profile_out"].write_text("{}", encoding="utf-8")
+        gui_module.save_recipe(
+            Recipe(output_space="scene_linear_camera_rgb", exposure_compensation=2.0),
+            kwargs["calibrated_recipe_out"],
+        )
+        return {
+            "chart_captures_used": 1,
+            "training_captures_total": 1,
+            "development_profile_path": str(kwargs["development_profile_out"]),
+            "calibrated_recipe_path": str(kwargs["calibrated_recipe_out"]),
+            "profile_report_path": str(kwargs["profile_report_out"]),
+            "profile_status": {
+                "status": "rejected",
+                "reasons": ["error_entrenamiento_colorimetrico_alto"],
+            },
+            "profile": {"error_summary": {}, "patch_errors": []},
+        }
+
+    def run_task(_label, task, on_success, *, on_progress=None):
+        on_success(task())
+
+    monkeypatch.setattr(gui_module.ReferenceCatalog, "from_path", staticmethod(lambda _path: object()))
+    monkeypatch.setattr(gui_module, "auto_generate_profile_from_charts", fake_auto_generate_profile_from_charts)
+
+    window = ICCRawMainWindow()
+    try:
+        window._activate_session(root, payload)
+        window._start_background_task = run_task
+        window._selected_chart_files = [chart]
+        window.profile_charts_dir.setText(str(tmp_path))
+        window.spin_exposure.setValue(0.25)
+
+        window._on_generate_profile()
+
+        assert window.path_profile_active.text() == ""
+        assert not window.chk_apply_profile.isChecked()
+        assert window._active_development_profile_id == ""
+        assert window.spin_exposure.value() == pytest.approx(0.25)
+        assert len(window._development_profiles) == 1
+        assert window._development_profile_status(window._development_profiles[0]) == "rejected"
+        index = window.development_profile_combo.findData(window._development_profiles[0]["id"])
+        assert index >= 0
+        assert "rechazado" in window.development_profile_combo.itemText(index)
     finally:
         window.close()
 
@@ -4775,6 +5129,7 @@ def test_color_lab_picker_samples_pixel_and_reports_common_gamut(tmp_path: Path,
             "label": "1",
             "color": "#88bae0",
             "text_color": "#202020",
+            "selected": False,
         }
         assert window.image_result_single._sample_magnifier_enabled is True
 
@@ -4805,6 +5160,10 @@ def test_color_lab_picker_samples_pixel_and_reports_common_gamut(tmp_path: Path,
         assert window.image_result_single._sample_markers[-1]["x"] == 2
         assert window.image_result_single._sample_markers[-1]["y"] == 2
         assert window.image_result_single._sample_markers[-1]["color"] == "#bababa"
+        assert window._set_color_sample_marker_color(1, "#ff00ff")
+        assert window._color_picker_samples[1]["marker_color"] == "#ff00ff"
+        assert window.image_result_single._sample_markers[-1]["color"] == "#ff00ff"
+        assert window._serialize_color_picker_sample(window._color_picker_samples[1])["marker_color"] == "#ff00ff"
         assert "DE76 ref 5.00" in window.label_color_picker.text()
         assert "DC* ref" in window.label_color_picker.text()
 
@@ -4816,6 +5175,7 @@ def test_color_lab_picker_samples_pixel_and_reports_common_gamut(tmp_path: Path,
         assert window.color_samples_table.columnWidth(3) == 211
 
         window.color_samples_table.selectRow(1)
+        assert window.image_result_single._sample_markers[1]["selected"] is True
         window._delete_selected_color_picker_sample()
         assert window.color_samples_table.rowCount() == 1
         assert len(window.image_result_single._sample_markers) == 1
@@ -4824,6 +5184,41 @@ def test_color_lab_picker_samples_pixel_and_reports_common_gamut(tmp_path: Path,
         assert window.color_samples_table.rowCount() == 2
         assert window.color_samples_table.item(1, 2).text() == "Rojo carta"
         assert window.color_samples_table.item(1, 3).text() == "zona saturada"
+    finally:
+        window.close()
+
+
+def test_color_sample_gamut_dialog_expands_current_groups(monkeypatch, qapp):
+    captured: dict[str, object] = {}
+
+    def fake_exec(dialog):
+        widget = dialog.findChild(gui_module.ColorSampleGamutWidget)
+        assert widget is not None
+        captured["minimum"] = widget.minimumSize()
+        captured["groups"] = widget.groups()
+        return 0
+
+    monkeypatch.setattr(QtWidgets.QDialog, "exec", fake_exec)
+
+    window = ICCRawMainWindow()
+    try:
+        window.color_sample_gamut_widget.set_groups(
+            [
+                {
+                    "name": "Conjunto 1",
+                    "color": "#22d3ee",
+                    "points_lab": gui_module.np.asarray([[50.0, 10.0, -5.0]], dtype=gui_module.np.float64),
+                }
+            ]
+        )
+
+        window._show_color_sample_gamut_dialog()
+
+        assert captured["minimum"].width() >= 720
+        assert captured["minimum"].height() >= 520
+        groups = captured["groups"]
+        assert groups[0]["name"] == "Conjunto 1"
+        assert gui_module.np.asarray(groups[0]["points_lab"]).shape == (1, 3)
     finally:
         window.close()
 
@@ -5180,6 +5575,88 @@ def test_color_lab_picker_requires_real_pixel_source_before_sampling(tmp_path: P
         assert calls
         assert window._viewer_full_detail_requested is True
         assert window.color_samples_table.rowCount() == 0
+    finally:
+        window.close()
+
+
+def test_color_lab_picker_recalculates_exact_detail_source_before_sampling(tmp_path: Path, monkeypatch, qapp):
+    image_path = tmp_path / "capture.NEF"
+    image_path.write_bytes(b"raw")
+    profile = tmp_path / "source.icc"
+    profile.write_bytes(b"fake icc" * 32)
+    messages: list[str] = []
+    captured: dict[str, object] = {}
+
+    def fake_lookup_lab_with_icc(profile_path, rgb):
+        captured["profile_path"] = profile_path
+        captured["rgb"] = gui_module.np.asarray(rgb, dtype=gui_module.np.float64)
+        return gui_module.np.asarray([[51.0, 1.0, -2.0]], dtype=gui_module.np.float64)
+
+    def fake_evaluate_lab_gamut_membership(lab, **_kwargs):
+        captured["lab"] = gui_module.np.asarray(lab, dtype=gui_module.np.float64)
+        return {
+            "inside_a": gui_module.np.asarray([True]),
+            "inside_b": gui_module.np.asarray([True]),
+            "inside_common": gui_module.np.asarray([True]),
+            "label_a": "ICC imagen",
+            "label_b": "sRGB",
+        }
+
+    def run_task(_label, task, on_success):
+        on_success(task())
+
+    monkeypatch.setattr(gui_module, "lookup_lab_with_icc", fake_lookup_lab_with_icc)
+    monkeypatch.setattr(gui_module, "evaluate_lab_gamut_membership", fake_evaluate_lab_gamut_membership)
+    monkeypatch.setattr(
+        QtWidgets.QMessageBox,
+        "information",
+        lambda *_args, **_kwargs: messages.append(str(_args[2] if len(_args) > 2 else "")),
+    )
+
+    window = ICCRawMainWindow()
+    try:
+        window._start_background_task = run_task
+        window._selected_file = image_path
+        window._loaded_preview_source_profile_path = profile
+        window._loaded_preview_max_side_request = 0
+        window._loaded_preview_fast_raw = False
+        window._last_loaded_preview_key = "real-pixel-capture"
+        window._original_linear = gui_module.np.zeros((5, 5, 3), dtype=gui_module.np.float32)
+        window._original_linear[2, 2] = gui_module.np.asarray([0.3, 0.5, 0.7], dtype=gui_module.np.float32)
+        window._adjusted_linear = None
+        window._adjusted_linear_signature = "stale"
+        window.slider_noise_luma.setValue(18)
+        window.color_picker_matrix_combo.setCurrentIndex(0)
+        window._set_color_picker_active(True)
+
+        window._apply_color_picker_at(2, 2)
+
+        assert not messages
+        assert captured["profile_path"] == profile
+        assert gui_module.np.asarray(captured["rgb"]).shape == (1, 3)
+        assert gui_module.np.asarray(captured["lab"]).tolist() == [[51.0, 1.0, -2.0]]
+        assert window._adjusted_linear is not None
+        assert tuple(window._adjusted_linear.shape[:2]) == (5, 5)
+        assert window._adjusted_linear_signature == window._current_adjusted_linear_signature()
+        assert window.color_samples_table.rowCount() == 1
+        assert "Lab 51.00, +1.00, -2.00" in window.label_color_picker.text()
+    finally:
+        window.close()
+
+
+def test_detail_adjustments_ignore_sharpen_radius_without_sharpening(qapp):
+    window = ICCRawMainWindow()
+    try:
+        assert not window._detail_kwargs_have_effect(
+            {
+                "denoise_luminance": 0.0,
+                "denoise_color": 0.0,
+                "sharpen_amount": 0.0,
+                "sharpen_radius": 2.4,
+                "lateral_ca_red_scale": 1.0,
+                "lateral_ca_blue_scale": 1.0,
+            }
+        )
     finally:
         window.close()
 
@@ -6079,7 +6556,8 @@ def test_chart_profile_assignment_marks_raw_as_advanced_and_can_be_pasted(tmp_pa
             window._icon_from_thumbnail_array(gui_module.np.full((48, 48, 3), 96, dtype=gui_module.np.uint8)),
         )
         pixmap = marked.pixmap(window.file_list.iconSize())
-        assert pixmap.height() > pixmap.width()
+        assert pixmap.width() == window.file_list.iconSize().width()
+        assert pixmap.height() > window._thumbnail_filename_label_height()
         assert window._raw_adjustment_profile_badges(source) == ["icc"]
 
         source_item = next(
@@ -6117,10 +6595,10 @@ def test_chart_profile_assignment_marks_raw_as_advanced_and_can_be_pasted(tmp_pa
 
 
 def test_generate_profile_uses_explicit_color_reference_selection(tmp_path: Path, monkeypatch, qapp):
-    chart_01 = tmp_path / "chart_01.tiff"
-    chart_02 = tmp_path / "chart_02.tiff"
-    Image.new("RGB", (16, 16), (20, 120, 220)).save(chart_01)
-    Image.new("RGB", (16, 16), (220, 120, 20)).save(chart_02)
+    chart_01 = tmp_path / "chart_01.NEF"
+    chart_02 = tmp_path / "chart_02.NEF"
+    chart_01.write_bytes(b"raw chart 1")
+    chart_02.write_bytes(b"raw chart 2")
 
     captured: dict[str, object] = {}
 
@@ -6312,7 +6790,8 @@ def test_thumbnail_copy_paste_development_settings_writes_raw_sidecars(tmp_path:
             window._icon_from_thumbnail_array(gui_module.np.full((48, 48, 3), 96, dtype=gui_module.np.uint8)),
         )
         pixmap = marked.pixmap(window.file_list.iconSize())
-        assert pixmap.height() > pixmap.width()
+        assert pixmap.width() == window.file_list.iconSize().width()
+        assert pixmap.height() > window._thumbnail_filename_label_height()
         assert window._raw_adjustment_profile_badges(source) == ["icc", "color_contrast"]
 
         window._copy_development_settings_from_selected()
@@ -6556,7 +7035,8 @@ def test_separate_adjustment_profiles_are_saved_and_applied_to_raw_sidecars(tmp_
             window._icon_from_thumbnail_array(gui_module.np.full((48, 48, 3), 96, dtype=gui_module.np.uint8)),
         )
         pixmap = marked.pixmap(window.file_list.iconSize())
-        assert pixmap.height() > pixmap.width()
+        assert pixmap.width() == window.file_list.iconSize().width()
+        assert pixmap.height() > window._thumbnail_filename_label_height()
 
         saved = load_session(root)["state"]
         assert saved["color_contrast_profiles"][0]["id"] == color_profile_id
@@ -7392,6 +7872,79 @@ def test_profile_generation_progress_updates_global_panel(qapp):
         window.close()
 
 
+def test_global_progress_keeps_visible_remaining_task_when_parallel_task_finishes(qapp):
+    window = ICCRawMainWindow()
+    try:
+        first_row = window._monitor_task_start("Generar perfil ICC")
+        second_row = window._monitor_task_start("Lote desde seleccion")
+
+        assert "2 tareas" in window.global_status_label.text()
+        assert "Lote desde seleccion" in window.global_status_label.text()
+
+        window._monitor_task_finish(second_row, "Completado", "OK")
+
+        assert window._active_tasks == 1
+        assert window._global_progress_owner == "task"
+        assert "Generar perfil ICC" in window.global_status_label.text()
+        assert "Lote desde seleccion" not in window.global_status_label.text()
+
+        window._monitor_task_finish(first_row, "Completado", "OK")
+    finally:
+        window.close()
+
+
+def test_preview_completion_returns_global_progress_to_active_task(qapp):
+    window = ICCRawMainWindow()
+    try:
+        row = window._monitor_task_start("Procesar cola de revelado")
+        window._set_global_operation_progress(
+            "preview",
+            "Vista previa cargada",
+            time_text="Total: 1.0s",
+            phase_text="Vista previa: lista",
+            minimum=0,
+            maximum=100,
+            value=100,
+        )
+
+        window._reset_global_operation_progress(owner="preview")
+
+        assert window._global_progress_owner == "task"
+        assert "Procesar cola de revelado" in window.global_status_label.text()
+        assert "tarea activa" in window.global_progress_phase_label.text()
+
+        window._monitor_task_finish(row, "Completado", "OK")
+    finally:
+        window.close()
+
+
+def test_background_task_progress_updates_global_panel_without_custom_ui_handler(qapp):
+    window = ICCRawMainWindow()
+    try:
+        row = window._monitor_task_start("Lote desde directorio", has_progress=True)
+
+        window._monitor_task_progress(
+            row,
+            {
+                "source": "capture_01.NEF",
+                "status": "processing",
+                "progress": 35,
+                "message": "Aplicando ajustes",
+            },
+        )
+
+        assert window.monitor_progress.maximum() == 100
+        assert window.monitor_progress.value() == 35
+        assert window.global_progress.maximum() == 100
+        assert window.global_progress.value() == 35
+        assert "Aplicando ajustes" in window.global_progress_phase_label.text()
+        assert "capture_01.NEF" in window.global_progress_phase_label.text()
+
+        window._monitor_task_finish(row, "Completado", "OK")
+    finally:
+        window.close()
+
+
 def test_global_progress_panel_promotes_slow_interactive_adjustments(qapp):
     window = ICCRawMainWindow()
     try:
@@ -8147,21 +8700,14 @@ def test_neutral_eyedropper_updates_temperature_and_tint(qapp):
 
 
 def test_manual_chart_marks_clear_when_selected_image_changes(tmp_path: Path, qapp):
-    first = tmp_path / "chart_01.tiff"
-    second = tmp_path / "chart_02.tiff"
-    Image.new("RGB", (32, 32), (180, 180, 180)).save(first)
-    Image.new("RGB", (32, 32), (90, 90, 90)).save(second)
+    first = tmp_path / "chart_01.NEF"
+    second = tmp_path / "chart_02.NEF"
+    first.write_bytes(b"raw chart 1")
+    second.write_bytes(b"raw chart 2")
 
     window = ICCRawMainWindow()
     try:
-        window._set_current_directory(tmp_path)
-        first_item = window.file_list.item(0)
-        second_item = window.file_list.item(1)
-        assert first_item is not None
-        assert second_item is not None
-
-        window.file_list.setCurrentItem(first_item)
-        qapp.processEvents()
+        window._selected_file = first
         window._original_linear = gui_module.np.ones((32, 32, 3), dtype=gui_module.np.float32)
         window._begin_manual_chart_marking()
         window._on_manual_chart_click(4, 4)
@@ -8170,8 +8716,8 @@ def test_manual_chart_marks_clear_when_selected_image_changes(tmp_path: Path, qa
         assert len(window._manual_chart_points) == 2
         assert len(window.image_result_single._overlay_points) == 2
 
-        window.file_list.setCurrentItem(second_item)
-        qapp.processEvents()
+        window._selected_file = second
+        window._clear_manual_chart_points_for_file_change()
 
         assert window._manual_chart_points == []
         assert window._manual_chart_points_source is None

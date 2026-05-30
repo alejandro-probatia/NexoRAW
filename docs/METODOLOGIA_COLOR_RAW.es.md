@@ -34,11 +34,12 @@ interpretarse mediante una receta de revelado: demosaico, balance de blancos,
 nivel negro, compensación de exposición, curva tonal, ICC de imagen asignado y
 otros parámetros.
 
-En ProbRAW, el perfil ICC de entrada no se calcula sobre el RAW desnudo. Se
-calcula después de revelar una captura de carta con una receta controlada,
-porque las mediciones se hacen sobre valores RGB producidos por el revelador.
-Una vez generado, ese ICC describe cómo interpretar los RGB de cámara/sesión
-producidos por esa misma receta, cámara e iluminante.
+En ProbRAW, el perfil ICC de entrada se genera exclusivamente desde la captura
+RAW/DNG original de carta. No se perfila a partir de TIFF derivados ni de renders
+visuales intermedios. La medición se realiza sobre los RGB lineales que produce
+el revelador al interpretar ese RAW/DNG con una receta controlada; una vez
+generado, ese ICC describe cómo interpretar los RGB de cámara/sesión producidos
+por esa misma receta, cámara e iluminante.
 
 Los valores RGB son relativos al dispositivo o al espacio de revelado que los
 produce. El ICC de entrada etiqueta esos valores y define su correspondencia
@@ -117,21 +118,43 @@ Tipos:
 
 Cuando existe una captura válida de carta:
 
-1. Revelar la carta con una receta científica base.
-2. Detectar y medir parches de la carta.
-3. Generar un perfil de revelado: balance de blancos, densidad y exposición
+1. Partir exclusivamente de RAW/DNG original de carta. Los TIFF lineales son
+   artefactos de auditoría, no fuentes admitidas para el perfil ICC de cámara.
+2. Revelar la carta con una receta científica base. Para evitar acumulación de
+   ajustes, la receta de perfilado neutraliza balance de blancos y exposición:
+   WB fijo `[1, 1, 1, 1]`, 0 EV, salida lineal y RGB de cámara/sesión.
+3. Detectar y medir parches de la carta. Si la carta se marca manualmente, las
+   zonas de lectura deben quedar dentro de la zona central útil de cada parche y
+   pueden desplazarse para evitar bordes, polvo, brillos o manchas.
+4. Generar un perfil de revelado: balance de blancos, densidad y exposición
    derivados de la carta.
-4. Medir de nuevo la carta con la receta calibrada.
-5. Generar el ICC de entrada de sesión con ArgyllCMS a partir de RGB medidos y
+5. Medir de nuevo la carta con la receta calibrada.
+6. Generar el ICC de entrada de sesión con ArgyllCMS a partir de RGB medidos y
    referencias colorimétricas.
-6. Guardar por separado perfil de ajuste, receta calibrada, ICC de entrada,
+7. Guardar por separado perfil de ajuste, receta calibrada, ICC de entrada,
    reportes QA y overlays.
-7. Revelar los RAW equivalentes con ese perfil.
-8. Crear TIFF maestro manteniendo RGB de cámara/sesión e incrustando el ICC de
+8. Revelar los RAW equivalentes con ese perfil.
+9. Crear TIFF maestro manteniendo RGB de cámara/sesión e incrustando el ICC de
    entrada.
 
 El perfil avanzado puede copiarse a imágenes tomadas bajo condiciones
 comparables de cámara, óptica, iluminante, exposición base y receta.
+
+La interpretación previa al ICC debe ser una normalización técnica, no una
+corrección estética. La referencia Lab se usa para estimar neutralidad y
+densidad antes del perfil: los parches neutros fijan multiplicadores de balance
+de blancos y compensación EV sobre un render lineal. No se aplican curvas,
+contraste, saturación ni conversión a un RGB genérico antes de medir la carta,
+porque entonces el ICC ya no describiría el RGB de cámara/sesión sino una imagen
+precorregida.
+
+La saturación reportada en `profile_report.json` se calcula sobre el render
+científico usado para muestrear la carta, no directamente sobre el RAW de cámara.
+Una captura correctamente expuesta puede aparecer saturada si el perfilado hereda
+una receta visual con compensación positiva de exposición, WB ya calibrado o una
+receta procedente de un perfil anterior. Por eso ProbRAW no reutiliza esos ajustes
+para medir la carta y descarta capturas cuyos parches neutros quedan saturados en
+el render científico.
 
 ## Análisis de Muestras Lab
 
@@ -144,6 +167,8 @@ estimar mejor la variación cromática real de ese material.
 Reglas metodológicas:
 
 - medir solo sobre píxeles reales de la imagen cargada a tamaño completo;
+- recalcular a tamaño real cualquier ajuste de detalle pendiente antes de
+  aceptar la lectura;
 - documentar matriz, coordenada, nombre y nota de cada muestra;
 - agrupar muestras que pertenecen al mismo material o hipótesis de comparación;
 - comparar conjuntos mediante media Lab, dispersión interna, DeltaE frente al
@@ -154,25 +179,28 @@ Reglas metodológicas:
 La lectura RGB siempre es trazable. La lectura Lab, DeltaE y gamut de muestras
 solo son colorimétricamente rigurosos cuando el ICC de entrada de la imagen es
 un perfil generado por ProbRAW para ese caso de captura. Con perfiles genéricos,
-el análisis debe rotularse como orientativo.
+el análisis debe rotularse como orientativo. El color visual de los marcadores de
+muestra es solo una ayuda de interfaz y no modifica la medición registrada.
 
 ## Criterios de Mejora No Bloqueantes
 
 ProbRAW debe permitir generar perfiles aunque el caso de trabajo no sea ideal.
 Las comprobaciones metodológicas se tratan como estado, aviso o recomendación,
 no como impedimento, salvo cuando no hay muestras de carta válidas o cuando una
-validación independiente disponible demuestra un error colorimétrico fuera de
-umbral.
+comprobación colorimétrica contra la referencia de carta demuestra un error
+fuera de umbral.
 
 Recomendaciones operativas:
 
 - si existe más de una captura de carta, reservar una para validación
   independiente cuando sea posible;
-- si solo hay una captura, generar el ICC como `draft` y registrar que falta
-  validación independiente;
-- con ColorChecker 24, usar por defecto `shaper+matrix (-as)`; los perfiles
-  cLUT se permiten como opción avanzada, pero se documentan como riesgo de
-  sobreajuste si no hay una carta con muchos más parches;
+- si solo hay una captura, generar el ICC si la comparación contra la referencia
+  colorimétrica de la carta supera la QA; registrar la ausencia de validación
+  independiente como recomendación no bloqueante;
+- usar por defecto `Lab cLUT (-al)` con calidad Medium y `-u -R`; en las pruebas
+  de sesión recupera mejor la correspondencia Lab que `shaper+matrix (-as)`.
+  `-as` sigue disponible como modelo compacto, `-am` como opción técnica para
+  RAW lineal y `-ax` como cLUT avanzada menos robusta con cartas escasas;
 - revisar de forma separada la fila neutra: residuos a*/b*, dominantes,
   exposición y uniformidad de iluminación pueden revelar problemas que una
   media DeltaE no muestra;
@@ -180,15 +208,19 @@ Recomendaciones operativas:
   física utilizada, con serie, fecha e instrumento, en vez de una referencia
   genérica de ColorChecker.
 
-Estados:
+Estados mostrados en interfaz española:
 
-- `validated`: hay validación independiente utilizable y supera los umbrales;
-- `draft`: el perfil se ha generado, pero falta validación independiente o esta
-  no es concluyente; puede activarse manualmente bajo criterio del operador;
-- `rejected`: una validación disponible o el entrenamiento superan los umbrales
-  de error definidos; no se autoactiva y solo puede activarse con confirmación
-  explícita para diagnóstico o comparación;
-- `expired`: el perfil validado ha superado su ventana de vigencia configurada.
+- `validado` (`validated` en metadatos): el perfil se ha generado y la
+  comparación contra la referencia colorimétrica de la carta supera los umbrales;
+- `pendiente QA` (`draft` en metadatos): estado reservado para perfiles sin una
+  comprobación colorimétrica concluyente; no debe aparecer por la mera ausencia
+  de una captura independiente;
+- `rechazado` (`rejected` en metadatos): una validación disponible o el
+  entrenamiento superan los umbrales de error definidos; no se autoactiva, no
+  carga su receta calibrada como ajuste activo y solo puede activarse con
+  confirmación explícita para diagnóstico o comparación;
+- `caducado` (`expired` en metadatos): el perfil validado ha superado su ventana
+  de vigencia configurada.
 
 Los metadatos del perfil deben reflejar el modelo real solicitado a ArgyllCMS:
 `argyll_shaper_matrix`, `argyll_gamma_matrix`, `argyll_matrix`,

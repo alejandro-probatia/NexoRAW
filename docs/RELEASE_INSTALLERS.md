@@ -6,6 +6,25 @@ The ProbRAW installer release has a simple rule: no
 artifact is uploaded to the repository or GitHub Releases without first passing the
 package and installation validations.
 
+## Release 0.4.3
+
+0.4.3 is a precision release for RAW/DNG ICC profiling, manual chart marking and
+Lab diagnostics. Before publishing artifacts, verify:
+
+- local test suite and Python compilation complete without errors;
+- manually marked charts show small, movable central reading regions saved in
+  the overlay;
+- the Lab eyedropper requires real-pixel sources and recalculates pending detail
+  adjustments before saving the sample;
+- Lab samples support compact cards, marker color, selected-sample highlighting
+  and an expanded Lab a*b* graph;
+- thumbnails keep the filename above profile badges;
+- the Linux Debian/Ubuntu build generates `probraw_0.4.3_amd64.deb`, validates
+  with `packaging/debian/validate_deb.sh`, and its SHA256 is documented in
+  `docs/releases/0.4.3.md`;
+- the Windows build generates `ProbRAW-0.4.3-Setup.exe` and its `.sha256`,
+  documented in `docs/releases/0.4.3.md`.
+
 ## Release 0.4.2
 
 0.4.2 is a reliability release for ICC profiling, update handling and
@@ -17,7 +36,8 @@ cross-platform installers. Before publishing artifacts, verify:
 - Linux recognizes `.deb`, `.rpm`, AppImage and Arch `pkg.tar.*` without
   selecting wheels or source tarballs as installers;
 - persisted `session.json` directories remain confined to the session root;
-- `draft` profiles are registered without autoactivation;
+- missing independent validation does not mark the profile as `draft` by itself
+  when QA against the chart colorimetric reference passes;
 - `rejected` profiles never autoactivate and require explicit operator
   confirmation before manual activation;
 - profile metadata reports the real ArgyllCMS model instead of always reporting

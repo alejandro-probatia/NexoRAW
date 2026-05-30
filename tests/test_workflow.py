@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 import tifffile
 
-from probraw.chart.detection import detect_chart_from_corners
+from probraw.chart.detection import detect_chart_from_corners_array
 from probraw.chart.sampling import ReferenceCatalog
 from probraw.core.models import (
     BatchManifest,
@@ -55,6 +55,24 @@ def _proof_config(tmp_path: Path) -> ProbRawProofConfig:
     return ProbRawProofConfig(private_key_path=private_key, public_key_path=public_key)
 
 
+def _write_synthetic_raw(path: Path, image: np.ndarray) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tifffile.imwrite(str(path), image, photometric="rgb", metadata=None)
+    return path
+
+
+def _patch_synthetic_raw_developer(monkeypatch) -> None:
+    def fake_develop_image_array(path, _recipe, cache_dir=None, **_kwargs):
+        arr = np.asarray(tifffile.imread(str(path)))
+        if np.issubdtype(arr.dtype, np.integer):
+            arr = arr.astype(np.float32) / float(np.iinfo(arr.dtype).max)
+        else:
+            arr = arr.astype(np.float32)
+        return np.clip(arr, 0.0, 1.0)
+
+    monkeypatch.setattr(workflow, "develop_image_array", fake_develop_image_array)
+
+
 def test_auto_profile_batch_end_to_end(tmp_path: Path, monkeypatch):
     def fake_build_profile_with_argyll(
         out_icc: Path,
@@ -73,6 +91,7 @@ def test_auto_profile_batch_end_to_end(tmp_path: Path, monkeypatch):
 
     monkeypatch.setattr(profiling, "_build_profile_with_argyll", fake_build_profile_with_argyll)
     monkeypatch.setattr(profiling, "_lookup_lab_with_icc", _fake_lookup_lab)
+    _patch_synthetic_raw_developer(monkeypatch)
 
     charts_dir = tmp_path / "charts"
     targets_dir = tmp_path / "targets"
@@ -82,8 +101,8 @@ def test_auto_profile_batch_end_to_end(tmp_path: Path, monkeypatch):
     targets_dir.mkdir()
 
     img = _synthetic_colorchecker_image()
-    tifffile.imwrite(str(charts_dir / "chart_01.tiff"), img, photometric="rgb", metadata=None)
-    tifffile.imwrite(str(charts_dir / "chart_02.tiff"), img, photometric="rgb", metadata=None)
+    _write_synthetic_raw(charts_dir / "chart_01.NEF", img)
+    _write_synthetic_raw(charts_dir / "chart_02.NEF", img)
     tifffile.imwrite(str(targets_dir / "target_01.tiff"), img, photometric="rgb", metadata=None)
     tifffile.imwrite(str(targets_dir / "target_02.tiff"), img, photometric="rgb", metadata=None)
 
@@ -120,7 +139,7 @@ def test_auto_profile_batch_end_to_end(tmp_path: Path, monkeypatch):
 
 
 def test_collect_chart_samples_minimal_artifacts_omits_images(tmp_path: Path, monkeypatch):
-    chart = tmp_path / "chart_01.tiff"
+    chart = tmp_path / "chart_01.NEF"
     chart.write_bytes(b"placeholder")
     image = np.full((20, 30, 3), 0.25, dtype=np.float32)
 
@@ -176,8 +195,61 @@ def test_collect_chart_samples_minimal_artifacts_omits_images(tmp_path: Path, mo
     assert not list((tmp_path / "overlays").glob("*.png"))
 
 
+def test_collect_chart_samples_rejects_saturated_neutral_patch(tmp_path: Path, monkeypatch):
+    chart = tmp_path / "chart_saturated.NEF"
+    chart.write_bytes(b"placeholder")
+    image = np.ones((20, 30, 3), dtype=np.float32)
+    detection = ChartDetectionResult(
+        chart_type="unit",
+        confidence_score=1.0,
+        valid_patch_ratio=1.0,
+        homography=[1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
+        chart_polygon=[Point2(0, 0), Point2(29, 0), Point2(29, 19), Point2(0, 19)],
+        patches=[
+            PatchDetection(
+                patch_id="P19",
+                polygon=[Point2(2, 2), Point2(10, 2), Point2(10, 10), Point2(2, 10)],
+                sample_region=[Point2(2, 2), Point2(10, 2), Point2(10, 10), Point2(2, 10)],
+            )
+        ],
+        warnings=[],
+    )
+
+    monkeypatch.setattr(workflow, "develop_image_array", lambda *_args, **_kwargs: image)
+    monkeypatch.setattr(workflow, "detect_chart_from_array", lambda *_args, **_kwargs: detection)
+
+    result = workflow._collect_chart_samples(
+        chart_files=[chart],
+        recipe=Recipe(),
+        reference=ReferenceCatalog(
+            {
+                "chart_name": "unit",
+                "chart_version": "1",
+                "illuminant": "D50",
+                "patches": [{"patch_id": "P19", "reference_lab": [96.0, 0, 0]}],
+            }
+        ),
+        chart_type="colorchecker24",
+        min_confidence=0.35,
+        allow_fallback_detection=False,
+        chart_dev_dir=tmp_path / "developed",
+        detect_dir=tmp_path / "detections",
+        sample_dir=tmp_path / "samples",
+        overlay_dir=tmp_path / "overlays",
+        pass_name="unit",
+        workers=1,
+        artifacts="minimal",
+    )
+
+    assert result["accepted_samples"] == []
+    assert result["skipped"][0]["reason"] == "neutral_patch_saturation"
+    assert result["skipped"][0]["patch_id"] == "P19"
+    assert result["skipped"][0]["saturated_pixel_ratio"] == pytest.approx(1.0)
+    assert Path(result["skipped"][0]["sample_json"]).exists()
+
+
 def test_collect_chart_samples_reports_blocking_fallback_detection(tmp_path: Path, monkeypatch):
-    chart = tmp_path / "chart_fallback.tiff"
+    chart = tmp_path / "chart_fallback.NEF"
     chart.write_bytes(b"placeholder")
     image = np.full((20, 30, 3), 0.25, dtype=np.float32)
     detection = ChartDetectionResult(
@@ -229,8 +301,8 @@ def test_auto_generate_profile_error_includes_skipped_capture_details(tmp_path: 
     charts_dir = tmp_path / "charts"
     work_dir = tmp_path / "work"
     charts_dir.mkdir()
-    chart = charts_dir / "chart_01.tiff"
-    tifffile.imwrite(str(chart), np.zeros((10, 10, 3), dtype=np.uint16), photometric="rgb", metadata=None)
+    chart = charts_dir / "chart_01.NEF"
+    _write_synthetic_raw(chart, np.zeros((10, 10, 3), dtype=np.uint16))
 
     def fake_collect_chart_samples(**_kwargs):
         return {
@@ -299,14 +371,15 @@ def test_auto_generate_profile_from_charts_only(tmp_path: Path, monkeypatch):
 
     monkeypatch.setattr(profiling, "_build_profile_with_argyll", fake_build_profile_with_argyll)
     monkeypatch.setattr(profiling, "_lookup_lab_with_icc", _fake_lookup_lab)
+    _patch_synthetic_raw_developer(monkeypatch)
 
     charts_dir = tmp_path / "charts"
     work_dir = tmp_path / "work_profile"
     charts_dir.mkdir()
 
     img = _synthetic_colorchecker_image()
-    tifffile.imwrite(str(charts_dir / "chart_01.tiff"), img, photometric="rgb", metadata=None)
-    tifffile.imwrite(str(charts_dir / "chart_02.tiff"), img, photometric="rgb", metadata=None)
+    _write_synthetic_raw(charts_dir / "chart_01.NEF", img)
+    _write_synthetic_raw(charts_dir / "chart_02.NEF", img)
 
     repo_root = Path(__file__).resolve().parents[1]
     recipe = load_recipe(repo_root / "testdata/recipes/scientific_recipe.yml")
@@ -336,9 +409,9 @@ def test_auto_generate_profile_from_charts_only(tmp_path: Path, monkeypatch):
     assert result["chart_captures_total"] == 2
     assert result["chart_captures_used"] >= 1
     assert "profile" in result
-    assert result["profile_status"]["status"] == "draft"
+    assert result["profile_status"]["status"] == "validated"
     assert any(item["id"] == "independent_validation_recommended" for item in result["workflow_recommendations"])
-    assert read_json(profile_report)["metadata"]["profile_status"] == "draft"
+    assert read_json(profile_report)["metadata"]["profile_status"] == "validated"
     assert read_json(profile_report)["metadata"]["workflow_recommendations"] == result["workflow_recommendations"]
     assert progress_events
     assert progress_events[-1]["progress"] == 100
@@ -364,6 +437,7 @@ def test_auto_generate_profile_from_explicit_chart_files(tmp_path: Path, monkeyp
 
     monkeypatch.setattr(profiling, "_build_profile_with_argyll", fake_build_profile_with_argyll)
     monkeypatch.setattr(profiling, "_lookup_lab_with_icc", _fake_lookup_lab)
+    _patch_synthetic_raw_developer(monkeypatch)
 
     charts_a = tmp_path / "charts_a"
     charts_b = tmp_path / "charts_b"
@@ -372,10 +446,8 @@ def test_auto_generate_profile_from_explicit_chart_files(tmp_path: Path, monkeyp
     charts_b.mkdir()
 
     img = _synthetic_colorchecker_image()
-    chart_01 = charts_a / "chart_01.tiff"
-    chart_02 = charts_b / "chart_02.tiff"
-    tifffile.imwrite(str(chart_01), img, photometric="rgb", metadata=None)
-    tifffile.imwrite(str(chart_02), img, photometric="rgb", metadata=None)
+    chart_01 = _write_synthetic_raw(charts_a / "chart_01.NEF", img)
+    chart_02 = _write_synthetic_raw(charts_b / "chart_02.NEF", img)
 
     repo_root = Path(__file__).resolve().parents[1]
     recipe = load_recipe(repo_root / "testdata/recipes/scientific_recipe.yml")
@@ -421,16 +493,16 @@ def test_auto_generate_profile_uses_manual_detection(tmp_path: Path, monkeypatch
 
     monkeypatch.setattr(profiling, "_build_profile_with_argyll", fake_build_profile_with_argyll)
     monkeypatch.setattr(profiling, "_lookup_lab_with_icc", _fake_lookup_lab)
+    _patch_synthetic_raw_developer(monkeypatch)
 
     charts_dir = tmp_path / "charts"
     work_dir = tmp_path / "work_manual"
     charts_dir.mkdir()
 
     img = _synthetic_colorchecker_image()
-    chart = charts_dir / "chart_manual.tiff"
-    tifffile.imwrite(str(chart), img, photometric="rgb", metadata=None)
-    manual_detection = detect_chart_from_corners(
-        chart,
+    chart = _write_synthetic_raw(charts_dir / "chart_manual.NEF", img)
+    manual_detection = detect_chart_from_corners_array(
+        img.astype(np.float32) / 65535.0,
         corners=[(0.0, 0.0), (720.0, 0.0), (720.0, 480.0), (0.0, 480.0)],
         chart_type="colorchecker24",
     )
@@ -496,6 +568,7 @@ def test_auto_generate_profile_writes_holdout_qa_report(tmp_path: Path, monkeypa
     monkeypatch.setattr(profiling, "_build_profile_with_argyll", fake_build_profile_with_argyll)
     monkeypatch.setattr(profiling, "_lookup_lab_with_icc", _fake_lookup_lab)
     monkeypatch.setattr(workflow, "validate_profile", fake_validate_profile)
+    _patch_synthetic_raw_developer(monkeypatch)
 
     charts_dir = tmp_path / "charts"
     work_dir = tmp_path / "work_holdout"
@@ -503,8 +576,8 @@ def test_auto_generate_profile_writes_holdout_qa_report(tmp_path: Path, monkeypa
     charts_dir.mkdir()
 
     img = _synthetic_colorchecker_image()
-    tifffile.imwrite(str(charts_dir / "chart_01.tiff"), img, photometric="rgb", metadata=None)
-    tifffile.imwrite(str(charts_dir / "chart_02.tiff"), img, photometric="rgb", metadata=None)
+    _write_synthetic_raw(charts_dir / "chart_01.NEF", img)
+    _write_synthetic_raw(charts_dir / "chart_02.NEF", img)
 
     repo_root = Path(__file__).resolve().parents[1]
     recipe = load_recipe(repo_root / "testdata/recipes/scientific_recipe.yml")
@@ -652,6 +725,7 @@ def test_auto_profile_batch_refuses_rejected_session_profile(tmp_path: Path, mon
     monkeypatch.setattr(profiling, "_build_profile_with_argyll", fake_build_profile_with_argyll)
     monkeypatch.setattr(profiling, "_lookup_lab_with_icc", _fake_lookup_lab)
     monkeypatch.setattr(workflow, "validate_profile", fake_validate_profile)
+    _patch_synthetic_raw_developer(monkeypatch)
 
     charts_dir = tmp_path / "charts"
     targets_dir = tmp_path / "targets"
@@ -661,8 +735,8 @@ def test_auto_profile_batch_refuses_rejected_session_profile(tmp_path: Path, mon
     targets_dir.mkdir()
 
     img = _synthetic_colorchecker_image()
-    tifffile.imwrite(str(charts_dir / "chart_01.tiff"), img, photometric="rgb", metadata=None)
-    tifffile.imwrite(str(charts_dir / "chart_02.tiff"), img, photometric="rgb", metadata=None)
+    _write_synthetic_raw(charts_dir / "chart_01.NEF", img)
+    _write_synthetic_raw(charts_dir / "chart_02.NEF", img)
     tifffile.imwrite(str(targets_dir / "target_01.tiff"), img, photometric="rgb", metadata=None)
 
     repo_root = Path(__file__).resolve().parents[1]
@@ -697,6 +771,13 @@ def test_profile_status_resolves_draft_rejected_and_expired():
         generated_at=generated_at,
         valid_until=None,
     )
+    training_validated = workflow._build_profile_status(
+        validation_payload=None,
+        qa_report_path=None,
+        generated_at=generated_at,
+        valid_until=None,
+        training_error_summary={"mean_delta_e2000": 1.2, "max_delta_e2000": 3.4},
+    )
     rejected = workflow._build_profile_status(
         validation_payload={"qa_report": {"status": "rejected"}},
         qa_report_path="/tmp/qa.json",
@@ -719,6 +800,8 @@ def test_profile_status_resolves_draft_rejected_and_expired():
     )
 
     assert draft["status"] == "draft"
+    assert training_validated["status"] == "validated"
+    assert training_validated["training_status"] == "passed"
     assert rejected["status"] == "rejected"
     assert expired["status"] == "expired"
     assert bad_training["status"] == "rejected"
@@ -729,6 +812,9 @@ def test_sanitize_recipe_for_profiling_normalizes_non_scientific_fields():
     from probraw.workflow import sanitize_recipe_for_profiling
 
     recipe = Recipe(
+        white_balance_mode="camera_metadata",
+        wb_multipliers=[1.1, 1.0, 2.2, 1.0],
+        exposure_compensation=1.25,
         tone_curve="srgb",
         output_linear=False,
         output_space="srgb",
@@ -740,14 +826,27 @@ def test_sanitize_recipe_for_profiling_normalizes_non_scientific_fields():
 
     assert sanitized.denoise == "off"
     assert sanitized.sharpen == "off"
+    assert sanitized.white_balance_mode == "fixed"
+    assert sanitized.wb_multipliers == [1.0, 1.0, 1.0, 1.0]
+    assert sanitized.exposure_compensation == 0.0
     assert sanitized.tone_curve == "linear"
     assert sanitized.output_linear is True
     assert sanitized.output_space == "scene_linear_camera_rgb"
     fields_changed = {c["field"] for c in changes}
-    assert {"denoise", "sharpen", "tone_curve", "output_linear", "output_space"} <= fields_changed
+    assert {
+        "denoise",
+        "sharpen",
+        "white_balance_mode",
+        "wb_multipliers",
+        "exposure_compensation",
+        "tone_curve",
+        "output_linear",
+        "output_space",
+    } <= fields_changed
     # Original recipe must remain untouched (immutable contract).
     assert recipe.denoise == "mild"
     assert recipe.sharpen == "medium"
+    assert recipe.exposure_compensation == 1.25
 
 
 def test_sanitize_recipe_for_profiling_is_noop_for_scientific_recipe():
@@ -779,11 +878,12 @@ def test_auto_generate_profile_persists_profile_and_render_recipes(tmp_path: Pat
 
     monkeypatch.setattr(profiling, "_build_profile_with_argyll", fake_build_profile_with_argyll)
     monkeypatch.setattr(profiling, "_lookup_lab_with_icc", _fake_lookup_lab)
+    _patch_synthetic_raw_developer(monkeypatch)
 
     charts_dir = tmp_path / "charts"
     work_dir = tmp_path / "work_render_recipe"
     charts_dir.mkdir()
-    tifffile.imwrite(str(charts_dir / "chart_01.tiff"), _synthetic_colorchecker_image(), photometric="rgb", metadata=None)
+    _write_synthetic_raw(charts_dir / "chart_01.NEF", _synthetic_colorchecker_image())
 
     repo_root = Path(__file__).resolve().parents[1]
     reference = ReferenceCatalog.from_path(repo_root / "testdata/references/colorchecker24_reference.json")
@@ -873,6 +973,7 @@ def test_auto_profile_batch_uses_render_recipe_after_profile_calibration(tmp_pat
     monkeypatch.setattr(profiling, "_build_profile_with_argyll", fake_build_profile_with_argyll)
     monkeypatch.setattr(profiling, "_lookup_lab_with_icc", _fake_lookup_lab)
     monkeypatch.setattr(workflow, "batch_develop", fake_batch_develop)
+    _patch_synthetic_raw_developer(monkeypatch)
 
     charts_dir = tmp_path / "charts"
     targets_dir = tmp_path / "targets"
@@ -880,7 +981,7 @@ def test_auto_profile_batch_uses_render_recipe_after_profile_calibration(tmp_pat
     out_dir = tmp_path / "out_batch_render"
     charts_dir.mkdir()
     targets_dir.mkdir()
-    tifffile.imwrite(str(charts_dir / "chart_01.tiff"), _synthetic_colorchecker_image(), photometric="rgb", metadata=None)
+    _write_synthetic_raw(charts_dir / "chart_01.NEF", _synthetic_colorchecker_image())
 
     repo_root = Path(__file__).resolve().parents[1]
     reference = ReferenceCatalog.from_path(repo_root / "testdata/references/colorchecker24_reference.json")
@@ -919,15 +1020,17 @@ def test_auto_profile_batch_uses_render_recipe_after_profile_calibration(tmp_pat
     assert captured_workers["workers"] == 3
 
 
-def test_auto_generate_profile_rejects_non_raw_or_tiff_chart_files(tmp_path: Path):
+def test_auto_generate_profile_rejects_non_raw_chart_files(tmp_path: Path):
     reference = ReferenceCatalog({"chart_name": "unit", "chart_version": "1", "illuminant": "D50", "patches": []})
     jpg = tmp_path / "chart.jpg"
+    tiff = tmp_path / "chart.tiff"
     jpg.write_bytes(b"not-a-scientific-chart-source")
+    tiff.write_bytes(b"not-a-raw-chart-source")
 
-    with pytest.raises(RuntimeError, match="solo RAW/DNG/TIFF lineal"):
+    with pytest.raises(RuntimeError, match="solo RAW/DNG originales"):
         auto_generate_profile_from_charts(
             chart_captures_dir=tmp_path / "unused",
-            chart_capture_files=[jpg],
+            chart_capture_files=[jpg, tiff],
             recipe=Recipe(),
             reference=reference,
             profile_out=tmp_path / "bad_ext.icc",

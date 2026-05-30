@@ -105,14 +105,14 @@ Flujo:
 1. Se construye un `.ti3` temporal con muestras y referencia.
 2. Formato usado:
    - `DEVICE_CLASS "INPUT"`
-   - `COLOR_REP "LAB_RGB"`
-   - campos `LAB_L LAB_A LAB_B RGB_R RGB_G RGB_B`
+   - `COLOR_REP "XYZ_RGB"`
+   - campos `XYZ_X XYZ_Y XYZ_Z RGB_R RGB_G RGB_B`
 3. Se ejecuta `colprof` para generar el `.icc`.
 
 Comando base:
 
 ```bash
-colprof -v -D "<descripcion>" -qm -as <base_ti3>
+colprof -v -D "<descripcion>" -qm -al -u -R <base_ti3>
 ```
 
 Validación:

@@ -8,7 +8,7 @@ from .core.utils import RAW_EXTENSIONS
 
 IMAGE_EXTENSIONS = {".tif", ".tiff", ".png", ".jpg", ".jpeg"}
 BROWSABLE_EXTENSIONS = RAW_EXTENSIONS.union(IMAGE_EXTENSIONS)
-PROFILE_CHART_EXTENSIONS = RAW_EXTENSIONS.union({".tif", ".tiff"})
+PROFILE_CHART_EXTENSIONS = set(RAW_EXTENSIONS)
 PROFILE_REFERENCE_FORBIDDEN_DIRS = {
     "exports": "exportaciones TIFF",
     "work": "intermedios de trabajo",
@@ -191,18 +191,18 @@ TIFF_COMPRESSION_OPTIONS = [
 ]
 
 PROFILE_ALGO_OPTIONS = [
-    ("Recomendado: matriz + curvas por canal (-as)", "-as"),
+    ("Recomendado: Lab cLUT (-al)", "-al"),
+    ("Matriz + curvas por canal (-as)", "-as"),
     ("Matriz + gamma comun (-ag)", "-ag"),
     ("Solo matriz colorimetrica (-am)", "-am"),
-    ("Avanzado: tabla Lab cLUT (-al)", "-al"),
     ("Avanzado: tabla XYZ cLUT (-ax)", "-ax"),
 ]
 
 PROFILE_ALGO_HELP = {
     "-as": (
         "Shaper + matrix. Ajusta una matriz 3x3 de camara a XYZ/Lab y curvas "
-        "tonales por canal. Es el modo conservador para ColorChecker 24: reduce "
-        "el riesgo de sobreajuste, clipping y extrapolaciones agresivas en altas luces."
+        "tonales por canal. Es un modelo compacto y conservador, pero puede no "
+        "corregir bien desviaciones cromaticas de camara reales con algunas cartas."
     ),
     "-ag": (
         "Gamma + matrix. Similar al modo recomendado, pero usa una respuesta tonal "
@@ -214,9 +214,10 @@ PROFILE_ALGO_HELP = {
         "tonal. Es util para pruebas tecnicas, no como opcion general de perfilado RAW."
     ),
     "-al": (
-        "Lab cLUT. Genera una tabla de correccion en Lab. Requiere muchas muestras "
-        "bien distribuidas; con ColorChecker 24 puede sobreajustar y empujar el rango "
-        "a los extremos."
+        "Lab cLUT. Genera una tabla de correccion en Lab. Es el preset recomendado "
+        "para el flujo actual porque Argyll lo usa como modelo robusto por defecto "
+        "y, combinado con -u -R, evita dominantes que el modelo shaper+matrix no "
+        "siempre corrige."
     ),
     "-ax": (
         "XYZ cLUT. Genera una tabla de correccion en XYZ. Es una opcion avanzada con "
@@ -233,7 +234,7 @@ PROFILE_QUALITY_OPTIONS = [
 
 PROFILE_QUALITY_HELP = {
     "l": "Baja. Mas rapida; adecuada solo para pruebas.",
-    "m": "Media. Equilibrio recomendado para perfiles de sesion con ColorChecker 24.",
+    "m": "Media. Equilibrio recomendado para perfiles de sesion.",
     "h": "Alta. Mayor coste de calculo; util cuando hay buena senal y validacion.",
     "u": "Ultra. Coste alto; normalmente innecesaria con una ColorChecker 24.",
 }
@@ -242,13 +243,15 @@ RECOMMENDED_COLPROF_EXTRA_ARGS = "-u -R"
 
 COLPROF_OPTIONS_HELP = (
     "Tipo de perfil ICC:\n"
-    "- Matriz + curvas por canal (-as): recomendado para ColorChecker 24. Modela una "
-    "matriz camara->PCS y curvas tonales por canal con bajo riesgo de sobreajuste.\n"
+    "- Lab cLUT (-al): recomendado. Modela la relacion RGB de camara lineal -> Lab "
+    "D50 con la tabla robusta de Argyll y reduce dominantes que una matriz simple "
+    "puede dejar sin corregir.\n"
+    "- Matriz + curvas por canal (-as): modelo compacto y conservador, util si una "
+    "cLUT no es compatible con un flujo externo concreto.\n"
     "- Matriz + gamma comun (-ag): modelo matricial con respuesta tonal mas simple.\n"
     "- Solo matriz (-am): prueba tecnica; no modela respuesta tonal.\n"
-    "- Lab cLUT (-al): tabla en Lab. Argyll la usa por defecto si no se fuerza otro "
-    "modelo, pero con 24 parches puede interpolar de forma agresiva.\n"
-    "- XYZ cLUT (-ax): tabla en XYZ; tambien avanzada y dependiente de muchas muestras.\n\n"
+    "- XYZ cLUT (-ax): tabla en XYZ; avanzada y menos robusta con cartas escasas o "
+    "irregularmente distribuidas.\n\n"
     "Calidad colprof:\n"
     "- Low: rapido para pruebas.\n"
     "- Medium: recomendado por defecto.\n"
@@ -257,8 +260,8 @@ COLPROF_OPTIONS_HELP = (
     "- -u: en perfiles de entrada, escala automaticamente el punto blanco para permitir "
     "extrapolacion.\n"
     "- -R: restringe blanco <= 1.0 y mantiene negro/primarios positivos.\n\n"
-    "Si aparecen avisos de altas luces, evita cLUT con ColorChecker 24 y revisa "
-    "exposicion, blancos y referencia Lab antes de endurecer la calidad."
+    "Si aparecen avisos de altas luces, revisa exposicion, blancos y referencia Lab "
+    "antes de endurecer la calidad o cambiar de modelo."
 )
 
 PROFILE_FORMAT_OPTIONS = [".icc", ".icm"]

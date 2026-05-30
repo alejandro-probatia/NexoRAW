@@ -54,6 +54,84 @@ class SessionDevelopmentMixin:
                 return profile
         return None
 
+    def _linked_development_profile_id_for_icc_profile(self, profile: dict[str, Any] | None) -> str:
+        if not isinstance(profile, dict):
+            return ""
+        profile_id = str(profile.get("development_profile_id") or "").strip()
+        if profile_id and self._development_profile_by_id(profile_id) is not None:
+            return profile_id
+
+        profile_manifest = self._session_stored_path(profile.get("development_profile_path"))
+        if profile_manifest is not None:
+            for candidate in getattr(self, "_development_profiles", []) or []:
+                candidate_id = str(candidate.get("id") or "").strip()
+                candidate_manifest = self._session_stored_path(candidate.get("manifest_path"))
+                if candidate_id and candidate_manifest is not None and self._paths_equivalent(candidate_manifest, profile_manifest):
+                    return candidate_id
+
+        icc_path = self._session_stored_path(profile.get("path") or profile.get("icc_profile_path"))
+        if icc_path is None:
+            return ""
+        for candidate in getattr(self, "_development_profiles", []) or []:
+            candidate_id = str(candidate.get("id") or "").strip()
+            if not candidate_id:
+                continue
+            manifest = self._development_profile_manifest(candidate)
+            candidate_icc = self._session_stored_path(candidate.get("icc_profile_path") or manifest.get("icc_profile_path"))
+            if candidate_icc is not None and self._paths_equivalent(candidate_icc, icc_path):
+                return candidate_id
+        return ""
+
+    def _linked_development_profile_settings_for_icc_profile(
+        self,
+        profile: dict[str, Any] | None,
+        *,
+        show_message: bool,
+    ) -> tuple[str, dict[str, Any] | None]:
+        profile_id = self._linked_development_profile_id_for_icc_profile(profile)
+        if not profile_id:
+            return "", None
+        if not self._development_profile_can_be_applied(profile_id, show_message=show_message):
+            return "", None
+        try:
+            return profile_id, self._development_profile_settings(profile_id)
+        except Exception as exc:
+            self._log_preview(f"No se pudo cargar el perfil de revelado vinculado: {exc}")
+            return "", None
+
+    def _apply_linked_development_profile_for_icc_profile(
+        self,
+        profile: dict[str, Any] | None,
+        icc_path: Path,
+        *,
+        show_message: bool = True,
+    ) -> str:
+        profile_id, settings = self._linked_development_profile_settings_for_icc_profile(
+            profile,
+            show_message=show_message,
+        )
+        if settings is None:
+            return ""
+        recipe = self._visible_export_recipe_for_color_management(
+            settings["recipe"],
+            input_profile_path=icc_path,
+        )
+        self._apply_recipe_to_controls(recipe)
+        development_profile = self._development_profile_by_id(profile_id)
+        recipe_path = None
+        if development_profile is not None:
+            recipe_path = self._session_stored_path(development_profile.get("recipe_path"))
+        if recipe_path is None and isinstance(profile, dict):
+            recipe_path = self._session_stored_path(profile.get("recipe_path"))
+        if recipe_path is not None and hasattr(self, "path_recipe"):
+            self.path_recipe.setText(str(recipe_path))
+        self._apply_detail_adjustment_state(settings["detail_adjustments"])
+        self._apply_render_adjustment_state(settings["render_adjustments"])
+        self._apply_output_space_defaults_to_controls(recipe.output_space)
+        self._active_development_profile_id = profile_id
+        self._refresh_development_profile_combo()
+        return profile_id
+
     def _icc_profile_catalog_path_allowed(self, path: Path, source: str) -> bool:
         if self._active_session_root is None:
             return True
@@ -293,15 +371,44 @@ class SessionDevelopmentMixin:
     def _session_icc_profiles_snapshot(self) -> list[dict[str, Any]]:
         return [dict(profile) for profile in self._icc_profiles]
 
+    def _profile_status_label(self, status: object, *, default: str | None = None) -> str:
+        key = str(status or "").strip().lower()
+        labels = {
+            "draft": self.tr("pendiente QA"),
+            "validated": self.tr("validado"),
+            "rejected": self.tr("rechazado"),
+            "expired": self.tr("caducado"),
+            "not_validated": self.tr("sin validar"),
+            "sin_estado": self.tr("sin estado"),
+            "unknown": self.tr("desconocido"),
+            "passed": self.tr("superado"),
+            "failed": self.tr("fallido"),
+        }
+        if key in labels:
+            return labels[key]
+        if not key:
+            return default if default is not None else self.tr("no disponible")
+        return str(status)
+
+    def _profile_source_label(self, source: object) -> str:
+        key = str(source or "").strip().lower()
+        labels = {
+            "generated": self.tr("generado"),
+            "loaded": self.tr("cargado"),
+            "active": self.tr("activo"),
+            "manual": self.tr("manual"),
+        }
+        return labels.get(key, str(source))
+
     def _icc_profile_combo_label(self, profile: dict[str, Any]) -> str:
         name = str(profile.get("name") or profile.get("id") or "ICC")
         status = str(profile.get("status") or "").strip()
         source = str(profile.get("source") or "generated")
         suffixes = []
         if status and status != "unknown":
-            suffixes.append(status)
+            suffixes.append(self._profile_status_label(status))
         if source and source not in {"generated", "active"}:
-            suffixes.append(source)
+            suffixes.append(self._profile_source_label(source))
         if suffixes:
             return f"{name} ({', '.join(suffixes)})"
         return name
@@ -326,7 +433,10 @@ class SessionDevelopmentMixin:
             active = self._icc_profile_by_id(current)
             active_label = self._icc_profile_combo_label(active) if active is not None else self.tr("ninguno")
             self.icc_profile_status_label.setText(
-                f"Perfiles ICC de sesión: {len(self._icc_profiles)} | Activo: {active_label}"
+                self.tr("Perfiles ICC de sesion:")
+                + f" {len(self._icc_profiles)} | "
+                + self.tr("Activo:")
+                + f" {active_label}"
             )
 
         self._refresh_selected_icc_profile_info()
@@ -336,7 +446,12 @@ class SessionDevelopmentMixin:
         self._sync_icc_workflow_choice_from_state()
         active = self._icc_profile_by_id(getattr(self, "_active_icc_profile_id", ""))
         active_label = self._icc_profile_combo_label(active) if active is not None else self.tr("ninguno")
-        session_text = f"Perfiles ICC de sesion: {len(getattr(self, '_icc_profiles', []) or [])} | Activo: {active_label}"
+        session_text = (
+            self.tr("Perfiles ICC de sesion:")
+            + f" {len(getattr(self, '_icc_profiles', []) or [])} | "
+            + self.tr("Activo:")
+            + f" {active_label}"
+        )
         if hasattr(self, "icc_session_info_label"):
             self.icc_session_info_label.setText(session_text)
 
@@ -513,12 +628,14 @@ class SessionDevelopmentMixin:
         if not self._activate_icc_profile_id(
             profile_id,
             save=True,
-            refresh_preview=True,
+            refresh_preview=False,
             allow_rejected=allow_rejected,
         ):
             self._refresh_icc_profile_combo()
             return
         self._auto_apply_current_icc_choice_to_selected_image()
+        self._invalidate_preview_cache()
+        self._reload_preview_source_for_color_management()
         if status == "rejected":
             self._log_preview(
                 self.tr("Perfil ICC activado manualmente pese a estado QA rechazada:") + f" {path}"
@@ -668,7 +785,7 @@ class SessionDevelopmentMixin:
             self,
             self.tr("Activar perfil rechazado"),
             self.tr(
-                "Este perfil ICC esta marcado como rejected por QA colorimetrica. "
+                "Este perfil ICC esta marcado como rechazado por QA colorimetrica. "
                 "Puede producir dominantes, clipping o conversiones no fiables.\n\n"
                 "Solo deberia activarse para diagnostico o comparacion, no para revelado final.\n\n"
                 "Quieres activarlo igualmente?"
@@ -711,7 +828,13 @@ class SessionDevelopmentMixin:
         self._active_icc_profile_id = profile_id
         self.path_profile_active.setText(str(path))
         self.chk_apply_profile.setChecked(True)
-        self._set_camera_rgb_output_for_session_icc()
+        linked_profile_id = self._apply_linked_development_profile_for_icc_profile(
+            profile,
+            path,
+            show_message=True,
+        )
+        if not linked_profile_id:
+            self._set_camera_rgb_output_for_session_icc()
         self._refresh_profile_management_views()
         self._refresh_chart_diagnostics_from_session(focus=False)
         if refresh_preview:
@@ -742,11 +865,11 @@ class SessionDevelopmentMixin:
             or not path.exists()
             or not self._profile_can_be_active(path, allow_rejected=allow_rejected)
         ):
-            status = status or self.tr("no disponible")
+            status_label = self._profile_status_label(status)
             QtWidgets.QMessageBox.warning(
                 self,
                 self.tr("Perfil no activable"),
-                self.tr("No se activa el perfil porque su estado QA es") + f" '{status}'.",
+                self.tr("No se activa el perfil porque su estado QA es") + f" '{status_label}'.",
             )
             self._refresh_icc_profile_combo()
             return
@@ -965,6 +1088,62 @@ class SessionDevelopmentMixin:
             return profile_id
         return str(profile.get("name") or profile_id)
 
+    def _development_profile_status(self, profile: dict[str, Any] | None) -> str:
+        if not isinstance(profile, dict):
+            return ""
+        manifest = self._development_profile_manifest(profile)
+        candidates = [
+            profile.get("profile_status"),
+            profile.get("status"),
+            manifest.get("profile_status"),
+            manifest.get("status"),
+        ]
+        fallback_status = ""
+        for candidate in candidates:
+            status = self._normalized_profile_status_candidate(candidate)
+            if not status:
+                continue
+            if status in {"validated", "rejected", "expired"}:
+                return status
+            if not fallback_status:
+                fallback_status = status
+        icc_path = self._session_stored_path(profile.get("icc_profile_path") or manifest.get("icc_profile_path"))
+        if icc_path is not None:
+            icc_status = str(self._profile_status_for_path(icc_path) or "").strip().lower()
+            if icc_status in {"validated", "rejected", "expired"}:
+                return icc_status
+            if not fallback_status:
+                fallback_status = icc_status
+        return fallback_status
+
+    def _development_profile_kind_label(self, kind: object) -> str:
+        key = str(kind or "").strip().lower()
+        labels = {
+            "chart": self.tr("carta"),
+            "advanced": self.tr("avanzado"),
+            "manual": self.tr("manual"),
+        }
+        return labels.get(key, str(kind or ""))
+
+    def _development_profile_can_be_applied(self, profile_id: str, *, show_message: bool = True) -> bool:
+        profile = self._development_profile_by_id(profile_id) if profile_id else None
+        if profile is None:
+            return True
+        status = self._development_profile_status(profile)
+        if status not in {"rejected", "expired"}:
+            return True
+        status_label = self._profile_status_label(status)
+        message = (
+            self.tr("No se aplica este perfil de ajuste porque su estado QA es")
+            + f" '{status_label}'. "
+            + self.tr("Repite la captura de carta o usa un ICC validado.")
+        )
+        if show_message:
+            QtWidgets.QMessageBox.warning(self, self.tr("Perfil de ajuste no activable"), message)
+        else:
+            self._log_preview(message)
+        return False
+
     def _refresh_development_profile_combo(self) -> None:
         if not hasattr(self, "development_profile_combo"):
             return
@@ -978,12 +1157,20 @@ class SessionDevelopmentMixin:
                 continue
             label = str(profile.get("name") or profile_id)
             kind = str(profile.get("kind") or "manual")
-            self.development_profile_combo.addItem(f"{label} ({kind})", profile_id)
+            suffixes = [self._development_profile_kind_label(kind)]
+            status = self._development_profile_status(profile)
+            if status:
+                suffixes.append(self._profile_status_label(status))
+            self.development_profile_combo.addItem(f"{label} ({', '.join(suffixes)})", profile_id)
         index = self.development_profile_combo.findData(current)
         self.development_profile_combo.setCurrentIndex(index if index >= 0 else 0)
         self.development_profile_combo.blockSignals(False)
         if hasattr(self, "development_profile_status_label"):
             active = self._development_profile_label(current)
+            active_profile = self._development_profile_by_id(current) if current else None
+            active_status = self._development_profile_status(active_profile)
+            if active_status:
+                active = f"{active} ({self._profile_status_label(active_status)})"
             self.development_profile_status_label.setText(
                 f"Perfiles de ajuste: {len(self._development_profiles)} | Activo: {active}"
             )
@@ -1506,13 +1693,28 @@ class SessionDevelopmentMixin:
             "name": str(icc_profile.get("name") or icc_path.stem) if icc_profile else icc_path.stem,
             "kind": "icc",
         }
+        linked_profile_id, linked_settings = self._linked_development_profile_settings_for_icc_profile(
+            icc_profile,
+            show_message=False,
+        )
+        linked_development_profile = (
+            self._profile_payload_from_development_settings(linked_settings)
+            if linked_profile_id and linked_settings is not None
+            else None
+        )
         written = 0
         for path in files:
             if path.suffix.lower() not in RAW_EXTENSIONS:
                 continue
             bundle = self._sidecar_bundle_for_category_write(path)
+            recipe_source = bundle["recipe"]
+            if linked_settings is not None and linked_development_profile is not None:
+                recipe_source = linked_settings["recipe"]
+                bundle["development_profile"] = linked_development_profile
+                bundle["detail_adjustments"] = linked_settings["detail_adjustments"]
+                bundle["render_adjustments"] = linked_settings["render_adjustments"]
             recipe = self._visible_export_recipe_for_color_management(
-                bundle["recipe"],
+                recipe_source,
                 input_profile_path=icc_path,
             )
             bundle["recipe"] = recipe
@@ -1664,9 +1866,11 @@ class SessionDevelopmentMixin:
                 "render_adjustments": render_state,
                 "icc_profile_path": profile_path,
                 "output_icc_profile_path": None,
+                "status": "",
             }
 
         manifest = self._development_profile_manifest(profile)
+        profile_status = self._development_profile_status(profile)
         detail_state = (
             manifest.get("detail_adjustments")
             if isinstance(manifest.get("detail_adjustments"), dict)
@@ -1695,6 +1899,7 @@ class SessionDevelopmentMixin:
             "render_adjustments": render_state,
             "icc_profile_path": icc_profile_path,
             "output_icc_profile_path": output_icc_profile_path,
+            "status": profile_status,
         }
 
     def _recipe_from_payload(self, payload: Any) -> Recipe | None:
@@ -1780,12 +1985,16 @@ class SessionDevelopmentMixin:
         if profile is None:
             return {"id": "", "name": "Ajustes actuales", "kind": "manual", "profile_type": "basic"}
         kind = str(profile.get("kind") or "manual")
-        return {
+        payload = {
             "id": profile_id,
             "name": str(profile.get("name") or profile_id),
             "kind": kind,
             "profile_type": str(profile.get("profile_type") or self._adjustment_profile_type_for_kind(kind)),
         }
+        status = self._development_profile_status(profile)
+        if status:
+            payload["status"] = status
+        return payload
 
     def _profile_payload_from_development_settings(self, settings: dict[str, Any]) -> dict[str, str]:
         kind = str(settings.get("kind") or "manual")
@@ -1795,6 +2004,7 @@ class SessionDevelopmentMixin:
             "name": str(settings.get("name") or "Ajustes actuales"),
             "kind": kind,
             "profile_type": profile_type,
+            "status": str(settings.get("status") or ""),
         }
 
     def _render_profile_and_mode_for_development_settings(
@@ -1837,6 +2047,8 @@ class SessionDevelopmentMixin:
         status: str = "assigned",
     ) -> int:
         if not profile_id:
+            return 0
+        if not self._development_profile_can_be_applied(profile_id, show_message=False):
             return 0
         settings = self._development_profile_settings(profile_id)
         rendered_profile, mode = self._render_profile_and_mode_for_development_settings(settings)
@@ -2859,6 +3071,9 @@ class SessionDevelopmentMixin:
         self._apply_development_profile_to_controls(profile_id)
 
     def _apply_development_profile_to_controls(self, profile_id: str) -> None:
+        if not self._development_profile_can_be_applied(profile_id):
+            self._refresh_development_profile_combo()
+            return
         settings = self._development_profile_settings(profile_id)
         input_profile = settings.get("icc_profile_path")
         recipe = self._visible_export_recipe_for_color_management(
@@ -2902,6 +3117,8 @@ class SessionDevelopmentMixin:
         calibrated_recipe_path: Path,
         icc_profile_path: Path,
         profile_report_path: Path,
+        profile_status: dict[str, Any] | str | None = None,
+        activate: bool = True,
     ) -> str:
         if self._active_session_root is None:
             return ""
@@ -2916,6 +3133,7 @@ class SessionDevelopmentMixin:
                     "name": name,
                     "kind": "chart",
                     "profile_type": "advanced",
+                    "profile_status": profile_status or {},
                     "recipe_path": self._session_relative_or_absolute(calibrated_recipe_path),
                     "icc_profile_path": self._session_relative_or_absolute(icc_profile_path),
                     "profile_report_path": self._session_relative_or_absolute(profile_report_path),
@@ -2932,12 +3150,13 @@ class SessionDevelopmentMixin:
                 "name": name,
                 "kind": "chart",
                 "profile_type": "advanced",
+                "profile_status": profile_status or {},
                 "recipe_path": self._session_relative_or_absolute(calibrated_recipe_path),
                 "manifest_path": self._session_relative_or_absolute(development_profile_path),
                 "icc_profile_path": self._session_relative_or_absolute(icc_profile_path),
                 "profile_report_path": self._session_relative_or_absolute(profile_report_path),
             },
-            activate=True,
+            activate=activate,
         )
         return profile_id
 
@@ -2947,6 +3166,8 @@ class SessionDevelopmentMixin:
             profile_id = str(self.development_profile_combo.currentData() or "")
         if not profile_id:
             QtWidgets.QMessageBox.information(self, self.tr("Info"), "Activa o guarda primero un perfil de ajuste.")
+            return
+        if not self._development_profile_can_be_applied(profile_id):
             return
         try:
             settings = self._development_profile_settings(profile_id)

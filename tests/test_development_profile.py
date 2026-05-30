@@ -34,6 +34,31 @@ def test_build_development_profile_balances_neutral_row_and_exposure():
     assert len(profile.neutral_patches) == 6
 
 
+def test_build_development_profile_ignores_saturated_neutral_for_calibration():
+    samples = SampleSet(
+        chart_name="ColorChecker 24",
+        chart_version="unit",
+        illuminant="D50",
+        strategy="unit",
+        samples=[
+            _neutral("P19", [0.03, 0.03, 0.03], 96.0, saturated=0.85),
+            _neutral("P20", [0.60, 0.60, 0.60], 81.0),
+            _neutral("P21", [0.36, 0.36, 0.36], 67.0),
+            _neutral("P22", [0.19, 0.19, 0.19], 51.0),
+            _neutral("P23", [0.09, 0.09, 0.09], 36.0),
+            _neutral("P24", [0.03, 0.03, 0.03], 20.0),
+        ],
+        missing_reference_patches=[],
+    )
+
+    profile = build_development_profile(samples, Recipe())
+
+    assert "P19" not in profile.neutral_patch_ids
+    assert all(p.patch_id != "P19" for p in profile.neutral_patches)
+    assert any("P19" in warning for warning in profile.warnings)
+    assert profile.density_error_ev_max_abs < 1.0
+
+
 def test_build_development_profile_requires_neutral_references():
     samples = SampleSet(
         chart_name="ColorChecker 24",
@@ -48,12 +73,12 @@ def test_build_development_profile_requires_neutral_references():
         build_development_profile(samples, Recipe())
 
 
-def _neutral(patch_id: str, rgb: list[float], l_value: float) -> PatchSample:
+def _neutral(patch_id: str, rgb: list[float], l_value: float, *, saturated: float = 0.0) -> PatchSample:
     return PatchSample(
         patch_id=patch_id,
         measured_rgb=rgb,
         reference_rgb=None,
         reference_lab=[l_value, 0.0, 0.0],
         excluded_pixel_ratio=0.0,
-        saturated_pixel_ratio=0.0,
+        saturated_pixel_ratio=saturated,
     )

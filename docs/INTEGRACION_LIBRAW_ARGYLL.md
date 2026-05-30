@@ -99,13 +99,13 @@ Flow:
 1. A temporary `.ti3` is built with samples and reference.
 2. Format used:
    - `DEVICE_CLASS "INPUT"`
-   - `COLOR_REP "LAB_RGB"`
-   - `LAB_L LAB_A LAB_B RGB_R RGB_G RGB_B` fields
+   - `COLOR_REP "XYZ_RGB"`
+   - `XYZ_X XYZ_Y XYZ_Z RGB_R RGB_G RGB_B` fields
 3. `colprof` is executed to generate `.icc`.
 
 Base command:
 ```bash
-colprof -v -D "<descripcion>" -qm -as <base_ti3>
+colprof -v -D "<description>" -qm -al -u -R <base_ti3>
 ```
 Validation:
 

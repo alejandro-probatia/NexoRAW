@@ -60,7 +60,7 @@ def test_samples_to_arrays_uses_lab_d50_and_preserves_patch_order():
     assert reference_xyz[1] == pytest.approx([0.0, 0.0, 0.0], abs=1e-10)
 
 
-def test_write_samples_cgats_uses_lab_values_and_rgb_percent_scale(tmp_path: Path):
+def test_write_samples_cgats_uses_input_device_xyz_rgb_and_rgb_percent_scale(tmp_path: Path):
     samples = _sample_set(
         [
             PatchSample(
@@ -79,6 +79,6 @@ def test_write_samples_cgats_uses_lab_values_and_rgb_percent_scale(tmp_path: Pat
 
     text = output.read_text(encoding="ascii")
     assert 'DEVICE_CLASS "INPUT"' in text
-    assert 'COLOR_REP "LAB_RGB"' in text
-    assert "SAMPLE_ID LAB_L LAB_A LAB_B RGB_R RGB_G RGB_B" in text
-    assert "P01 50.123457 -1.200000 3.400000 10.000000 20.000000 30.000000" in text
+    assert 'COLOR_REP "XYZ_RGB"' in text
+    assert "SAMPLE_ID XYZ_X XYZ_Y XYZ_Z RGB_R RGB_G RGB_B" in text
+    assert "P01 17.636231 18.522205 13.955796 10.000000 20.000000 30.000000" in text

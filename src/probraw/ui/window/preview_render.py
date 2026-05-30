@@ -424,6 +424,8 @@ class PreviewRenderMixin:
         return int(PREVIEW_INTERACTIVE_STUCK_TIMEOUT_MS)
 
     def _detail_kwargs_have_effect(self, detail_kwargs: dict[str, float]) -> bool:
+        sharpen_amount = float(detail_kwargs.get("sharpen_amount", 0.0))
+        sharpen_radius = float(detail_kwargs.get("sharpen_radius", 1.0))
         return any(
             abs(float(detail_kwargs.get(name, default)) - float(default)) > 1e-6
             for name, default in (
@@ -433,7 +435,7 @@ class PreviewRenderMixin:
                 ("lateral_ca_red_scale", 1.0),
                 ("lateral_ca_blue_scale", 1.0),
             )
-        ) or abs(float(detail_kwargs.get("sharpen_radius", 1.0)) - 1.0) > 1e-6
+        ) or (sharpen_amount > 1e-6 and abs(sharpen_radius - 1.0) > 1e-6)
 
     def _apply_render_adjustments_tiled(
         self,
@@ -1875,8 +1877,10 @@ class PreviewRenderMixin:
             if raw_profile_text and active_session_profile is None:
                 p = Path(raw_profile_text).expanduser()
                 status = self._profile_status_for_path(p) or "no disponible"
+                status_label = self._profile_status_label(status)
                 self._log_preview(
-                    f"Aviso: perfil ICC no aplicado porque su estado QA es {status}."
+                    self.tr("Aviso: perfil ICC no aplicado porque su estado QA es")
+                    + f" {status_label}."
                 )
                 self.path_profile_active.clear()
                 if hasattr(self, "chk_apply_profile"):

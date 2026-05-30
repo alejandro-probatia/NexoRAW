@@ -424,6 +424,7 @@ if QtWidgets is not None:
             self._manual_chart_marking = False
             self._manual_chart_points: list[tuple[float, float]] = []
             self._manual_chart_points_source: Path | None = None
+            self._manual_chart_sample_regions: list[dict[str, Any]] = []
             self._manual_chart_marking_after_reload = False
             self._neutral_picker_active = False
             self._color_picker_active = False
@@ -478,6 +479,7 @@ if QtWidgets is not None:
             self._storage_roots: list[Path] = []
             self._task_counter = 0
             self._active_tasks = 0
+            self._background_task_records: dict[int, dict[str, Any]] = {}
             self._global_progress_owner: str | None = None
             self._active_session_root: Path | None = None
             self._active_session_payload: dict[str, Any] | None = None
@@ -590,6 +592,9 @@ if QtWidgets is not None:
             self._mtf_progress_timer = QtCore.QTimer(self)
             self._mtf_progress_timer.setInterval(250)
             self._mtf_progress_timer.timeout.connect(self._update_mtf_progress_status)
+            self._task_activity_timer = QtCore.QTimer(self)
+            self._task_activity_timer.setInterval(500)
+            self._task_activity_timer.timeout.connect(self._refresh_background_task_activity)
             self._session_root_update_timer = QtCore.QTimer(self)
             self._session_root_update_timer.setSingleShot(True)
             self._session_root_update_timer.timeout.connect(self._on_session_root_edited)

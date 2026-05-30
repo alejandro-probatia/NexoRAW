@@ -20,6 +20,40 @@ Para mantener trazabilidad completa, cada cambio debe:
 
 Sin entradas todavia.
 
+## [0.4.3] - 2026-05-30
+
+### Added
+
+- Aniadidas zonas centrales de lectura editables tras el marcado manual de
+  cuatro esquinas, para desplazar muestras de parche lejos de bordes, polvo,
+  brillos o manchas antes de crear el perfil ICC.
+- Aniadidas fichas compactas de muestras Lab con control de color de marcador,
+  resaltado de muestra seleccionada y ventana ampliada para el grafico Lab a*b*.
+
+### Changed
+
+- El perfilado ICC queda documentado y aplicado alrededor de capturas RAW/DNG
+  originales de carta, perfiles ICC de sesion y su receta calibrada asociada.
+- Las miniaturas mantienen el nombre de archivo por encima de los iconos de
+  perfil para evitar desplazamientos de layout.
+- El estado de tareas de fondo muestra texto de fase y detalle mas claro durante
+  operaciones largas.
+- La interfaz espanola localiza los estados rechazado/pendiente QA sin cambiar
+  los valores internos de metadatos.
+
+### Fixed
+
+- El cuentagotas Lab recalcula ajustes de detalle pendientes a tamano real antes
+  de guardar una muestra, en vez de fallar cuando la preview exacta esta
+  obsoleta.
+- Los perfiles ICC generados que no superan QA no se autoactivan ni cargan su
+  receta calibrada como ajuste activo.
+
+### Tests
+
+- Validado con regresiones GUI/perfilado/deteccion focalizadas, compilacion
+  Python y builds de instaladores Windows y Linux.
+
 ## [0.4.1] - 2026-05-29
 
 ### Fixed

@@ -39,7 +39,7 @@ is_true() {
 install_amaze_backend() {
   local wheel="$RAWPY_DEMOSAIC_WHEEL"
   if [[ -z "$wheel" && "$RAWPY_DEMOSAIC_SOURCE" == "git+https://github.com/exfab/rawpy-demosaic.git@8b17075" ]]; then
-    "$ROOT/scripts/build_rawpy_demosaic_wheel.py" \
+    "$PYTHON" "$ROOT/scripts/build_rawpy_demosaic_wheel.py" \
       --python "$VENV_DIR/bin/python" \
       --repo "$RAWPY_DEMOSAIC_REPO" \
       --ref "$RAWPY_DEMOSAIC_REF" \
@@ -230,6 +230,7 @@ exit 0
 SH
 
 chmod 0755 "$BUILD_ROOT/DEBIAN/postinst"
+chmod 0755 "$BUILD_ROOT/DEBIAN"
 
 dpkg-deb --build --root-owner-group "$BUILD_ROOT" "$DEB_PATH"
 dpkg-deb --info "$DEB_PATH"

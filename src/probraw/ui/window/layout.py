@@ -1572,6 +1572,7 @@ class LayoutMixin:
         self.color_samples_table.setAlternatingRowColors(True)
         self.color_samples_table.verticalHeader().setVisible(False)
         self.color_samples_table.itemChanged.connect(self._on_color_sample_table_item_changed)
+        self.color_samples_table.itemSelectionChanged.connect(self._sync_color_sample_overlay)
         samples_header = self.color_samples_table.horizontalHeader()
         samples_header.setSectionResizeMode(QtWidgets.QHeaderView.Interactive)
         samples_header.setStretchLastSection(False)
@@ -1595,7 +1596,16 @@ class LayoutMixin:
         self.color_sample_gamut_widget.setToolTip(
             self.tr("Gama visual de los conjuntos de muestras en Lab a*b*")
         )
-        samples_layout.addWidget(self.color_sample_gamut_widget)
+        color_sample_gamut_row = QtWidgets.QHBoxLayout()
+        color_sample_gamut_row.setContentsMargins(0, 0, 0, 0)
+        color_sample_gamut_row.setSpacing(6)
+        color_sample_gamut_row.addWidget(self.color_sample_gamut_widget, 1)
+        self.btn_color_sample_gamut_expand = QtWidgets.QToolButton()
+        self.btn_color_sample_gamut_expand.setIcon(self.style().standardIcon(QtWidgets.QStyle.SP_TitleBarMaxButton))
+        self.btn_color_sample_gamut_expand.setToolTip(self.tr("Ampliar grafico de muestras Lab a*b*"))
+        self.btn_color_sample_gamut_expand.clicked.connect(self._show_color_sample_gamut_dialog)
+        color_sample_gamut_row.addWidget(self.btn_color_sample_gamut_expand, 0, QtCore.Qt.AlignTop)
+        samples_layout.addLayout(color_sample_gamut_row)
 
         self.color_sample_group_table = QtWidgets.QTableWidget()
         self.color_sample_group_table.setColumnCount(15)
@@ -1633,6 +1643,9 @@ class LayoutMixin:
         samples_layout.addWidget(self.color_sample_group_table)
 
         color_samples_buttons = QtWidgets.QHBoxLayout()
+        color_samples_buttons.addWidget(
+            self._button(self.tr("Color marcador"), lambda _checked=False: self._choose_color_sample_marker_color())
+        )
         color_samples_buttons.addWidget(self._button(self.tr("Eliminar seleccion"), self._delete_selected_color_picker_sample))
         color_samples_buttons.addWidget(self._button(self.tr("Limpiar tomas"), self._clear_color_picker_samples))
         samples_layout.addLayout(color_samples_buttons)
@@ -1754,6 +1767,7 @@ class LayoutMixin:
         self.file_list.setMovement(QtWidgets.QListView.Static)
         self.file_list.setSpacing(2)
         self.file_list.setWordWrap(False)
+        self.file_list.setTextElideMode(QtCore.Qt.ElideMiddle)
         self.file_list.setUniformItemSizes(False)
         self.file_list.setHorizontalScrollMode(QtWidgets.QAbstractItemView.ScrollPerPixel)
         self.file_list.setVerticalScrollMode(QtWidgets.QAbstractItemView.ScrollPerPixel)
@@ -1770,8 +1784,9 @@ class LayoutMixin:
             "QListWidget::item {"
             "background-color: #242424;"
             "border: 1px solid #454545;"
+            "color: #e6e6e6;"
             "margin: 0px;"
-            "padding: 0px;"
+            "padding: 3px 4px;"
             "}"
             "QListWidget::item:selected {"
             "border: 2px solid #d8d8d8;"
@@ -1797,7 +1812,8 @@ class LayoutMixin:
     def _apply_thumbnail_size(self, size: int) -> None:
         size = int(np.clip(size, MIN_THUMBNAIL_SIZE, MAX_THUMBNAIL_SIZE))
         badge_h = self._thumbnail_badge_strip_height(size) if hasattr(self, "_thumbnail_badge_strip_height") else 0
-        self.file_list.setIconSize(QtCore.QSize(size, size + badge_h))
+        label_h = self._thumbnail_filename_label_height() if hasattr(self, "_thumbnail_filename_label_height") else 0
+        self.file_list.setIconSize(QtCore.QSize(size, size + label_h + badge_h))
         self.file_list.setGridSize(QtCore.QSize())
         for row in range(self.file_list.count()):
             item = self.file_list.item(row)
@@ -1824,6 +1840,7 @@ class LayoutMixin:
 
         self.image_result_single = ImagePanel(self.tr("Resultado"))
         self.image_result_single.imageClicked.connect(self._on_result_image_click)
+        self.image_result_single.sampleRegionMoved.connect(self._on_manual_chart_sample_region_moved)
         self.image_result_single.roiSelected.connect(self._on_viewer_roi_selected)
         self.image_result_single.lineSelected.connect(self._on_viewer_line_selected)
         self.image_result_single.viewTransformChanged.connect(self._on_viewer_panel_transform_changed)
@@ -1836,6 +1853,7 @@ class LayoutMixin:
         self.image_original_compare = ImagePanel(self.tr(""), framed=False, background="#202020")
         self.image_result_compare = ImagePanel(self.tr(""), framed=False, background="#202020")
         self.image_result_compare.imageClicked.connect(self._on_result_image_click)
+        self.image_result_compare.sampleRegionMoved.connect(self._on_manual_chart_sample_region_moved)
         self.image_result_compare.roiSelected.connect(self._on_viewer_roi_selected)
         self.image_original_compare.lineSelected.connect(self._on_viewer_line_selected)
         self.image_result_compare.lineSelected.connect(self._on_viewer_line_selected)

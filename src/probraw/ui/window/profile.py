@@ -482,7 +482,7 @@ class ProfileWorkflowMixin:
                 QtWidgets.QMessageBox.information(
                     self,
                     self.tr("Referencias no válidas"),
-                    self.tr("Las referencias colorimétricas deben ser RAW/DNG o TIFFs originales de carta, no")
+                    self.tr("Las referencias colorimétricas deben ser RAW/DNG originales de carta, no")
                     + f" {reason}. " + self.tr("Selecciona las capturas en 01_ORG."),
                 )
                 fallback = self._preferred_profile_reference_dir()
@@ -496,7 +496,7 @@ class ProfileWorkflowMixin:
             QtWidgets.QMessageBox.information(
                 self,
                 self.tr("Info"),
-                self.tr("Selecciona una o más capturas RAW/DNG/TIFF como referencias colorimétricas."),
+                self.tr("Selecciona una o más capturas RAW/DNG como referencias colorimétricas."),
             )
             return
         self._selected_chart_files = sorted(set(files), key=lambda p: str(p))
@@ -602,6 +602,7 @@ class ProfileWorkflowMixin:
         return {
             "source": source,
             "points_preview": list(self._manual_chart_points),
+            "sample_regions_preview": self._manual_chart_sample_regions_for_profile(),
             "preview_shape": (int(preview_h), int(preview_w)),
         }
 
@@ -655,19 +656,21 @@ class ProfileWorkflowMixin:
 
         manual_dir = workdir / "manual_detections"
         manual_dir.mkdir(parents=True, exist_ok=True)
-        if source.suffix.lower() in RAW_EXTENSIONS:
-            target_image = manual_dir / f"{source.stem}.manual_for_profile.tiff"
-            full_image = develop_image_array(source, recipe)
-            write_tiff16(target_image, full_image)
-        else:
-            target_image = source
-            full_image = read_image(target_image)
+        target_image = manual_dir / f"{source.stem}.manual_for_profile.tiff"
+        full_image = develop_image_array(source, recipe)
+        write_tiff16(target_image, full_image)
 
         full_h, full_w = full_image.shape[:2]
         sx = full_w / max(1, int(preview_w))
         sy = full_h / max(1, int(preview_h))
         corners = [(x * sx, y * sy) for x, y in points_preview]
         detection = detect_chart_from_corners_array(full_image, corners=corners, chart_type=chart_type)
+        self._apply_manual_chart_sample_regions_to_detection(
+            detection,
+            request.get("sample_regions_preview"),
+            scale_x=sx,
+            scale_y=sy,
+        )
 
         detection_path = manual_dir / f"{source.stem}.manual_for_profile.json"
         overlay_path = manual_dir / f"{source.stem}.manual_for_profile.overlay.png"
@@ -707,15 +710,15 @@ class ProfileWorkflowMixin:
 
     def _set_recommended_colprof_args(self) -> None:
         self._set_combo_data(self.combo_profile_quality, "m")
-        self._set_combo_data(self.combo_profile_algo, "-as")
+        self._set_combo_data(self.combo_profile_algo, "-al")
         self.edit_colprof_args.setText(RECOMMENDED_COLPROF_EXTRA_ARGS)
-        self._set_status(self.tr("ArgyllCMS: preset recomendado para ColorChecker 24 aplicado"))
+        self._set_status(self.tr("ArgyllCMS: preset recomendado aplicado"))
         self._save_active_session(silent=True)
 
     def _uses_risky_colorchecker24_colprof_model(self) -> bool:
         chart_type = str(self.profile_chart_type.currentText() or "").strip().lower()
         model = str(self.combo_profile_algo.currentData() or "").strip()
-        return chart_type == "colorchecker24" and model in {"-al", "-ax"}
+        return chart_type == "colorchecker24" and model in {"-ax"}
 
     def _confirm_risky_colorchecker24_colprof_model(self) -> bool:
         if not self._uses_risky_colorchecker24_colprof_model():
@@ -726,13 +729,12 @@ class ProfileWorkflowMixin:
             self,
             self.tr("Perfil ICC avanzado"),
             self.tr(
-                "Has elegido un perfil cLUT para ColorChecker 24. En colorimetria, una cLUT necesita muchas "
-                "muestras bien distribuidas para interpolar con estabilidad. Con 24 parches puede sobreajustar, "
-                "estirar el rango hacia los extremos y aumentar el riesgo de clipping en altas luces.\n\n"
+                "Has elegido XYZ cLUT para ColorChecker 24. ArgyllCMS advierte que XYZ cLUT puede ser menos "
+                "robusto con conjuntos de parches escasos o irregularmente distribuidos.\n\n"
             )
             + self.tr(explanation)
             + "\n\n"
-            + self.tr("Para el flujo normal se recomienda matriz + curvas por canal (-as), calidad Medium y -u -R.")
+            + self.tr("Para el flujo normal se recomienda Lab cLUT (-al), calidad Medium y -u -R.")
             + "\n\n"
             + self.tr("Quieres continuar con el modo avanzado?"),
             QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
@@ -786,7 +788,7 @@ class ProfileWorkflowMixin:
                 QtWidgets.QMessageBox.information(
                     self,
                     self.tr("Sin capturas de carta"),
-                    self.tr("Selecciona una o mas miniaturas con carta, carga una carta en el visor o abre una carpeta con capturas RAW/DNG/TIFF."),
+                    self.tr("Selecciona una o mas miniaturas con carta, carga una carta en el visor o abre una carpeta con capturas RAW/DNG."),
                 )
                 return
         if not self._confirm_risky_colorchecker24_colprof_model():
@@ -884,10 +886,18 @@ class ProfileWorkflowMixin:
                 if status == "draft":
                     reasons = profile_status.get("reasons") if isinstance(profile_status.get("reasons"), list) else []
                     detail = f" ({', '.join(str(r) for r in reasons[:3])})" if reasons else ""
-                    self._log_preview(f"Perfil generado en estado draft{detail}; no se activa automaticamente.")
+                    self._log_preview(
+                        self.tr("Perfil generado en estado pendiente QA")
+                        + f"{detail}; "
+                        + self.tr("no se activa automaticamente.")
+                    )
                 else:
-                    self._log_preview(f"Perfil no activado por estado: {status}")
-            if payload.get("calibrated_recipe_path"):
+                    self._log_preview(
+                        self.tr("Perfil no activado por estado:")
+                        + f" {self._profile_status_label(status)}"
+                    )
+            auto_activate_generated = status == "validated"
+            if payload.get("calibrated_recipe_path") and auto_activate_generated:
                 calibrated_recipe_path = Path(str(payload["calibrated_recipe_path"]))
                 self.path_recipe.setText(str(calibrated_recipe_path))
                 try:
@@ -896,6 +906,11 @@ class ProfileWorkflowMixin:
                     QtCore.QTimer.singleShot(0, lambda: self._on_load_selected(show_message=False))
                 except Exception as exc:
                     self._log_preview(f"No se pudo cargar receta calibrada en la GUI: {exc}")
+            elif payload.get("calibrated_recipe_path"):
+                self._log_preview(
+                    self.tr("Receta calibrada no activada porque el perfil quedo en estado")
+                    + f" {self._profile_status_label(status)}."
+                )
             chart_profile_id = ""
             if payload.get("development_profile_path") and payload.get("calibrated_recipe_path"):
                 session_label = self.session_name_edit.text().strip() or profile_out.stem
@@ -909,15 +924,23 @@ class ProfileWorkflowMixin:
                     calibrated_recipe_path=Path(str(payload["calibrated_recipe_path"])),
                     icc_profile_path=profile_out,
                     profile_report_path=profile_report,
+                    profile_status=profile_status,
+                    activate=auto_activate_generated,
                 )
                 chart_profile_id = profile_id
-                assigned = self._assign_development_profile_to_raw_files(
-                    profile_id,
-                    self._raw_files_for_chart_profile_assignment(charts, chart_capture_files),
-                    status="assigned",
-                )
-                if assigned:
-                    self._log_preview(f"Perfil de ajuste avanzado asignado a {assigned} RAW de carta")
+                if auto_activate_generated:
+                    assigned = self._assign_development_profile_to_raw_files(
+                        profile_id,
+                        self._raw_files_for_chart_profile_assignment(charts, chart_capture_files),
+                        status="assigned",
+                    )
+                    if assigned:
+                        self._log_preview(f"Perfil de ajuste avanzado asignado a {assigned} RAW de carta")
+                else:
+                    self._log_preview(
+                        self.tr("Perfil de ajuste avanzado registrado, pero no activado ni asignado por estado")
+                        + f" {self._profile_status_label(status)}."
+                    )
             profile_status = payload.get("profile_status") if isinstance(payload.get("profile_status"), dict) else {}
             self._register_icc_profile(
                 {
@@ -1496,7 +1519,7 @@ class ProfileWorkflowMixin:
         profile_status = payload.get("profile_status") if isinstance(payload.get("profile_status"), dict) else {}
         status = str(profile_status.get("status") or "draft")
         parts = [
-            f"Estado perfil: {status}",
+            f"Estado perfil: {self._profile_status_label(status)}",
             f"ICC de entrada generado: {profile_out}",
             f"Entrenamiento: {payload.get('chart_captures_used', 0)}/{payload.get('training_captures_total', payload.get('chart_captures_total', 0))}",
             f"Receta calibrada: {payload.get('calibrated_recipe_path') or 'no generada'}",
@@ -1515,7 +1538,7 @@ class ProfileWorkflowMixin:
             status = qa.get("status", "sin_estado")
             parts.append(
                 f"Validación: {validation.get('validation_captures_used', 0)}/"
-                f"{validation.get('validation_captures_total', 0)} ({status})"
+                f"{validation.get('validation_captures_total', 0)} ({self._profile_status_label(status)})"
             )
             mean_val = v_error.get("mean_delta_e2000")
             max_val = v_error.get("max_delta_e2000")
@@ -1552,7 +1575,7 @@ class ProfileWorkflowMixin:
             QtWidgets.QMessageBox.information(
                 self,
                 self.tr("Referencia no compatible"),
-                self.tr("El marcado manual para perfilado cientifico solo acepta RAW/DNG/TIFF."),
+                self.tr("El marcado manual para perfilado cientifico solo acepta RAW/DNG."),
             )
             return
         self._begin_manual_chart_marking()
@@ -1571,6 +1594,7 @@ class ProfileWorkflowMixin:
             self._set_color_picker_active(False)
         self._manual_chart_marking = True
         self._manual_chart_points = []
+        self._manual_chart_sample_regions = []
         self._manual_chart_points_source = self._selected_file.expanduser().resolve(strict=False) if self._selected_file else None
         self._update_viewer_interaction_cursor()
         self._sync_manual_chart_overlay()
@@ -1579,6 +1603,7 @@ class ProfileWorkflowMixin:
     def _clear_manual_chart_points(self) -> None:
         self._manual_chart_marking = False
         self._manual_chart_points = []
+        self._manual_chart_sample_regions = []
         self._manual_chart_points_source = None
         self._update_viewer_interaction_cursor()
         self._sync_manual_chart_overlay()
@@ -1590,6 +1615,7 @@ class ProfileWorkflowMixin:
         self._manual_chart_marking = False
         self._manual_chart_marking_after_reload = False
         self._manual_chart_points = []
+        self._manual_chart_sample_regions = []
         self._manual_chart_points_source = None
         self._update_viewer_interaction_cursor()
         self._sync_manual_chart_overlay()
@@ -1622,24 +1648,148 @@ class ProfileWorkflowMixin:
         self._manual_chart_points.append((float(x), float(y)))
         if len(self._manual_chart_points) == 4:
             self._manual_chart_marking = False
+            self._manual_chart_sample_regions = self._manual_chart_sample_regions_from_points(self._manual_chart_points)
             self._update_viewer_interaction_cursor()
-            self._set_status(self.tr("Cuatro esquinas marcadas; revisa y guarda la deteccion"))
+            self._set_status(self.tr("Cuatro esquinas marcadas; revisa las zonas centrales de lectura y arrastra las que deban evitar polvo o manchas"))
         else:
+            self._manual_chart_sample_regions = []
             self._set_status(self.tr("Punto") + f" {len(self._manual_chart_points)}/4 " + self.tr("marcado"))
         self._sync_manual_chart_overlay()
 
     def _sync_manual_chart_overlay(self) -> None:
         points = self._manual_chart_points if self._manual_chart_points_match_selected_file() else []
+        sample_regions = self._manual_chart_sample_regions if len(points) == 4 else []
         if hasattr(self, "manual_chart_points_label"):
             if points:
                 coords = " | ".join(f"{idx}:{x:.0f},{y:.0f}" for idx, (x, y) in enumerate(points, start=1))
-                self.manual_chart_points_label.setText(self.tr("Puntos:") + f" {len(points)}/4 - {coords}")
+                suffix = ""
+                if sample_regions:
+                    suffix = " | " + self.tr("Zonas centrales de lectura:") + f" {len(sample_regions)} " + self.tr("arrastrables")
+                self.manual_chart_points_label.setText(self.tr("Puntos:") + f" {len(points)}/4 - {coords}{suffix}")
             else:
                 self.manual_chart_points_label.setText(self.tr("Puntos: 0/4"))
         if hasattr(self, "image_result_single"):
             self.image_result_single.set_overlay_points(points)
+            if hasattr(self.image_result_single, "set_editable_sample_regions"):
+                self.image_result_single.set_editable_sample_regions(sample_regions, enabled=bool(sample_regions))
         if hasattr(self, "image_result_compare"):
             self.image_result_compare.set_overlay_points(points)
+            if hasattr(self.image_result_compare, "set_editable_sample_regions"):
+                self.image_result_compare.set_editable_sample_regions(sample_regions, enabled=bool(sample_regions))
+
+    def _manual_chart_sample_regions_from_points(
+        self,
+        points: list[tuple[float, float]],
+    ) -> list[dict[str, Any]]:
+        if len(points) != 4:
+            return []
+        try:
+            preview_h, preview_w = self._manual_chart_point_space_shape()
+            image = np.zeros((max(1, int(preview_h)), max(1, int(preview_w)), 3), dtype=np.float32)
+            detection = detect_chart_from_corners_array(
+                image,
+                corners=[(float(x), float(y)) for x, y in points],
+                chart_type=str(self.profile_chart_type.currentText()),
+            )
+        except Exception as exc:
+            self._log_preview(self.tr("No se pudieron calcular zonas de lectura:") + f" {exc}")
+            return []
+        return self._sample_regions_from_detection(detection)
+
+    @staticmethod
+    def _sample_regions_from_detection(detection: Any) -> list[dict[str, Any]]:
+        regions: list[dict[str, Any]] = []
+        for patch in getattr(detection, "patches", []) or []:
+            patch_id = str(getattr(patch, "patch_id", "") or "")
+            points = [
+                (float(getattr(point, "x")), float(getattr(point, "y")))
+                for point in getattr(patch, "sample_region", []) or []
+            ]
+            if patch_id and len(points) >= 3:
+                regions.append({"id": patch_id, "label": patch_id, "points": points})
+        return regions
+
+    def _manual_chart_sample_regions_for_profile(self) -> list[dict[str, Any]]:
+        if not self._manual_chart_points_match_selected_file():
+            return []
+        cleaned: list[dict[str, Any]] = []
+        for region in getattr(self, "_manual_chart_sample_regions", []) or []:
+            if not isinstance(region, dict):
+                continue
+            points: list[tuple[float, float]] = []
+            for point in region.get("points") or []:
+                try:
+                    x, y = point
+                    points.append((float(x), float(y)))
+                except Exception:
+                    continue
+            if len(points) >= 3:
+                region_id = str(region.get("id") or region.get("label") or "")
+                if region_id:
+                    cleaned.append({"id": region_id, "label": str(region.get("label") or region_id), "points": points})
+        return cleaned
+
+    def _on_manual_chart_sample_region_moved(self, region_id: str, points: object) -> None:
+        if not self._manual_chart_points_match_selected_file():
+            return
+        moved_points: list[tuple[float, float]] = []
+        for point in (points if isinstance(points, list) else []):
+            try:
+                x, y = point
+                moved_points.append((float(x), float(y)))
+            except Exception:
+                continue
+        if len(moved_points) < 3:
+            return
+        found = False
+        for region in self._manual_chart_sample_regions:
+            if str(region.get("id") or "") == str(region_id):
+                region["points"] = moved_points
+                found = True
+                break
+        if not found:
+            self._manual_chart_sample_regions.append({"id": str(region_id), "label": str(region_id), "points": moved_points})
+        self._sync_manual_chart_overlay()
+        self._set_status(self.tr("Zona de lectura ajustada:") + f" {region_id}")
+
+    @staticmethod
+    def _apply_manual_chart_sample_regions_to_detection(
+        detection: Any,
+        sample_regions: Any,
+        *,
+        scale_x: float,
+        scale_y: float,
+    ) -> None:
+        if not isinstance(sample_regions, list):
+            return
+        by_id: dict[str, list[tuple[float, float]]] = {}
+        for region in sample_regions:
+            if not isinstance(region, dict):
+                continue
+            region_id = str(region.get("id") or "")
+            points: list[tuple[float, float]] = []
+            for point in region.get("points") or []:
+                try:
+                    x, y = point
+                    points.append((float(x) * float(scale_x), float(y) * float(scale_y)))
+                except Exception:
+                    continue
+            if region_id and len(points) >= 3:
+                by_id[region_id] = points
+        if not by_id:
+            return
+        edited = 0
+        for patch in getattr(detection, "patches", []) or []:
+            patch_id = str(getattr(patch, "patch_id", "") or "")
+            points = by_id.get(patch_id)
+            if not points:
+                continue
+            patch.sample_region = [Point2(float(x), float(y)) for x, y in points]
+            edited += 1
+        if edited:
+            warnings = getattr(detection, "warnings", None)
+            if isinstance(warnings, list):
+                warnings.append(f"zonas de lectura ajustadas manualmente: {edited}")
 
     def _save_manual_chart_detection(self) -> None:
         if self._selected_file is None:
@@ -1649,7 +1799,7 @@ class ProfileWorkflowMixin:
             QtWidgets.QMessageBox.information(
                 self,
                 self.tr("Referencia no compatible"),
-                self.tr("Las detecciones de carta para perfilado cientifico solo aceptan RAW/DNG/TIFF."),
+                self.tr("Las detecciones de carta para perfilado cientifico solo aceptan RAW/DNG."),
             )
             return
         if self._original_linear is None:
@@ -1683,6 +1833,7 @@ class ProfileWorkflowMixin:
 
         selected = self._selected_file
         points_preview = list(self._manual_chart_points)
+        sample_regions_preview = self._manual_chart_sample_regions_for_profile()
         preview_h, preview_w = self._manual_chart_point_space_shape()
         out_json = Path(out_text)
         chart_type = self.profile_chart_type.currentText()
@@ -1691,19 +1842,21 @@ class ProfileWorkflowMixin:
         def task():
             out_json.parent.mkdir(parents=True, exist_ok=True)
             overlay_path = out_json.with_name(f"{out_json.stem}.overlay.png")
-            if selected.suffix.lower() in RAW_EXTENSIONS:
-                target_image = out_json.with_name(f"{out_json.stem}.developed.tiff")
-                full_image = develop_image_array(selected, recipe)
-                write_tiff16(target_image, full_image)
-            else:
-                target_image = selected
-                full_image = read_image(target_image)
+            target_image = out_json.with_name(f"{out_json.stem}.developed.tiff")
+            full_image = develop_image_array(selected, recipe)
+            write_tiff16(target_image, full_image)
 
             full_h, full_w = full_image.shape[:2]
             sx = full_w / max(1, preview_w)
             sy = full_h / max(1, preview_h)
             corners = [(x * sx, y * sy) for x, y in points_preview]
             detection = detect_chart_from_corners_array(full_image, corners=corners, chart_type=chart_type)
+            self._apply_manual_chart_sample_regions_to_detection(
+                detection,
+                sample_regions_preview,
+                scale_x=sx,
+                scale_y=sy,
+            )
             write_json(out_json, detection)
             draw_detection_overlay_array(full_image, detection, overlay_path)
             return {

@@ -488,10 +488,11 @@ class PreviewMenuMixin:
             if not allow_rejected:
                 return
         if not self._profile_can_be_active(profile_path, allow_rejected=allow_rejected):
+            status_label = self._profile_status_label(status)
             QtWidgets.QMessageBox.warning(
                 self,
                 self.tr("Perfil no activable"),
-                self.tr("No se activa el perfil porque su estado QA es") + f" '{status}'. "
+                self.tr("No se activa el perfil porque su estado QA es") + f" '{status_label}'. "
                 + self.tr("Regenera el perfil con referencias RAW/DNG originales."),
             )
             return

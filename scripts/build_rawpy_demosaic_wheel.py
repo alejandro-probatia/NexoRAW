@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import shutil
 import subprocess
 import sys
@@ -13,9 +14,9 @@ DEFAULT_REPO = "https://github.com/exfab/rawpy-demosaic.git"
 DEFAULT_REF = "8b17075"
 
 
-def run(command: Sequence[str], *, cwd: Path | None = None) -> None:
+def run(command: Sequence[str], *, cwd: Path | None = None, env: dict[str, str] | None = None) -> None:
     print("==> " + " ".join(command), flush=True)
-    subprocess.run(command, cwd=cwd, check=True)
+    subprocess.run(command, cwd=cwd, env=env, check=True)
 
 
 def patch_setup_py(source_dir: Path) -> None:
@@ -175,8 +176,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     patch_setup_py(source_dir)
     patch_libraw_sources(source_dir)
     patch_rawpy_sources(source_dir)
-    run([str(python), "-m", "pip", "install", "--upgrade", "setuptools<70", "wheel", "Cython>=3.1", "numpy"], cwd=source_dir)
-    run([str(python), "setup.py", "bdist_wheel"], cwd=source_dir)
+    build_env = os.environ.copy()
+    build_env["PATH"] = str(python.parent) + os.pathsep + build_env.get("PATH", "")
+    run(
+        [str(python), "-m", "pip", "install", "--upgrade", "setuptools<70", "wheel", "Cython>=3.1", "numpy", "cmake>=3.27"],
+        cwd=source_dir,
+        env=build_env,
+    )
+    run([str(python), "setup.py", "bdist_wheel"], cwd=source_dir, env=build_env)
 
     wheels = sorted((source_dir / "dist").glob("rawpy_demosaic-*.whl"))
     if not wheels:

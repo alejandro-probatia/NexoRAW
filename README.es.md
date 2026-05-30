@@ -10,7 +10,7 @@ Revelado RAW/TIFF reproducible y auditable para fotografía científica, forense
 patrimonial, con perfilado ICC por sesión, ajustes paramétricos por archivo y
 trazabilidad abierta AGPL.
 
-![Licencia AGPL-3.0-or-later](https://img.shields.io/badge/licencia-AGPL--3.0--or--later-blue) ![CI](https://img.shields.io/badge/CI-pendiente-lightgrey) ![Versión](https://img.shields.io/badge/version-v0.4.2-brightgreen) ![Python](https://img.shields.io/badge/python-3.11%2B-blue) ![Plataformas](https://img.shields.io/badge/plataformas-Linux%20%7C%20macOS%20%7C%20Windows-informational)
+![Licencia AGPL-3.0-or-later](https://img.shields.io/badge/licencia-AGPL--3.0--or--later-blue) ![CI](https://img.shields.io/badge/CI-pendiente-lightgrey) ![Versión](https://img.shields.io/badge/version-v0.4.3-brightgreen) ![Python](https://img.shields.io/badge/python-3.11%2B-blue) ![Plataformas](https://img.shields.io/badge/plataformas-Linux%20%7C%20macOS%20%7C%20Windows-informational)
 
 ![Interfaz principal de ProbRAW](docs/assets/screenshots/probraw-portada.png)
 
@@ -33,20 +33,19 @@ El flujo actual está centrado de forma deliberada en ICC:
 
 ## Estado Actual
 
-ProbRAW 0.4.2 es adecuado para pruebas controladas, revisión metodológica y
+ProbRAW 0.4.3 es adecuado para pruebas controladas, revisión metodológica y
 validación de candidata a release. Todavía no es un sistema certificado para
 producción científica o forense.
 
-La version actual refuerza el flujo ICC y la fiabilidad de release: explica las
-opciones ArgyllCMS en la interfaz, evita activar automaticamente perfiles
-`draft` o `rejected`, exige confirmacion explicita para perfiles rechazados,
-normaliza rutas de sesion dentro del proyecto y endurece la descarga de
-instaladores.
+La version actual refuerza el flujo ICC y las lecturas colorimetricas: mantiene
+la generacion de perfiles sobre RAW/DNG originales, permite revisar y mover las
+zonas centrales de lectura de la carta, exige pixel real para el cuentagotas Lab
+y mejora las fichas, grafico ampliado y marcadores de muestras.
 
 La última validación de empaquetado pasó con:
 
 ```text
-La validacion de release esta documentada en docs/releases/0.4.2.es.md.
+La validacion de release esta documentada en docs/releases/0.4.3.es.md.
 CachyOS probraw 0.3.18-3: pacman -Qkk -> 18160 ficheros, 0 alterados; validate_cachyos_install -> OK
 ```
 

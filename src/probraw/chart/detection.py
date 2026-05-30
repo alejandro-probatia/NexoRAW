@@ -9,6 +9,10 @@ import cv2
 from ..core.models import ChartDetectionResult, PatchDetection, Point2
 from ..core.utils import read_image
 
+# Use a conservative central read area. Users can drag individual regions in
+# the GUI when a central sample hits dust, scratches, glare, or stains.
+PATCH_SAMPLE_REGION_SCALE = 0.52
+
 
 @dataclass(frozen=True)
 class _PatchCandidate:
@@ -501,7 +505,7 @@ def _build_patch_geometry(H_inv: np.ndarray, cols: int, rows: int) -> list[Patch
                 [[x0, y0], [x1, y0], [x1, y1], [x0, y1]],
                 dtype=np.float32,
             )
-            sample_norm = _shrink_poly_norm(poly_norm, 0.18)
+            sample_norm = _shrink_poly_norm(poly_norm, 1.0 - PATCH_SAMPLE_REGION_SCALE)
 
             poly = _norm_to_img(poly_norm, H_inv, cols * 100, rows * 100)
             sample = _norm_to_img(sample_norm, H_inv, cols * 100, rows * 100)

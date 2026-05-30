@@ -2523,6 +2523,16 @@ if QtWidgets is not None:
             self.setMinimumHeight(170)
             self.setMaximumHeight(240)
 
+        def groups(self) -> list[dict[str, Any]]:
+            return [
+                {
+                    "name": str(group.get("name") or ""),
+                    "color": str(group.get("color") or "#22d3ee"),
+                    "points_lab": np.asarray(group.get("points"), dtype=np.float64).copy(),
+                }
+                for group in self._groups
+            ]
+
         def set_groups(self, groups: list[dict[str, Any]] | None) -> None:
             normalized: list[dict[str, Any]] = []
             for index, group in enumerate(groups or []):
@@ -2660,6 +2670,7 @@ if QtWidgets is not None:
         imageClicked = QtCore.Signal(float, float)
         roiSelected = QtCore.Signal(float, float, float, float)
         lineSelected = QtCore.Signal(float, float, float, float)
+        sampleRegionMoved = QtCore.Signal(str, object)
         viewTransformChanged = QtCore.Signal(float, float)
         PIXEL_EXACT_MIN_SCALE = 1.0
         PIXEL_GRID_MIN_SCALE = 8.0
@@ -2676,6 +2687,12 @@ if QtWidgets is not None:
             self._base_color_space = "device"
             self._image_size: tuple[int, int] | None = None
             self._overlay_points: list[tuple[float, float]] = []
+            self._editable_sample_regions: list[dict[str, Any]] = []
+            self._editable_sample_regions_enabled = False
+            self._sample_region_drag_id: str | None = None
+            self._sample_region_drag_start_image: tuple[float, float] | None = None
+            self._sample_region_drag_start_points: list[tuple[float, float]] = []
+            self._sample_region_hover_id: str | None = None
             self._sample_markers: list[dict[str, Any]] = []
             self._sample_magnifier_enabled = False
             self._sample_magnifier_radius = 2
@@ -2833,6 +2850,40 @@ if QtWidgets is not None:
         def set_overlay_points(self, points: list[tuple[float, float]]) -> None:
             self._overlay_points = list(points)
             self._refresh_scaled_pixmap()
+
+        def set_editable_sample_regions(self, regions: list[dict[str, Any]], *, enabled: bool = True) -> None:
+            normalized: list[dict[str, Any]] = []
+            for fallback_index, region in enumerate(regions or [], start=1):
+                if not isinstance(region, dict):
+                    continue
+                points: list[tuple[float, float]] = []
+                for point in region.get("points") or []:
+                    try:
+                        x, y = point
+                        points.append((float(x), float(y)))
+                    except Exception:
+                        continue
+                if len(points) < 3:
+                    continue
+                region_id = str(region.get("id") or f"R{fallback_index:02d}")
+                normalized.append(
+                    {
+                        "id": region_id,
+                        "label": str(region.get("label") or region_id),
+                        "points": points,
+                    }
+                )
+            self._editable_sample_regions = normalized
+            self._editable_sample_regions_enabled = bool(enabled) and bool(normalized)
+            self._sample_region_drag_id = None
+            self._sample_region_drag_start_image = None
+            self._sample_region_drag_start_points = []
+            self._sample_region_hover_id = None
+            self._refresh_scaled_pixmap()
+            self._apply_idle_cursor()
+
+        def clear_editable_sample_regions(self) -> None:
+            self.set_editable_sample_regions([], enabled=False)
 
         def set_sample_markers(self, markers: list[dict[str, Any]]) -> None:
             self._sample_markers = [dict(marker) for marker in markers]
@@ -3013,6 +3064,20 @@ if QtWidgets is not None:
 
         def mousePressEvent(self, event) -> None:  # noqa: N802
             self._update_sample_magnifier_from_widget_pos(event.position())
+            if (
+                self._editable_sample_regions_enabled
+                and event.button() == QtCore.Qt.LeftButton
+                and self._base_pixmap is not None
+            ):
+                mapped = self._map_widget_to_image(event.position())
+                region = self._sample_region_at_image_pos(mapped)
+                if mapped is not None and region is not None:
+                    self._sample_region_drag_id = str(region.get("id") or "")
+                    self._sample_region_drag_start_image = mapped
+                    self._sample_region_drag_start_points = list(region.get("points") or [])
+                    self.setCursor(QtCore.Qt.SizeAllCursor)
+                    event.accept()
+                    return
             if event.button() == QtCore.Qt.LeftButton and self._base_pixmap is not None and self._space_pan_active:
                 self._drag_start = event.position()
                 self._drag_last = event.position()
@@ -3047,6 +3112,14 @@ if QtWidgets is not None:
 
         def mouseMoveEvent(self, event) -> None:  # noqa: N802
             self._update_sample_magnifier_from_widget_pos(event.position())
+            if self._sample_region_drag_id is not None and self._sample_region_drag_start_image is not None:
+                mapped = self._map_widget_to_image(event.position())
+                if mapped is not None:
+                    dx = float(mapped[0]) - float(self._sample_region_drag_start_image[0])
+                    dy = float(mapped[1]) - float(self._sample_region_drag_start_image[1])
+                    self._move_sample_region(self._sample_region_drag_id, dx, dy)
+                    self.setCursor(QtCore.Qt.SizeAllCursor)
+                return
             if self._line_selection_enabled and self._line_drag_start_image is not None:
                 mapped = self._map_widget_to_image(event.position())
                 if mapped is not None:
@@ -3069,11 +3142,38 @@ if QtWidgets is not None:
                     self._refresh_scaled_pixmap()
                 self._drag_last = event.position()
                 return
+            if self._editable_sample_regions_enabled:
+                mapped = self._map_widget_to_image(event.position())
+                region = self._sample_region_at_image_pos(mapped)
+                next_hover = str(region.get("id") or "") if region is not None else None
+                if next_hover != self._sample_region_hover_id:
+                    self._sample_region_hover_id = next_hover
+                    self.update()
+                if region is not None:
+                    self.setCursor(QtCore.Qt.SizeAllCursor)
+                    return
             self._apply_idle_cursor()
             super().mouseMoveEvent(event)
 
         def mouseReleaseEvent(self, event) -> None:  # noqa: N802
             self._update_sample_magnifier_from_widget_pos(event.position())
+            if (
+                event.button() == QtCore.Qt.LeftButton
+                and self._sample_region_drag_id is not None
+                and self._sample_region_drag_start_image is not None
+            ):
+                region_id = self._sample_region_drag_id
+                region = self._sample_region_by_id(region_id)
+                points = list(region.get("points") or []) if region is not None else []
+                self._sample_region_drag_id = None
+                self._sample_region_drag_start_image = None
+                self._sample_region_drag_start_points = []
+                self._apply_idle_cursor()
+                self.update()
+                if points:
+                    self.sampleRegionMoved.emit(str(region_id), points)
+                event.accept()
+                return
             if (
                 self._line_selection_enabled
                 and event.button() == QtCore.Qt.LeftButton
@@ -3124,6 +3224,9 @@ if QtWidgets is not None:
         def leaveEvent(self, event) -> None:  # noqa: N802
             if self._sample_magnifier_image_pos is not None:
                 self._sample_magnifier_image_pos = None
+                self.update()
+            if self._sample_region_hover_id is not None:
+                self._sample_region_hover_id = None
                 self.update()
             super().leaveEvent(event)
 
@@ -3180,6 +3283,9 @@ if QtWidgets is not None:
                 for idx, point in enumerate(qpoints, start=1):
                     painter.drawEllipse(point, 6, 6)
                     painter.drawText(point + QtCore.QPointF(8, -8), str(idx))
+
+            if self._editable_sample_regions and self._image_size is not None:
+                self._draw_editable_sample_regions(painter, rect, scale, transform, bounds)
 
             if self._sample_markers and self._image_size is not None:
                 self._draw_sample_markers(painter, rect, scale, transform, bounds)
@@ -3304,7 +3410,8 @@ if QtWidgets is not None:
                     continue
                 point = self._map_image_to_widget(x, y, rect, scale, transform, bounds)
                 label = str(marker.get("label") or marker.get("index") or fallback_index)
-                radius = 10.0
+                selected = bool(marker.get("selected"))
+                radius = 12.0 if selected else 10.0
                 label_rect = QtCore.QRectF(point.x() - radius, point.y() - radius, radius * 2.0, radius * 2.0)
                 fill = QtGui.QColor(str(marker.get("color") or "#22d3ee"))
                 if not fill.isValid():
@@ -3318,17 +3425,68 @@ if QtWidgets is not None:
                         + 0.0722 * float(fill.blue())
                     ) / 255.0
                     text_color = QtGui.QColor("#202020" if luminance >= 0.62 else "#ffffff")
-                outline = QtGui.QColor("#ffffff" if text_color.lightnessF() < 0.5 else "#202020")
-                painter.setPen(QtGui.QPen(outline, 3))
+                outline = QtGui.QColor("#fbbf24" if selected else ("#ffffff" if text_color.lightnessF() < 0.5 else "#202020"))
+                painter.setPen(QtGui.QPen(outline, 4 if selected else 3))
                 painter.setBrush(fill)
                 painter.drawEllipse(label_rect)
                 painter.setPen(QtGui.QPen(text_color, 1))
                 painter.drawText(label_rect, QtCore.Qt.AlignCenter, label)
-                painter.setPen(QtGui.QPen(outline, 1))
-                painter.drawLine(point + QtCore.QPointF(-15, 0), point + QtCore.QPointF(-6, 0))
-                painter.drawLine(point + QtCore.QPointF(6, 0), point + QtCore.QPointF(15, 0))
-                painter.drawLine(point + QtCore.QPointF(0, -15), point + QtCore.QPointF(0, -6))
-                painter.drawLine(point + QtCore.QPointF(0, 6), point + QtCore.QPointF(0, 15))
+                painter.setPen(QtGui.QPen(outline, 2 if selected else 1))
+                outer = 18.0 if selected else 15.0
+                inner = 7.0 if selected else 6.0
+                painter.drawLine(point + QtCore.QPointF(-outer, 0), point + QtCore.QPointF(-inner, 0))
+                painter.drawLine(point + QtCore.QPointF(inner, 0), point + QtCore.QPointF(outer, 0))
+                painter.drawLine(point + QtCore.QPointF(0, -outer), point + QtCore.QPointF(0, -inner))
+                painter.drawLine(point + QtCore.QPointF(0, inner), point + QtCore.QPointF(0, outer))
+            painter.restore()
+
+        def _draw_editable_sample_regions(
+            self,
+            painter: QtGui.QPainter,
+            rect: QtCore.QRectF,
+            scale: float,
+            transform: QtGui.QTransform,
+            bounds: QtCore.QRectF,
+        ) -> None:
+            painter.save()
+            painter.setRenderHint(QtGui.QPainter.Antialiasing)
+            font = painter.font()
+            font.setBold(True)
+            font.setPointSize(max(7, font.pointSize() - 1))
+            painter.setFont(font)
+            for region in self._editable_sample_regions:
+                points = region.get("points") or []
+                if len(points) < 3:
+                    continue
+                qpoints = [
+                    self._map_image_to_widget(float(x), float(y), rect, scale, transform, bounds)
+                    for x, y in points
+                ]
+                region_id = str(region.get("id") or "")
+                active = region_id and region_id in {self._sample_region_drag_id, self._sample_region_hover_id}
+                pen_color = QtGui.QColor("#facc15" if active else "#38bdf8")
+                fill_color = QtGui.QColor(250, 204, 21, 46) if active else QtGui.QColor(56, 189, 248, 30)
+                painter.setPen(QtGui.QPen(pen_color, 2 if active else 1))
+                painter.setBrush(fill_color)
+                polygon = QtGui.QPolygonF(qpoints)
+                painter.drawPolygon(polygon)
+                center_x = sum(point.x() for point in qpoints) / max(1, len(qpoints))
+                center_y = sum(point.y() for point in qpoints) / max(1, len(qpoints))
+                label = str(region.get("label") or region_id)
+                if label:
+                    metrics = painter.fontMetrics()
+                    text_w = metrics.horizontalAdvance(label)
+                    label_rect = QtCore.QRectF(
+                        center_x - text_w / 2.0 - 4.0,
+                        center_y - metrics.height() / 2.0 - 2.0,
+                        text_w + 8.0,
+                        metrics.height() + 4.0,
+                    )
+                    painter.setPen(QtCore.Qt.NoPen)
+                    painter.setBrush(QtGui.QColor(17, 24, 39, 185))
+                    painter.drawRoundedRect(label_rect, 3, 3)
+                    painter.setPen(QtGui.QColor("#f8fafc"))
+                    painter.drawText(label_rect, QtCore.Qt.AlignCenter, label)
             painter.restore()
 
         def _draw_sample_magnifier(
@@ -3448,6 +3606,8 @@ if QtWidgets is not None:
         def _apply_idle_cursor(self) -> None:
             if self._space_pan_active and self._base_pixmap is not None:
                 self.setCursor(QtCore.Qt.OpenHandCursor)
+            elif self._sample_region_drag_id is not None:
+                self.setCursor(QtCore.Qt.SizeAllCursor)
             elif self._roi_selection_enabled:
                 self.setCursor(QtCore.Qt.CrossCursor)
             elif self._line_selection_enabled:
@@ -3458,6 +3618,48 @@ if QtWidgets is not None:
                 self.setCursor(QtCore.Qt.OpenHandCursor)
             else:
                 self.unsetCursor()
+
+        def _sample_region_by_id(self, region_id: str) -> dict[str, Any] | None:
+            for region in self._editable_sample_regions:
+                if str(region.get("id") or "") == str(region_id):
+                    return region
+            return None
+
+        def _sample_region_at_image_pos(self, mapped: tuple[float, float] | None) -> dict[str, Any] | None:
+            if mapped is None or not self._editable_sample_regions_enabled:
+                return None
+            point = QtCore.QPointF(float(mapped[0]), float(mapped[1]))
+            best_region = None
+            best_area = float("inf")
+            for region in self._editable_sample_regions:
+                points = region.get("points") or []
+                if len(points) < 3:
+                    continue
+                polygon = QtGui.QPolygonF([QtCore.QPointF(float(x), float(y)) for x, y in points])
+                if not polygon.containsPoint(point, QtCore.Qt.OddEvenFill):
+                    continue
+                bounds = polygon.boundingRect()
+                area = max(1.0, float(bounds.width()) * float(bounds.height()))
+                if area < best_area:
+                    best_region = region
+                    best_area = area
+            return best_region
+
+        def _move_sample_region(self, region_id: str, dx: float, dy: float) -> None:
+            region = self._sample_region_by_id(region_id)
+            if region is None:
+                return
+            image_w, image_h = self._image_size or (0, 0)
+            moved: list[tuple[float, float]] = []
+            for x, y in self._sample_region_drag_start_points:
+                moved.append(
+                    (
+                        float(np.clip(float(x) + float(dx), 0.0, max(0.0, float(image_w) - 1.0))),
+                        float(np.clip(float(y) + float(dy), 0.0, max(0.0, float(image_h) - 1.0))),
+                    )
+                )
+            region["points"] = moved
+            self.update()
 
         def _draw_level_line_overlay(
             self,

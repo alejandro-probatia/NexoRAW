@@ -39,7 +39,7 @@ from ...chart.sampling import (
 )
 from ...analysis.mtf import MTFResult, analyze_slanted_edge_mtf
 from ...core.color import delta_e76, delta_e2000
-from ...core.models import Recipe, to_json_dict, write_json
+from ...core.models import Point2, Recipe, to_json_dict, write_json
 from ...core.recipe import load_recipe, save_recipe
 from ...core.external import external_tool_path, run_external
 from ...core.utils import (

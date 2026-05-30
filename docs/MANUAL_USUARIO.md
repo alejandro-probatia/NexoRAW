@@ -49,7 +49,7 @@ Persistent structure:
 | Folder | Purpose |
 | --- | --- |
 | `00_configuraciones/` | `session.json`, recipes, custom references, development profiles, ICC profiles, reports, cache, intermediates and work artifacts. |
-| `01_ORG/` | Original RAW, DNG, original TIFF and chart captures. This is the source directory. |
+| `01_ORG/` | Original RAW, DNG, original TIFF and RAW/DNG chart captures. This is the source directory. |
 | `02_DRV/` | Derived TIFFs, previews, manifests and final outputs. |
 
 Older sessions with `raw/`, `charts/`, `exports/`, `profiles/`, `config/` or
@@ -186,7 +186,7 @@ Minimal workflow:
 1. Choose a root folder for the project.
 2. Enter name, lighting and capture notes if needed.
 3. Press `Crear sesión` or `Abrir sesión`.
-4. Place RAW files and chart captures in `01_ORG/`.
+4. Place scene RAW files and RAW/DNG chart captures in `01_ORG/`.
 5. Go to `2. Ajustar / Aplicar`.
 
 When opening an existing session, ProbRAW normalizes persisted folders so
@@ -210,7 +210,9 @@ tab is gone: its actions moved to the central viewer toolbar to save space.
 | Right-click on folder | Opens that folder in the system file browser. |
 
 Browsable files: RAW supported by the engine, DNG, TIFF, PNG, JPEG and JPG. For
-colorimetric references, use original RAW/DNG/TIFF captures, not derived outputs.
+camera/session ICC colorimetric references, use original RAW/DNG captures only.
+TIFF files, including linear TIFFs, are audit or viewing outputs and are not used
+as camera-profiling sources.
 
 ### Diagnostics
 
@@ -268,8 +270,8 @@ The thumbnail context menu offers:
 - `Copiar ajustes`: copies all applied settings or one category: `Perfil ICC`,
   `Color y contraste`, `Nitidez` or `RAW / exportación`.
 - `Pegar ajustes copiados`: pastes only the copied categories into the selection.
-- `Usar como referencia colorimétrica`: marks the selection as chart captures for
-  ICC generation.
+- `Usar como referencia colorimétrica`: marks the RAW/DNG selection as chart
+  captures for ICC generation.
 - `Comparar MTF de selección`: available when two selected thumbnails have MTF
   data.
 - `Anadir a cola`: sends selected files to the render queue.
@@ -282,10 +284,10 @@ measured from a color chart.
 ![Workflow with color chart](assets/screenshots/probraw-flujo-con-carta.png)
 
 1. Create or open the session.
-2. Copy chart RAW files and scene RAW files to `01_ORG/`.
+2. Copy chart RAW/DNG files and scene RAW files to `01_ORG/`.
 3. In `Color / calibración`, choose `Generar perfil ICC`.
-4. Select the chart capture or captures in the thumbnail strip and use the
-   context menu action `Usar como referencia colorimétrica`.
+4. Select the RAW/DNG chart capture or captures in the thumbnail strip and use
+   the context menu action `Usar como referencia colorimétrica`.
 5. Review `Referencia de carta`, `Tipo de carta`, `Formato ICC`, `Tipo de perfil
    ICC` and `Calidad colprof`.
 6. In `RAW / exportación`, review only RAW reading criteria relevant to the
@@ -294,7 +296,9 @@ measured from a color chart.
    settings.
 7. If automatic detection is not good enough, press `Marcar en visor`. The cursor
    changes to a crosshair. Mark the four visible chart corners in the order shown
-   by the overlay, review the points and press `Guardar detección`.
+   by the overlay. ProbRAW then draws the 24 central reading regions; review
+   them, drag any region that falls on dust, borders, glare or stains and press
+   `Guardar detección`.
 8. Press `Generar ICC con carta`.
 9. Review the result JSON, overlays, QA report and profile status.
 10. Press `Usar ICC generado` if you want it active on the current image.
@@ -306,7 +310,8 @@ Expected result:
 
 - calibrated recipe in `00_configuraciones/`;
 - input ICC in `00_configuraciones/profiles/`;
-- ICC registry entry in the session;
+- ICC registry entry in the session, paired with the calibrated recipe that must
+  be used with that profile;
 - custom references in `00_configuraciones/references/`, if created or imported;
 - profile reports, QA, overlays and cache in
   `00_configuraciones/profile_runs/` and `00_configuraciones/work/`;
@@ -335,11 +340,13 @@ Best practices:
 - document the measurement source in `Fuente`;
 - press `Validar` before building the profile.
 
-QA checks do not block ICC generation unless there are no valid chart samples.
-If independent validation is missing, ProbRAW registers the profile as `draft`
-and leaves manual activation to the operator. A `rejected` profile never
-autoactivates; activating it from the session list or menu requires an explicit
-confirmation because it may introduce casts, clipping or unreliable conversions.
+QA checks do not block ICC generation unless there are no valid chart samples or
+the error against the chart colorimetric reference exceeds the configured
+thresholds. Independent validation is an additional diagnostic: if it is missing
+or inconclusive, it does not by itself make the profile a draft. A `rejected`
+profile never autoactivates; activating it from the session list or menu requires
+an explicit confirmation because it may introduce casts, clipping or unreliable
+conversions.
 
 ### Chart Data, Session ICC Profiles and 3D Gamut Comparison
 
@@ -380,9 +387,10 @@ pixel or pixel group used for the measurement.
 ![Grouped Lab samples and markers over the image](assets/screenshots/probraw-muestras-lab-conjuntos.jpeg)
 
 Each sample is numbered in the image and in the table. The marker background uses
-the sampled color so it is easy to connect the row with the measured area.
-Samples are saved in the image `RAW.probraw.json` backpack, so each file can keep
-its own measurement set.
+the sampled color or the manually chosen marker color so measured areas remain
+easy to distinguish. Selecting a sample highlights it in the viewer with a
+yellow outline. Samples are saved in the image `RAW.probraw.json` backpack, so
+each file can keep its own measurement set.
 
 The sample table reports position, matrix, normalized RGB, Lab, C*, inside/outside
 state for the compared profiles, common-gamut state and `DE76 ref`, `DE00 ref`
@@ -392,17 +400,22 @@ that represent the same ink, area or material, and `Nombre`/`Nota` to document
 the sampling criterion. Columns auto-fit when the table is loaded, but can still
 be resized manually.
 
-The `Fichas` mode presents the same data as compact cards. The set table reports
-mean RGB, mean Lab, C*, internal `DE00` dispersion, internal max `DE00`,
-similarity percentage against the reference set and minimum, mean and maximum
-DeltaE values between sets. The lower graph draws each sample set gamut in Lab
-a*b*, with points and a visual hull when enough samples exist. There is no longer
-a primary sample inside a set: the comparative reference is chosen at set level.
+The `Fichas` mode presents the same data as compact cards. Each card includes
+quick selection and controls to change the visual marker color without changing
+the RGB/Lab reading. The set table reports mean RGB, mean Lab, C*, internal
+`DE00` dispersion, internal max `DE00`, similarity percentage against the
+reference set and minimum, mean and maximum DeltaE values between sets. The
+lower graph draws each sample set gamut in Lab a*b*, with points and a visual
+hull when enough samples exist; the expand button opens the same graph in a
+larger window. There is no longer a primary sample inside a set: the comparative
+reference is chosen at set level.
 
 Colorimetric precision:
 
 - sample RGB comes from the full-size loaded image; if ProbRAW detects a reduced
   preview, it requests a full-resolution reload before measuring;
+- if sharpness, noise reduction or chromatic-aberration correction needs an
+  exact real-size recalculation, ProbRAW runs it before saving the sample;
 - Lab values and DeltaE are rigorous only when the image uses a ProbRAW-generated
   session ICC for that camera, recipe and lighting;
 - with sRGB, Adobe RGB, ProPhoto RGB or another generic profile, Lab is an
@@ -657,8 +670,8 @@ additional conversion to the monitor is only for correct display on each system.
 
 | Option | Explanation |
 | --- | --- |
-| `Carpeta de referencias colorimétricas` | Folder containing chart captures. If an explicit selection exists, those images are used. |
-| `Referencias colorimétricas seleccionadas` | Shows how many chart captures will be used. |
+| `Carpeta de referencias colorimétricas` | Folder containing original RAW/DNG chart captures. If an explicit selection exists, those images are used. |
+| `Referencias colorimétricas seleccionadas` | Shows how many RAW/DNG chart captures will be used. |
 | `Referencia de carta` | Selector for bundled references and custom references saved in the session. |
 | `Importar JSON` | Copies a validated external reference into `00_configuraciones/references/`. |
 | `Nueva personalizada` | Creates an editable session reference from a template. |
@@ -673,14 +686,14 @@ additional conversion to the monitor is only for correct display on each system.
 | `Confianza mínima` | `0.00` to `1.00`. Acceptance threshold for automatic detection. |
 | `Permitir fallback` | Allows alternative criteria if automatic detection does not reach the threshold. Use only if you will review QA. |
 | `Formato ICC` | `.icc` or `.icm`. |
-| `Tipo de perfil ICC` | `shaper+matrix (-as)`, `gamma+matrix (-ag)`, `matrix only (-am)`, `Lab cLUT (-al)` or `XYZ cLUT (-ax)`. For ColorChecker 24, `-as` is recommended; cLUT modes are advanced and can overfit with too few patches. |
+| `Tipo de perfil ICC` | `Lab cLUT (-al)`, `shaper+matrix (-as)`, `gamma+matrix (-ag)`, `matrix only (-am)` or `XYZ cLUT (-ax)`. The recommended preset is `-al` with Medium quality and `-u -R`; `-as` remains available as a compact model and `-ax` as an advanced option. |
 | `Calidad colprof` | Low, Medium, High, Ultra. Higher quality costs more compute. |
 | `Args extra colprof` | Advanced ArgyllCMS arguments, for example `-D "Museum Camera Profile"`. The default uses `-u -R` to avoid an unrealistically unconstrained gamut. |
 | `Cámara (opcional)` | Reserved profile metadata field. In the current interface it is filled automatically or kept hidden. |
 | `Lente (opcional)` | Reserved profile metadata field. In the current interface it is filled automatically or kept hidden. |
 | `Marcar en visor` | Starts manual four-corner marking. The cursor changes to a crosshair. |
 | `Limpiar puntos` | Clears manual marking points. |
-| `Guardar detección` | Saves JSON and overlay for a manual detection. |
+| `Guardar detección` | Saves JSON and overlay for a manual detection. After the corners are marked, central reading regions can be moved before saving. |
 | `Generar ICC con carta` | Runs measurement, input ICC generation and reports. |
 | Result JSON | Technical output from profile generation. |
 
@@ -829,7 +842,8 @@ records the chosen algorithm in recipes and reports.
 
 Use a capture with the full chart visible, no reflections, no saturated patches
 and enough focus. If automatic detection fails, use `Marcar en visor`, mark the
-four corners and save the detection.
+four corners, adjust the central reading regions so they avoid borders and local
+defects, then save the detection.
 
 ### Manual Marking Seems to Move
 
@@ -840,7 +854,8 @@ preview, review the overlay before saving.
 ### The Profile Produces a Color Cast or Clipping
 
 Check that chart, JSON reference, camera, lens, illuminant and recipe match.
-Review the QA report and do not use derived TIFFs as input charts.
+Review the QA report and do not use TIFFs or derived files as input charts: the
+camera/session ICC must be generated from the original RAW/DNG.
 
 ### There Is No Color Chart
 
@@ -862,7 +877,8 @@ Enable `Cuentagotas Lab`, check the pixel magnifier and choose a matrix that
 matches the material. A `1x1` matrix measures one exact pixel; larger matrices
 average an area and are more robust for inks, papers or textured surfaces. If
 the image is not loaded at real size, ProbRAW asks to load the full source before
-saving the sample.
+saving the sample. If detail adjustments are pending at real size, wait for the
+exact recalculation before interpreting the Lab value.
 
 ### The Image Already Had an Exported TIFF
 

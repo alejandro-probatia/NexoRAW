@@ -50,7 +50,7 @@ Estructura persistente:
 | Carpeta | Uso |
 | --- | --- |
 | `00_configuraciones/` | `session.json`, recetas, referencias personalizadas, perfiles de ajuste, perfiles ICC, reportes, caché, intermedios y artefactos de trabajo. |
-| `01_ORG/` | RAW originales, DNG, TIFF originales y capturas de carta. Es el directorio de fuentes. |
+| `01_ORG/` | RAW originales, DNG, TIFF originales y capturas RAW/DNG de carta. Es el directorio de fuentes. |
 | `02_DRV/` | TIFF derivados, previsualizaciones, manifiestos y salidas finales. |
 
 Las sesiones antiguas con carpetas `raw/`, `charts/`, `exports/`, `profiles/`,
@@ -189,7 +189,7 @@ Flujo mínimo:
 1. Elige una carpeta raíz para el proyecto.
 2. Escribe nombre, iluminación y notas de toma si procede.
 3. Pulsa `Crear sesión` o `Abrir sesión`.
-4. Coloca los RAW y capturas de carta en `01_ORG/`.
+4. Coloca los RAW de escena y los RAW/DNG de carta en `01_ORG/`.
 5. Entra en `2. Ajustar / Aplicar`.
 
 Al abrir una sesión existente, ProbRAW normaliza las carpetas persistidas para
@@ -214,8 +214,9 @@ del visor central para ahorrar espacio.
 | Clic derecho sobre carpeta | Abre esa carpeta en el explorador de archivos del sistema. |
 
 Archivos navegables: RAW soportados por el motor, DNG, TIFF, PNG, JPEG y JPG.
-Para referencias colorimétricas se aceptan RAW/DNG/TIFF originales, no derivados
-de salida.
+Para referencias colorimétricas de perfil ICC de cámara/sesión solo se aceptan
+RAW/DNG originales. Los TIFF, incluso lineales, son salidas de auditoría o
+visualización y no se usan como fuente de perfilado de cámara.
 
 ### Diagnóstico
 
@@ -275,8 +276,8 @@ El menú contextual de miniatura ofrece:
   categoría: `Perfil ICC`, `Color y contraste`, `Nitidez` o `RAW / exportación`.
 - `Pegar ajustes copiados`: pega en la selección únicamente las categorías
   copiadas, sin tocar las demás.
-- `Usar como referencia colorimétrica`: marca la selección como captura de carta
-  para el flujo de generación ICC.
+- `Usar como referencia colorimétrica`: marca la selección RAW/DNG como captura
+  de carta para el flujo de generación ICC.
 - `Comparar MTF de selección`: disponible cuando hay dos miniaturas
   seleccionadas con datos MTF.
 - `Anadir a cola`: envía los archivos seleccionados a la cola de revelado.
@@ -289,10 +290,10 @@ medido con una carta de color.
 ![Flujo con carta de color](assets/screenshots/probraw-flujo-con-carta.png)
 
 1. Crea o abre la sesión.
-2. Copia los RAW de carta y de escena a `01_ORG/`.
+2. Copia los RAW/DNG de carta y los RAW de escena a `01_ORG/`.
 3. En `Color / calibración`, elige `Generar perfil ICC`.
-4. Selecciona la captura o capturas de carta en las miniaturas y usa el menú
-   contextual `Usar como referencia colorimétrica`.
+4. Selecciona la captura o capturas RAW/DNG de carta en las miniaturas y usa el
+   menú contextual `Usar como referencia colorimétrica`.
 5. Revisa `Referencia de carta`, `Tipo de carta`, `Formato ICC`, `Tipo de perfil
    ICC` y `Calidad colprof`.
 6. En `RAW / exportación`, revisa solo los criterios de lectura RAW relevantes
@@ -301,7 +302,9 @@ medido con una carta de color.
    nitidez.
 7. Si la detección automática no es suficiente, pulsa `Marcar en visor`. El
    puntero cambia a cruz. Marca las cuatro esquinas visibles de la carta en el
-   orden que muestra el overlay, revisa los puntos y pulsa `Guardar detección`.
+   orden que muestra el overlay. ProbRAW dibuja entonces las 24 zonas centrales
+   de lectura; revísalas, arrastra cualquier zona que caiga sobre polvo, borde,
+   brillo o mancha y pulsa `Guardar detección`.
 8. Pulsa `Generar ICC con carta`.
 9. Revisa el JSON de resultado, los overlays, el reporte QA y el estado del
    perfil.
@@ -314,7 +317,8 @@ Resultado esperado:
 
 - receta calibrada en `00_configuraciones/`;
 - ICC de entrada en `00_configuraciones/profiles/`;
-- registro del ICC en la sesión;
+- registro del ICC en la sesión junto a la receta calibrada que debe usarse con
+  ese perfil;
 - referencias personalizadas en `00_configuraciones/references/`, si se han
   creado o importado;
 - reportes de perfil, QA, overlays y caché en
@@ -347,14 +351,27 @@ Buenas prácticas:
 - pulsa `Validar` antes de generar el perfil.
 
 Las comprobaciones QA no impiden generar el ICC salvo que no existan muestras de
-carta válidas. Si falta validación independiente, ProbRAW registra el perfil como
-`draft` y muestra recomendaciones; el operador puede activarlo manualmente cuando
-el contexto de trabajo lo justifique. En ColorChecker 24, `shaper+matrix (-as)`
+carta válidas o que el error contra la referencia colorimétrica supere los
+umbrales definidos. La validación independiente queda como diagnóstico adicional:
+si falta o no es concluyente, no convierte por sí sola el perfil en pendiente QA.
+En ColorChecker 24,
+`shaper+matrix (-as)`
 es la opción conservadora; los modos cLUT siguen disponibles como opción avanzada
 y se documentan como posible sobreajuste si no hay una carta con más parches.
-Un perfil `rejected` no se activa automáticamente y, si se intenta activar desde
-la lista de sesión o desde el menú, ProbRAW muestra una confirmación explícita
-porque ese ICC puede introducir dominantes, clipping o conversiones no fiables.
+Un perfil mostrado como `rechazado` conserva internamente el estado `rejected`,
+no se activa automáticamente y, si se intenta activar desde la lista de sesión o
+   desde el menú, ProbRAW muestra una confirmación explícita porque ese ICC puede
+   introducir dominantes, clipping o conversiones no fiables.
+   Además, los perfiles `rechazado` no cargan su receta calibrada como ajuste
+   activo ni se asignan automáticamente a los RAW de carta.
+
+Durante el perfilado, ProbRAW mide la carta con una receta científica neutral:
+balance de blancos fijo `[1, 1, 1, 1]`, 0 EV, salida lineal y RGB de
+cámara/sesión. Esta receta evita que un ajuste visual, una receta calibrada
+anterior o una compensación de exposición acumulada saturen el render usado para
+medir parches. Si el informe indica saturación, se refiere a ese render
+científico de muestreo; no implica necesariamente que el RAW estuviera saturado
+en cámara.
 
 ### Datos de carta, perfiles ICC de sesión y comparación Gamut 3D
 
@@ -396,9 +413,10 @@ elegir con precisión el píxel o grupo de píxeles que se va a medir.
 ![Muestras Lab agrupadas y marcadores sobre la imagen](assets/screenshots/probraw-muestras-lab-conjuntos.jpeg)
 
 Cada toma queda numerada en la imagen y en la tabla. El marcador usa como fondo
-el color obtenido para que sea fácil relacionar la fila con la zona medida. Las
-tomas se guardan en la mochila `RAW.probraw.json` de la imagen, de modo que cada
-archivo puede conservar su propio conjunto de mediciones.
+el color obtenido o el color manual elegido para distinguir la zona medida. Al
+seleccionar una muestra, el visor la resalta con contorno amarillo para revisar
+su posición. Las tomas se guardan en la mochila `RAW.probraw.json` de la imagen,
+de modo que cada archivo puede conservar su propio conjunto de mediciones.
 
 La tabla de muestras muestra posición, matriz, RGB normalizado, Lab, C*, estado
 dentro/fuera de los perfiles comparados, pertenencia a gama común y diferencias
@@ -408,19 +426,25 @@ mediciones que representan una misma tinta, zona o material, y `Nombre`/`Nota`
 para documentar el criterio de toma. Las columnas se autoajustan al cargar la
 tabla, pero pueden redimensionarse manualmente.
 
-El modo `Fichas` muestra la misma información como tarjetas compactas. La tabla
-de conjuntos calcula RGB medio, Lab medio, C*, dispersión interna `DE00`, máximo
-interno `DE00`, similitud porcentual frente al conjunto de referencia y mínimos,
-medias y máximos de DeltaE entre conjuntos. El gráfico inferior dibuja el gamut
-de cada conjunto de muestras en Lab a*b*, con puntos y envolvente visual cuando
-hay suficientes tomas. No existe ya una muestra primaria dentro de un conjunto:
-la referencia comparativa se elige a nivel de conjunto.
+El modo `Fichas` muestra la misma información como tarjetas compactas. Cada ficha
+incluye selección rápida y controles para cambiar el color visual del marcador
+sin alterar la lectura RGB/Lab. La tabla de conjuntos calcula RGB medio, Lab
+medio, C*, dispersión interna `DE00`, máximo interno `DE00`, similitud
+porcentual frente al conjunto de referencia y mínimos, medias y máximos de
+DeltaE entre conjuntos. El gráfico inferior dibuja el gamut de cada conjunto de
+muestras en Lab a*b*, con puntos y envolvente visual cuando hay suficientes
+tomas; el botón de ampliación abre el mismo gráfico en una ventana grande. No
+existe ya una muestra primaria dentro de un conjunto: la referencia comparativa
+se elige a nivel de conjunto.
 
 Precisión colorimétrica:
 
 - el RGB de la muestra procede de la imagen cargada a tamaño real; si ProbRAW
   detecta que se está trabajando con una preview reducida, solicita recarga a
   resolución completa antes de medir;
+- si nitidez, reducción de ruido o corrección de aberración cromática necesitan
+  un recálculo exacto a tamaño real, ProbRAW lo ejecuta antes de guardar la
+  muestra;
 - el valor Lab y los DeltaE solo son rigurosos cuando la imagen usa un ICC de
   sesión generado por ProbRAW para esa cámara, receta e iluminación;
 - si se usa sRGB, Adobe RGB, ProPhoto RGB u otro perfil genérico, el resultado
@@ -669,7 +693,7 @@ sistema.
 | `Perfil ICC RGB estandar` | Usa un perfil ICC RGB estándar. Técnicamente son espacios RGB estándar definidos mediante ICC; ProPhoto RGB es el valor predeterminado. |
 | `Espacio RGB estandar` | `sRGB`, `Adobe RGB` o `ProPhoto RGB`. Al cambiarlo queda aplicado a la imagen seleccionada. |
 | `Perfiles ICC de la sesion` | Permite elegir un ICC generado o registrado en el proyecto. Si todavía no existe ninguno, la interfaz lo indica y mantiene ProPhoto RGB como opción segura. |
-| `Perfil de sesion` | Lista de ICC de sesión. Al elegir uno queda activo en la imagen seleccionada si su estado QA lo permite. Los perfiles `rejected` piden confirmación antes de activarse. |
+| `Perfil de sesion` | Lista de ICC de sesión. Al elegir uno queda activo en la imagen seleccionada si su estado QA lo permite. Los perfiles mostrados como `rechazado` piden confirmación antes de activarse. |
 | `Generar perfil ICC` | Muestra el flujo de carta para crear un nuevo ICC de cámara/sesión. |
 | `Activar seleccionado` | Activa el ICC seleccionado en la lista de sesión. |
 | `Cargar ICC de camara...` | Permite elegir un ICC externo existente en el sistema y registrarlo para usarlo en el proyecto. |
@@ -681,8 +705,8 @@ sistema.
 
 | Opción | Explicación |
 | --- | --- |
-| `Carpeta de referencias colorimétricas` | Carpeta donde están las capturas de carta. Si hay selección explícita, se usan esas imágenes. |
-| `Referencias colorimétricas seleccionadas` | Indica cuántas capturas de carta se usarán. |
+| `Carpeta de referencias colorimétricas` | Carpeta donde están las capturas RAW/DNG originales de carta. Si hay selección explícita, se usan esas imágenes. |
+| `Referencias colorimétricas seleccionadas` | Indica cuántas capturas RAW/DNG de carta se usarán. |
 | `Referencia de carta` | Selector de referencias incluidas y referencias personalizadas guardadas en la sesión. |
 | `Importar JSON` | Copia una referencia externa validada a `00_configuraciones/references/`. |
 | `Nueva personalizada` | Crea una referencia editable de sesión a partir de una plantilla. |
@@ -697,14 +721,14 @@ sistema.
 | `Confianza mínima` | `0.00` a `1.00`. Umbral de aceptación de la detección automática. |
 | `Permitir fallback` | Permite continuar con criterios alternativos si la detección automática no llega al umbral. Úsalo solo si revisarás QA. |
 | `Formato ICC` | `.icc` o `.icm`. |
-| `Tipo de perfil ICC` | `shaper+matrix (-as)`, `gamma+matrix (-ag)`, `matrix only (-am)`, `Lab cLUT (-al)` o `XYZ cLUT (-ax)`. Para ColorChecker 24, `-as` es el valor recomendado; las cLUT son avanzadas y pueden sobreajustar con pocos parches. |
+| `Tipo de perfil ICC` | `Lab cLUT (-al)`, `shaper+matrix (-as)`, `gamma+matrix (-ag)`, `matrix only (-am)` o `XYZ cLUT (-ax)`. El preset recomendado es `-al` con calidad Medium y `-u -R`; `-as` queda disponible como modelo compacto y `-ax` como opcion avanzada. |
 | `Calidad colprof` | Low, Medium, High, Ultra. A mayor calidad, más coste de cálculo. |
 | `Args extra colprof` | Argumentos avanzados para ArgyllCMS, por ejemplo `-D "Perfil Cámara Museo"`. El valor por defecto usa `-u -R` para evitar perfiles con gamut irrealmente libre. |
 | `Cámara (opcional)` | Campo reservado de metadatos de perfil. En la interfaz actual se rellena automáticamente u opera oculto. |
 | `Lente (opcional)` | Campo reservado de metadatos de perfil. En la interfaz actual se rellena automáticamente u opera oculto. |
 | `Marcar en visor` | Inicia marcado manual de cuatro esquinas. El cursor cambia a cruz. |
 | `Limpiar puntos` | Borra el marcado manual. |
-| `Guardar detección` | Guarda JSON y overlay de una detección manual. |
+| `Guardar detección` | Guarda JSON y overlay de una detección manual. Tras marcar las esquinas, las zonas centrales de lectura pueden moverse antes de guardar. |
 | `Generar ICC con carta` | Ejecuta medición, ICC de entrada y reportes. |
 | `Resultado JSON` | Salida técnica de la generación de perfil. |
 
@@ -854,7 +878,8 @@ lo registra en receta y reportes.
 
 Usa una captura con la carta completa, sin reflejos, sin parches saturados y con
 enfoque suficiente. Si falla la detección automática, usa `Marcar en visor`,
-marca las cuatro esquinas y guarda la detección.
+marca las cuatro esquinas, ajusta las zonas centrales de lectura para que no
+toquen bordes ni defectos locales y guarda la detección.
 
 ### El marcado manual parece moverse
 
@@ -865,7 +890,12 @@ recarga de preview, revisa el overlay antes de guardar.
 ### El perfil produce dominante o clipping
 
 Comprueba que carta, referencia JSON, cámara, óptica, iluminante y receta
-coinciden. Revisa el reporte QA y no uses TIFF derivados como cartas de entrada.
+coinciden. Revisa el reporte QA y no uses TIFF ni derivados como cartas de
+entrada: el perfil ICC de cámara/sesión debe generarse desde RAW/DNG original.
+Si el reporte menciona saturación en parches neutros, revisa si la receta activa
+venía de un perfil anterior o tenía exposición/WB aplicados. ProbRAW neutraliza
+esos campos para nuevos perfiles, pero los perfiles antiguos marcados como
+`rechazado` deben mantenerse solo para diagnóstico.
 
 ### No hay carta de color
 
@@ -887,7 +917,8 @@ Activa `Cuentagotas Lab`, revisa la lupa de píxeles y usa una matriz adecuada a
 material. Una matriz `1x1` mide un píxel exacto; matrices mayores promedian una
 zona y son más robustas para tintas, papeles o superficies con textura. Si la
 imagen no está a tamaño real, ProbRAW solicita cargar la fuente completa antes de
-guardar la muestra.
+guardar la muestra. Si hay ajustes de detalle pendientes a tamaño real, espera a
+que termine el recálculo exacto antes de interpretar el valor Lab.
 
 ### La imagen ya tenía un TIFF exportado
 

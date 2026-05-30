@@ -228,6 +228,9 @@ class ImageToolsMixin:
         rect = None if crop_active else mtf_rect
         label = self.tr("Recorte") if crop_active else "MTF"
         level_points = list(getattr(self, "_image_level_points", [])) if bool(getattr(self, "_image_level_selection_active", False)) else []
+        manual_points_visible = bool(getattr(self, "_manual_chart_points", []))
+        if manual_points_visible and hasattr(self, "_manual_chart_points_match_selected_file"):
+            manual_points_visible = bool(self._manual_chart_points_match_selected_file())
         for panel_name in ("image_result_single", "image_result_compare", "image_original_compare"):
             panel = getattr(self, panel_name, None)
             if panel is None:
@@ -242,7 +245,11 @@ class ImageToolsMixin:
                 panel.set_view_crop_rect(panel_crop_rect)
             if hasattr(panel, "set_roi_rect"):
                 panel.set_roi_rect(rect, label=label)
-            if hasattr(panel, "set_overlay_points") and not bool(getattr(self, "_manual_chart_marking", False)):
+            if (
+                hasattr(panel, "set_overlay_points")
+                and not bool(getattr(self, "_manual_chart_marking", False))
+                and not manual_points_visible
+            ):
                 panel.set_overlay_points(level_points)
 
     def _image_crop_reference_size(self) -> tuple[int, int] | None:

@@ -24,7 +24,7 @@ D50_XY = np.asarray(colour.CCS_ILLUMINANTS["CIE 1931 2 Degree Standard Observer"
 D50_XYZ = np.asarray(colour.xy_to_XYZ(D50_XY), dtype=np.float64)
 ARGYLL_CACHE_DIR_ENV = "PROBRAW_ARGYLL_CACHE_DIR"
 ARGYLL_COLPROF_CACHE_ENV = "PROBRAW_ARGYLL_COLPROF_CACHE"
-_COLPROF_CACHE_SCHEMA = "colprof-cache-v1"
+_COLPROF_CACHE_SCHEMA = "colprof-cache-v3-xyz-rgb"
 _ARGYLL_MODEL_FLAGS = {
     "-as": "argyll_shaper_matrix",
     "-ag": "argyll_gamma_matrix",
@@ -122,7 +122,7 @@ def _argyll_profile_model(args: list[str] | None) -> tuple[str, str | None]:
     effective_args = list(args or [])
     if not effective_args:
         env_args = os.environ.get("ICC_ARGYLL_COLPROF_ARGS", "").strip()
-        effective_args = env_args.split() if env_args else ["-qm", "-as", "-u", "-R"]
+        effective_args = env_args.split() if env_args else ["-qm", "-al", "-u", "-R"]
     for arg in effective_args:
         if arg in _ARGYLL_MODEL_FLAGS:
             return _ARGYLL_MODEL_FLAGS[arg], arg
@@ -352,7 +352,7 @@ def _build_profile_with_argyll(
     elif env_args:
         args.extend(env_args.split())
     else:
-        args.extend(["-qm", "-as", "-u", "-R"])
+        args.extend(["-qm", "-al", "-u", "-R"])
 
     cache_path: Path | None = None
     if _colprof_cache_enabled():
@@ -523,18 +523,19 @@ def _write_ti3(
     lines.append('KEYWORD "DEVICE_CLASS"')
     lines.append('DEVICE_CLASS "INPUT"')
     lines.append('KEYWORD "COLOR_REP"')
-    lines.append('COLOR_REP "LAB_RGB"')
+    lines.append('COLOR_REP "XYZ_RGB"')
     lines.append('NUMBER_OF_FIELDS 7')
     lines.append('BEGIN_DATA_FORMAT')
-    lines.append('SAMPLE_ID LAB_L LAB_A LAB_B RGB_R RGB_G RGB_B')
+    lines.append('SAMPLE_ID XYZ_X XYZ_Y XYZ_Z RGB_R RGB_G RGB_B')
     lines.append('END_DATA_FORMAT')
     lines.append(f'NUMBER_OF_SETS {len(patch_ids)}')
     lines.append('BEGIN_DATA')
 
     for pid, rgb, lab in zip(patch_ids, measured_rgb, reference_lab, strict=True):
+        xyz = colour.Lab_to_XYZ(np.asarray(lab, dtype=np.float64), illuminant=D50_XY)
+        xx, yy, zz = [float(v) * 100.0 for v in xyz]
         rr, gg, bb = [float(v) * 100.0 for v in rgb]
-        ll, aa, bb_lab = [float(v) for v in lab]
-        lines.append(f'{pid} {ll:.6f} {aa:.6f} {bb_lab:.6f} {rr:.6f} {gg:.6f} {bb:.6f}')
+        lines.append(f'{pid} {xx:.6f} {yy:.6f} {zz:.6f} {rr:.6f} {gg:.6f} {bb:.6f}')
 
     lines.append('END_DATA')
     path.write_text("\n".join(lines) + "\n", encoding="ascii")

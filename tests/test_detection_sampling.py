@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 import tifffile
 
-from probraw.chart.detection import detect_chart, detect_chart_from_corners
+from probraw.chart.detection import PATCH_SAMPLE_REGION_SCALE, detect_chart, detect_chart_from_corners
 from probraw.chart.sampling import ReferenceCatalog, _sample_patch, bundled_reference_catalogs, reference_catalog_template, sample_chart
 from probraw.core.models import ChartDetectionResult, PatchDetection, Point2
 
@@ -87,6 +87,30 @@ def test_detect_chart_from_manual_corners_builds_geometry(tmp_path: Path):
     assert detection.valid_patch_ratio == 1.0
     assert len(detection.patches) == 24
     assert any("manual" in warning for warning in detection.warnings)
+
+
+def test_chart_sample_regions_are_centered_and_smaller_than_patch_cells(tmp_path: Path):
+    path = tmp_path / "manual_sample_size.tiff"
+    image = np.full((120, 180, 3), 20000, dtype=np.uint16)
+    tifffile.imwrite(str(path), image, photometric="rgb", metadata=None)
+
+    detection = detect_chart_from_corners(
+        path,
+        corners=[(30, 20), (150, 20), (150, 100), (30, 100)],
+        chart_type="colorchecker24",
+    )
+    patch = detection.patches[0]
+    patch_poly = np.asarray([[point.x, point.y] for point in patch.polygon], dtype=np.float64)
+    sample_poly = np.asarray([[point.x, point.y] for point in patch.sample_region], dtype=np.float64)
+
+    patch_width = float(np.linalg.norm(patch_poly[1] - patch_poly[0]))
+    sample_width = float(np.linalg.norm(sample_poly[1] - sample_poly[0]))
+    patch_height = float(np.linalg.norm(patch_poly[3] - patch_poly[0]))
+    sample_height = float(np.linalg.norm(sample_poly[3] - sample_poly[0]))
+
+    assert sample_width / patch_width == pytest.approx(PATCH_SAMPLE_REGION_SCALE, abs=0.02)
+    assert sample_height / patch_height == pytest.approx(PATCH_SAMPLE_REGION_SCALE, abs=0.02)
+    assert np.allclose(sample_poly.mean(axis=0), patch_poly.mean(axis=0), atol=1e-6)
 
 
 def test_sample_chart_honors_trim_percent_and_saturation_rejection(tmp_path: Path):

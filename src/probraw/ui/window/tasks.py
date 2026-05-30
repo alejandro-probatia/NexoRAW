@@ -100,6 +100,7 @@ class TaskStatusMixin:
             "_mtf_refresh_timer",
             "_mtf_persist_timer",
             "_mtf_progress_timer",
+            "_task_activity_timer",
             "_session_root_update_timer",
         ):
             timer = getattr(self, name, None)
@@ -127,13 +128,17 @@ class TaskStatusMixin:
 
     def _start_background_task(self, label: str, task, on_success, *, on_progress=None) -> None:
         self._set_status(self.tr("Ejecutando:") + f" {label}")
-        task_row = self._monitor_task_start(label)
+        task_row = self._monitor_task_start(label, has_progress=on_progress is not None)
         app = QtWidgets.QApplication.instance()
         if app is not None:
             app.processEvents(QtCore.QEventLoop.ExcludeUserInputEvents)
         thread = TaskThread(task, progress_enabled=on_progress is not None)
         if on_progress is not None:
-            thread.progress.connect(on_progress)
+            def handle_progress(payload) -> None:
+                self._monitor_task_progress(task_row, payload)
+                on_progress(payload)
+
+            thread.progress.connect(handle_progress)
         self._threads.append(thread)
 
         def cleanup() -> None:
@@ -164,7 +169,7 @@ class TaskStatusMixin:
         self.preview_log.appendPlainText(text)
         self.monitor_log.appendPlainText(text)
 
-    def _monitor_task_start(self, label: str) -> int:
+    def _monitor_task_start(self, label: str, *, has_progress: bool = False) -> int:
         self._task_counter += 1
         self._active_tasks += 1
 
@@ -176,17 +181,24 @@ class TaskStatusMixin:
         self.monitor_tasks.setItem(row, 3, QtWidgets.QTableWidgetItem(""))
         self.monitor_tasks.scrollToBottom()
 
-        self.monitor_status_label.setText(f"Ejecutando: {label}")
-        self.monitor_progress.setRange(0, 0)
-        self._set_global_operation_progress(
-            "task",
-            f"{self.tr('Ejecutando:')} {label}",
-            time_text=self.tr("En curso"),
-            phase_text=self.tr("Tarea en segundo plano"),
-            minimum=0,
-            maximum=0,
-            value=0,
-        )
+        records = getattr(self, "_background_task_records", None)
+        if records is None:
+            self._background_task_records = {}
+            records = self._background_task_records
+        records[row] = {
+            "label": str(label),
+            "started": time.perf_counter(),
+            "updated": time.perf_counter(),
+            "has_progress": bool(has_progress),
+            "progress": None,
+            "phase": "",
+            "detail": "",
+            "source_progress": {},
+        }
+        timer = getattr(self, "_task_activity_timer", None)
+        if timer is not None and not timer.isActive():
+            timer.start()
+        self._refresh_background_task_activity(force=True)
         return row
 
     def _monitor_task_finish(self, row: int, status: str, detail: str) -> None:
@@ -194,8 +206,16 @@ class TaskStatusMixin:
         self.monitor_tasks.setItem(row, 2, QtWidgets.QTableWidgetItem(status))
         self.monitor_tasks.setItem(row, 3, QtWidgets.QTableWidgetItem(detail))
         self.monitor_tasks.scrollToBottom()
+        records = getattr(self, "_background_task_records", None)
+        if isinstance(records, dict):
+            records.pop(row, None)
 
-        if self._active_tasks == 0:
+        if self._active_tasks > 0:
+            self._refresh_background_task_activity(force=True)
+        else:
+            timer = getattr(self, "_task_activity_timer", None)
+            if timer is not None:
+                timer.stop()
             self.monitor_progress.setRange(0, 1)
             self.monitor_progress.setValue(1 if status == "Completado" else 0)
             self.monitor_status_label.setText(self.tr("Sin tareas en ejecucion"))
@@ -209,6 +229,114 @@ class TaskStatusMixin:
                 value=1 if status == "Completado" else 0,
             )
             QtCore.QTimer.singleShot(1800, self._reset_global_progress_if_idle)
+
+    def _monitor_task_progress(self, row: int, payload: Any) -> None:
+        records = getattr(self, "_background_task_records", None)
+        if not isinstance(records, dict) or row not in records or not isinstance(payload, dict):
+            return
+        record = records[row]
+        record["updated"] = time.perf_counter()
+        if "progress" in payload:
+            try:
+                progress = int(round(float(payload.get("progress", 0))))
+            except Exception:
+                progress = 0
+            progress = max(0, min(100, progress))
+            record["progress"] = progress
+            source = str(payload.get("source") or "")
+            if source:
+                source_progress = record.setdefault("source_progress", {})
+                if isinstance(source_progress, dict):
+                    source_progress[source] = progress
+                    try:
+                        values = [int(v) for v in source_progress.values()]
+                    except Exception:
+                        values = []
+                    if values:
+                        record["progress"] = int(round(sum(values) / max(1, len(values))))
+        phase = str(payload.get("phase") or "").strip()
+        if not phase:
+            message = str(payload.get("message") or "").strip()
+            if message:
+                phase = message
+        if phase:
+            record["phase"] = phase
+        detail = str(payload.get("detail") or payload.get("source") or "").strip()
+        if detail:
+            record["detail"] = detail
+        self._refresh_background_task_activity(force=True)
+
+    def _format_task_activity_elapsed(self, started: Any) -> str:
+        try:
+            elapsed = max(0.0, time.perf_counter() - float(started))
+        except Exception:
+            elapsed = 0.0
+        if elapsed < 60.0:
+            return f"{elapsed:.1f}s"
+        minutes = int(elapsed // 60)
+        seconds = int(round(elapsed - minutes * 60))
+        return f"{minutes}m {seconds:02d}s"
+
+    def _active_background_task_records(self) -> list[dict[str, Any]]:
+        records = getattr(self, "_background_task_records", {})
+        if not isinstance(records, dict):
+            return []
+        active: list[dict[str, Any]] = []
+        for record in records.values():
+            if isinstance(record, dict):
+                active.append(record)
+        active.sort(key=lambda record: float(record.get("updated") or record.get("started") or 0.0))
+        return active
+
+    def _refresh_background_task_activity(self, force: bool = False) -> None:
+        records = self._active_background_task_records()
+        if not records:
+            timer = getattr(self, "_task_activity_timer", None)
+            if timer is not None:
+                timer.stop()
+            return
+        latest = records[-1]
+        label = str(latest.get("label") or self.tr("Tarea en segundo plano"))
+        elapsed = self._format_task_activity_elapsed(latest.get("started"))
+        active_count = len(records)
+        progress = latest.get("progress")
+        phase = str(latest.get("phase") or self.tr("Tarea en segundo plano"))
+        detail = str(latest.get("detail") or "").strip()
+        if detail and detail not in phase:
+            phase = f"{phase}: {detail}"
+        if active_count == 1:
+            title = f"{self.tr('Ejecutando:')} {label}"
+            monitor_text = title
+            count_text = self.tr("1 tarea activa")
+        else:
+            title = f"{active_count} {self.tr('tareas en ejecucion')}: {label}"
+            monitor_text = title
+            count_text = f"{active_count} {self.tr('tareas activas')}"
+
+        if progress is None:
+            self.monitor_progress.setRange(0, 0)
+            time_text = self.tr("Transcurrido") + f" {elapsed}"
+            value = 0
+            maximum = 0
+        else:
+            self.monitor_progress.setRange(0, 100)
+            self.monitor_progress.setValue(int(progress))
+            time_text = f"{self.tr('Avance:')} {int(progress)}% | {self.tr('Transcurrido')} {elapsed}"
+            value = int(progress)
+            maximum = 100
+        self.monitor_status_label.setText(monitor_text)
+
+        owner = getattr(self, "_global_progress_owner", None)
+        if force or owner in (None, "task"):
+            self._set_global_operation_progress(
+                "task",
+                title,
+                time_text=time_text,
+                phase_text=f"{count_text} | {phase}",
+                minimum=0,
+                maximum=maximum,
+                value=value,
+            )
 
     def _reset_global_progress_if_idle(self) -> None:
         self._reset_global_operation_progress(owner="task")
@@ -238,6 +366,8 @@ class TaskStatusMixin:
 
     def _reset_global_operation_progress(self, *, owner: str | None = None, force: bool = False) -> None:
         if not force and self._active_tasks != 0:
+            if owner is None or getattr(self, "_global_progress_owner", None) == owner:
+                self._refresh_background_task_activity(force=True)
             return
         if not hasattr(self, "global_status_label"):
             return

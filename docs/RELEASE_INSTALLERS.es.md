@@ -4,6 +4,26 @@ La publicacion de instaladores de ProbRAW tiene una regla simple: ningun
 artefacto se sube al repositorio ni a GitHub Releases sin pasar primero las
 validaciones de paquete e instalacion.
 
+## Release 0.4.3
+
+La 0.4.3 es una release de precision para perfilado ICC desde RAW/DNG, marcado
+manual de cartas y diagnostico Lab. Antes de publicar los artefactos, verificar:
+
+- suite local de pruebas y compilacion Python sin errores;
+- las cartas marcadas manualmente muestran zonas centrales de lectura pequenas,
+  movibles y guardadas en el overlay;
+- el cuentagotas Lab exige fuente a pixel real y recalcula ajustes de detalle
+  pendientes antes de guardar la muestra;
+- las muestras Lab permiten fichas compactas, color de marcador, resaltado de la
+  muestra seleccionada y grafico Lab a*b* ampliado;
+- las miniaturas mantienen el nombre de archivo por encima de los iconos de
+  perfil;
+- la build Linux Debian/Ubuntu genera `probraw_0.4.3_amd64.deb`, valida con
+  `packaging/debian/validate_deb.sh` y su SHA256 se documenta en
+  `docs/releases/0.4.3.es.md`;
+- la build Windows genera `ProbRAW-0.4.3-Setup.exe` y su `.sha256`, documentados
+  en `docs/releases/0.4.3.es.md`.
+
 ## Release 0.4.2
 
 La 0.4.2 es una release de fiabilidad para perfilado ICC, actualizacion e
@@ -15,7 +35,8 @@ instaladores multiplataforma. Antes de publicar los artefactos, verificar:
   tarballs fuente como instalador;
 - los directorios persistidos en `session.json` quedan confinados en la raiz de
   sesion;
-- los perfiles `draft` se registran sin autoactivarse;
+- la falta de validacion independiente no marca por si sola el perfil como
+  `draft` si la QA contra la referencia colorimetrica de la carta pasa;
 - los perfiles `rejected` no se autoactivan y solo se activan tras confirmacion
   explicita del operador;
 - los metadatos de perfil informan el modelo ArgyllCMS real, no siempre

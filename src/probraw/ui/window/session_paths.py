@@ -157,6 +157,35 @@ class SessionPathsMixin:
                 return f"{label} de la sesion"
         return None
 
+    def _profile_status_training_passed(self, payload: dict[str, Any]) -> bool:
+        training_status = str(payload.get("training_status") or "").strip().lower()
+        if training_status == "passed":
+            return True
+        if training_status == "rejected":
+            return False
+        error_summary = payload.get("training_error_summary")
+        if not isinstance(error_summary, dict):
+            return False
+        thresholds = payload.get("thresholds") if isinstance(payload.get("thresholds"), dict) else {}
+        try:
+            mean_de = float(error_summary.get("mean_delta_e2000", float("inf")))
+            max_de = float(error_summary.get("max_delta_e2000", float("inf")))
+            mean_limit = float(thresholds.get("mean_delta_e2000_max", DEFAULT_QA_MEAN_DELTA_E2000_MAX))
+            max_limit = float(thresholds.get("max_delta_e2000_max", DEFAULT_QA_MAX_DELTA_E2000_MAX))
+        except (TypeError, ValueError):
+            return False
+        return mean_de <= mean_limit and max_de <= max_limit
+
+    def _normalized_profile_status_candidate(self, candidate: Any) -> str:
+        if isinstance(candidate, str):
+            return candidate.strip().lower()
+        if not isinstance(candidate, dict):
+            return ""
+        status = str(candidate.get("status") or "").strip().lower()
+        if status == "draft" and self._profile_status_training_passed(candidate):
+            return "validated"
+        return status
+
     def _profile_status_for_path(self, profile_path: Path) -> str | None:
         sidecars = [profile_path.with_suffix(".profile.json")]
         registered_profile = self._icc_profile_by_path(profile_path) if hasattr(self, "_icc_profile_by_path") else None
@@ -168,6 +197,7 @@ class SessionPathsMixin:
             defaults = self._session_default_outputs()
             sidecars.append(defaults["profile_report"])
 
+        fallback_status: str | None = None
         for sidecar in sidecars:
             try:
                 if not sidecar.exists():
@@ -196,12 +226,15 @@ class SessionPathsMixin:
                 metadata.get("session_profile_status"),
             ]
             for candidate in candidates:
-                if isinstance(candidate, str) and candidate.strip():
-                    return candidate.strip().lower()
-                if isinstance(candidate, dict):
-                    status = str(candidate.get("status") or "").strip().lower()
-                    if status:
-                        return status
+                status = self._normalized_profile_status_candidate(candidate)
+                if not status:
+                    continue
+                if status in {"validated", "rejected", "expired"}:
+                    return status
+                if fallback_status is None:
+                    fallback_status = status
+        if fallback_status:
+            return fallback_status
         if registered_profile is not None:
             status = str(registered_profile.get("status") or "").strip().lower()
             if status and status != "unknown":

@@ -26,11 +26,12 @@ A RAW file is not a final RGB image. It is a capture of sensor data that must be
 interpreted through a development recipe: demosaic, white balance, black level,
 exposure compensation, tone curve, assigned image ICC and other parameters.
 
-In ProbRAW, the input ICC profile is not computed from the bare RAW file. It is
-computed after developing a chart capture with a controlled recipe, because
-measurements are made on RGB values produced by the developer. Once generated,
-that ICC describes how to interpret the camera/session RGB produced by the same
-recipe, camera and illuminant.
+In ProbRAW, the input ICC profile is generated exclusively from the original
+RAW/DNG chart capture. It is not profiled from derived TIFFs or visual
+intermediate renders. Measurements are made on the linear RGB values produced by
+the developer when interpreting that RAW/DNG with a controlled recipe. Once
+generated, that ICC describes how to interpret the camera/session RGB produced
+by the same recipe, camera and illuminant.
 
 RGB values are relative to the device or development space that produced them.
 The input ICC tags those values and defines their objective correspondence to
@@ -107,38 +108,53 @@ Types:
 
 When a valid chart capture exists:
 
-1. Develop the chart with a base scientific recipe.
-2. Detect and measure chart patches.
-3. Build a development profile: white balance, density and exposure derived from
+1. Start exclusively from the original RAW/DNG chart capture. Linear TIFFs are
+   audit artifacts, not accepted sources for the camera ICC profile.
+2. Develop the chart with a base scientific recipe. To avoid accumulated
+   adjustments, the profiling recipe neutralizes white balance and exposure:
+   fixed WB `[1, 1, 1, 1]`, 0 EV, linear output and camera/session RGB.
+3. Detect and measure chart patches. If the chart is marked manually, reading
+   regions must remain inside the useful central area of each patch and can be
+   shifted away from borders, dust, glare or stains.
+4. Build a development profile: white balance, density and exposure derived from
    the chart.
-4. Measure the chart again with the calibrated recipe.
-5. Generate the session input ICC with ArgyllCMS from measured RGB values and
+5. Measure the chart again with the calibrated recipe.
+6. Generate the session input ICC with ArgyllCMS from measured RGB values and
    colorimetric references.
-6. Save development profile, calibrated recipe, input ICC, QA reports and
+7. Save development profile, calibrated recipe, input ICC, QA reports and
    overlays separately.
-7. Develop equivalent RAW files with that profile.
-8. Create a master TIFF preserving camera/session RGB and embedding the input
+8. Develop equivalent RAW files with that profile.
+9. Create a master TIFF preserving camera/session RGB and embedding the input
    ICC.
 
 The advanced profile can be copied to images captured under comparable camera,
 lens, illuminant, base exposure and recipe conditions.
 
+The interpretation before the ICC must be a technical normalization, not an
+aesthetic correction. The Lab reference is used to estimate neutrality and
+density before profiling: neutral patches set white-balance multipliers and EV
+compensation on a linear render. Curves, contrast, saturation and conversion to
+a generic RGB space are not applied before measuring the chart, otherwise the
+ICC would describe a pre-corrected image rather than the camera/session RGB.
+
 ## ICC Profile QA State
 
 ProbRAW must allow profile generation even when the working case is not ideal.
 Methodological checks become state, warning or recommendation, not a hard block,
-except when there are no valid chart samples or when available independent
-validation proves the colorimetric error is outside threshold.
+except when there are no valid chart samples or when the colorimetric check
+against the chart reference proves the error is outside threshold.
 
 Operational recommendations:
 
 - when more than one chart capture exists, reserve one for independent
   validation when possible;
-- with only one capture, generate the ICC as `draft` and record the missing
-  independent validation;
-- with ColorChecker 24, default to `shaper+matrix (-as)`; cLUT profiles remain
-  available as an advanced option, but they are documented as an overfit risk
-  without a chart with many more patches;
+- with only one capture, generate the ICC when the comparison against the chart
+  colorimetric reference passes QA; record missing independent validation as a
+  non-blocking recommendation;
+- default to `Lab cLUT (-al)` with Medium quality and `-u -R`; in session tests
+  it recovers the Lab correspondence better than `shaper+matrix (-as)`. `-as`
+  remains available as a compact model, `-am` as a technical option for linear
+  RAW and `-ax` as an advanced cLUT that is less robust with sparse charts;
 - review the neutral row separately: a*/b* residuals, casts, exposure and light
   uniformity can reveal issues that a mean DeltaE does not show;
 - for critical work, prefer measured D50 Lab values for the physical chart in
@@ -147,9 +163,10 @@ Operational recommendations:
 
 States:
 
-- `validated`: usable independent validation exists and passes thresholds;
-- `draft`: the profile was generated, but independent validation is missing or
-  inconclusive; the operator may activate it manually;
+- `validated`: the profile was generated and the comparison against the chart
+  colorimetric reference passes thresholds;
+- `draft`: reserved for profiles without a conclusive colorimetric check; it
+  should not appear solely because an independent capture is missing;
 - `rejected`: available validation or training error exceeds the configured
   thresholds; it never autoactivates and can only be activated with explicit
   confirmation for diagnosis or comparison;
@@ -171,6 +188,8 @@ real chromatic variation of that material.
 Methodological rules:
 
 - measure only real pixels from the full-size loaded image;
+- recalculate any pending detail adjustment at real size before accepting the
+  reading;
 - document matrix, coordinate, name and note for each sample;
 - group samples that belong to the same material or comparison hypothesis;
 - compare sets through mean Lab, internal dispersion, DeltaE against the
@@ -181,7 +200,8 @@ Methodological rules:
 RGB readings are always traceable. Lab readings, DeltaE and sample gamut are
 colorimetrically rigorous only when the image input ICC is a ProbRAW-generated
 profile for that capture case. With generic profiles, the analysis must be
-labelled as informative.
+labelled as informative. The visual color assigned to sample markers is only an
+interface aid and does not modify the recorded measurement.
 
 ## Workflow Without a Color Chart
 

@@ -67,9 +67,9 @@ def test_build_profile_generates_icc_and_sidecar(tmp_path: Path, monkeypatch):
     assert out_icc.stat().st_size > 256
     assert Path(result.output_profile_json).exists()
     assert result.metadata["profile_engine_used"] == "argyll"
-    assert result.model == "argyll_shaper_matrix"
-    assert result.metadata["profile_model"] == "argyll_shaper_matrix"
-    assert result.metadata["argyll_profile_model_flag"] == "-as"
+    assert result.model == "argyll_lab_clut"
+    assert result.metadata["profile_model"] == "argyll_lab_clut"
+    assert result.metadata["argyll_profile_model_flag"] == "-al"
     assert result.patch_errors[0].reference_lab == samples[0].reference_lab
     assert result.patch_errors[0].profile_lab == samples[0].reference_lab
 
@@ -306,7 +306,7 @@ def test_validate_profile_requires_real_icc_even_if_sidecar_exists(tmp_path: Pat
         validate_profile(samples, profile)
 
 
-def test_write_samples_cgats_exports_lab_rgb_ti3(tmp_path: Path):
+def test_write_samples_cgats_exports_input_device_xyz_rgb_ti3(tmp_path: Path):
     samples = SampleSet(
         chart_name="ColorChecker 24",
         chart_version="unit",
@@ -330,9 +330,9 @@ def test_write_samples_cgats_exports_lab_rgb_ti3(tmp_path: Path):
 
     text = out.read_text(encoding="ascii")
     assert text.startswith("CTI3")
-    assert 'COLOR_REP "LAB_RGB"' in text
+    assert 'COLOR_REP "XYZ_RGB"' in text
     assert 'CHART_NAME "ColorChecker 24"' in text
-    assert "P01 50.000000 1.000000 -2.000000 10.000000 20.000000 30.000000" in text
+    assert "P01 17.948984 18.418652 16.012794 10.000000 20.000000 30.000000" in text
 
 
 def _lookup_lab_with_xicclu(profile: Path, rgb: list[float]) -> list[float]:

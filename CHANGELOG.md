@@ -1,4 +1,4 @@
-_Spanish version: [CHANGELOG.es.md](CHANGELOG.es.md)_
+﻿_Spanish version: [CHANGELOG.es.md](CHANGELOG.es.md)_
 
 # Changelog
 
@@ -21,6 +21,39 @@ To maintain full traceability, each change must:
 ## [Unreleased]
 
 No entries yet.
+
+## [0.4.3] - 2026-05-30
+
+### Added
+
+- Added editable central chart-reading regions after manual four-corner marking,
+  so operators can shift patch samples away from borders, dust, glare or stains
+  before building the ICC profile.
+- Added compact Lab sample cards with marker-color controls, selected-sample
+  highlighting and an enlarged Lab a*b* graph dialog.
+
+### Changed
+
+- ICC profiling is documented and enforced around original RAW/DNG chart
+  captures, paired session ICC profiles and their calibrated development recipe.
+- Thumbnail labels now keep the filename above profile badges to avoid layout
+  shifts.
+- Background task status exposes clearer phase/detail text while long-running
+  operations are active.
+- Spanish UI labels localize rejected/draft profile states while preserving the
+  internal metadata values for compatibility.
+
+### Fixed
+
+- Lab eyedropper readings now recalculate pending real-size detail adjustments
+  before saving a sample instead of failing when the exact preview is stale.
+- Generated ICC profiles that do not pass QA do not autoactivate and do not load
+  their calibrated recipe as the active adjustment.
+
+### Tests
+
+- Validated with focused GUI/profile/detection regressions, Python compilation
+  and release installer builds for Windows and Linux.
 
 ## [0.4.1] - 2026-05-29
 

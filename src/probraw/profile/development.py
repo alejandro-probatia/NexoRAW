@@ -18,6 +18,7 @@ def build_development_profile(
     neutral_patch_ids: tuple[str, ...] = DEFAULT_NEUTRAL_PATCH_IDS,
     max_abs_ev: float = 4.0,
     highlight_headroom: float = 0.92,
+    max_neutral_saturated_pixel_ratio: float = 0.02,
 ) -> DevelopmentProfile:
     sample_map = {sample.patch_id: sample for sample in samples.samples}
     neutral = [
@@ -28,8 +29,23 @@ def build_development_profile(
     if len(neutral) < 3:
         raise RuntimeError("Se necesitan al menos 3 parches neutros con referencia Lab para calibrar revelado")
 
-    measured = np.asarray([sample.measured_rgb for sample in neutral], dtype=np.float64)
-    reference_lab = np.asarray([sample.reference_lab for sample in neutral], dtype=np.float64)
+    saturated_neutral = [
+        sample
+        for sample in neutral
+        if float(sample.saturated_pixel_ratio) > float(max_neutral_saturated_pixel_ratio)
+    ]
+    calibration_neutral = [
+        sample
+        for sample in neutral
+        if float(sample.saturated_pixel_ratio) <= float(max_neutral_saturated_pixel_ratio)
+    ]
+    if len(calibration_neutral) < 3:
+        raise RuntimeError(
+            "Los parches neutros validos estan saturados; repite la captura con menos exposicion"
+        )
+
+    measured = np.asarray([sample.measured_rgb for sample in calibration_neutral], dtype=np.float64)
+    reference_lab = np.asarray([sample.reference_lab for sample in calibration_neutral], dtype=np.float64)
     reference_y = np.asarray([_lab_l_to_y(lab[0]) for lab in reference_lab], dtype=np.float64)
 
     valid_signal = np.all(np.isfinite(measured), axis=1) & (np.max(measured, axis=1) > 1e-5)
@@ -69,7 +85,14 @@ def build_development_profile(
 
     neutral_reports: list[NeutralPatchCalibration] = []
     density_errors: list[float] = []
-    for sample, lab, ref_y, balanced_rgb, luma in zip(neutral, reference_lab, reference_y, balanced, measured_luma, strict=True):
+    for sample, lab, ref_y, balanced_rgb, luma in zip(
+        calibration_neutral,
+        reference_lab,
+        reference_y,
+        balanced,
+        measured_luma,
+        strict=True,
+    ):
         ev = float(math.log2(max(ref_y, 1e-6) / max(float(luma), 1e-6)))
         density_error = float(math.log10(max(float(luma), 1e-6) / max(float(ref_y), 1e-6)))
         density_errors.append(ev)
@@ -87,6 +110,11 @@ def build_development_profile(
         )
 
     warnings: list[str] = []
+    if saturated_neutral:
+        warnings.append(
+            "parches neutros saturados excluidos de la calibracion: "
+            + ", ".join(sample.patch_id for sample in saturated_neutral)
+        )
     if abs(ev_correction) >= abs(max_abs_ev):
         warnings.append(f"correccion EV limitada a +/-{max_abs_ev}; revisar exposicion de captura")
 
@@ -126,7 +154,7 @@ def build_development_profile(
         chart_name=samples.chart_name,
         chart_version=samples.chart_version,
         illuminant=samples.illuminant,
-        neutral_patch_ids=[sample.patch_id for sample in neutral],
+        neutral_patch_ids=[sample.patch_id for sample in calibration_neutral],
         white_balance_multipliers=wb_multipliers,
         exposure_compensation=calibrated_exposure,
         density_error_ev_mean=float(np.mean(density_arr)),

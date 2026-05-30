@@ -172,7 +172,7 @@ class BrowserMetadataMixin:
         shown.sort(key=lambda p: p.name.lower())
 
         for p in shown:
-            item = QtWidgets.QListWidgetItem("")
+            item = QtWidgets.QListWidgetItem(p.name)
             item.setData(QtCore.Qt.UserRole, str(p))
             item.setData(QtCore.Qt.UserRole + 1, p.name)
             item.setTextAlignment(QtCore.Qt.AlignHCenter)
@@ -528,9 +528,20 @@ class BrowserMetadataMixin:
         path: Path,
         source_icon: QtGui.QIcon,
     ) -> None:
+        item.setText("")
+        item.setData(QtCore.Qt.UserRole + 1, path.name)
+        item.setData(QtCore.Qt.AccessibleTextRole, path.name)
+        item.setTextAlignment(QtCore.Qt.AlignHCenter)
         display_icon = self._display_icon_for_path(path, source_icon)
         item.setIcon(display_icon)
         self._apply_thumbnail_item_size_hint(item, display_icon)
+
+    def _thumbnail_filename_label_height(self) -> int:
+        if hasattr(self, "file_list"):
+            metrics = self.file_list.fontMetrics()
+        else:
+            metrics = self.fontMetrics()
+        return max(18, int(metrics.lineSpacing()) + 6)
 
     def _apply_thumbnail_item_size_hint(
         self,
@@ -545,7 +556,10 @@ class BrowserMetadataMixin:
             size = self.file_list.iconSize()
         else:
             size = pixmap.size()
-        item.setSizeHint(QtCore.QSize(max(1, int(size.width()) + 4), max(1, int(size.height()) + 4)))
+        icon_size = self.file_list.iconSize()
+        width = max(int(size.width()), int(icon_size.width())) + 8
+        height = int(size.height()) + 8
+        item.setSizeHint(QtCore.QSize(max(1, width), max(1, height)))
 
     def _display_icon_for_path(self, path: Path, icon: QtGui.QIcon) -> QtGui.QIcon:
         size = int(self.file_list.iconSize().width() or DEFAULT_THUMBNAIL_SIZE)
@@ -553,6 +567,8 @@ class BrowserMetadataMixin:
         return self._icon_with_thumbnail_markers(
             icon,
             size=size,
+            label=path.name,
+            reserve_badge_space=True,
             badges=self._raw_adjustment_profile_badges(path),
         )
 
@@ -671,29 +687,41 @@ class BrowserMetadataMixin:
         *,
         size: int,
         badges: list[str],
+        label: str | None = None,
+        reserve_badge_space: bool = False,
     ) -> QtGui.QIcon:
         pixmap = icon.pixmap(QtCore.QSize(size, size))
         if pixmap.isNull():
             return icon
         content_w = max(1, int(pixmap.width()))
         content_h = max(1, int(pixmap.height()))
-        strip_h = self._thumbnail_badge_strip_height(size) if badges else 0
-        marked = QtGui.QPixmap(content_w, content_h + strip_h)
+        label_h = self._thumbnail_filename_label_height() if label is not None else 0
+        strip_h = self._thumbnail_badge_strip_height(size) if (badges or reserve_badge_space) else 0
+        marked_w = max(content_w, int(size))
+        marked = QtGui.QPixmap(marked_w, content_h + label_h + strip_h)
         marked.fill(QtCore.Qt.transparent)
         painter = QtGui.QPainter(marked)
         painter.setRenderHint(QtGui.QPainter.Antialiasing)
-        painter.drawPixmap(0, 0, pixmap)
+        content_x = max(0, (marked_w - content_w) // 2)
+        painter.drawPixmap(content_x, 0, pixmap)
+        if label is not None:
+            label_rect = QtCore.QRectF(0.0, float(content_h), float(marked_w), float(label_h))
+            metrics = painter.fontMetrics()
+            text = metrics.elidedText(str(label), QtCore.Qt.ElideMiddle, max(1, marked_w - 8))
+            painter.setPen(QtGui.QColor("#e6e6e6"))
+            painter.drawText(label_rect.adjusted(4, 0, -4, 0), QtCore.Qt.AlignCenter, text)
         if badges:
-            painter.fillRect(0, content_h, content_w, strip_h, QtGui.QColor("#1f1f1f"))
+            badge_y0 = content_h + label_h
+            painter.fillRect(0, badge_y0, marked_w, strip_h, QtGui.QColor("#1f1f1f"))
             max_badge_side = int(np.clip(strip_h - 4, 6, 18))
             spacing = max(1, int(round(max_badge_side * 0.25)))
-            available = max(1, content_w - 4)
+            available = max(1, marked_w - 4)
             badge_side = max_badge_side
             if len(badges) > 1:
                 badge_side = min(badge_side, max(6, (available - (len(badges) - 1) * spacing) // len(badges)))
             total_w = len(badges) * badge_side + (len(badges) - 1) * spacing
-            x = max(2, (content_w - total_w) // 2)
-            y = content_h + max(1, (strip_h - badge_side) // 2)
+            x = max(2, (marked_w - total_w) // 2)
+            y = badge_y0 + max(1, (strip_h - badge_side) // 2)
             for badge in badges:
                 rect = QtCore.QRectF(float(x), float(y), float(badge_side), float(badge_side))
                 self._draw_thumbnail_profile_badge(painter, rect, badge)
@@ -856,6 +884,9 @@ class BrowserMetadataMixin:
         if old_raw_path:
             self._file_items_by_key.pop(self._normalized_path_key(Path(str(old_raw_path))), None)
         item.setData(QtCore.Qt.UserRole, str(path))
+        item.setData(QtCore.Qt.UserRole + 1, path.name)
+        item.setText(path.name)
+        item.setTextAlignment(QtCore.Qt.AlignHCenter)
         item.setToolTip(self._file_item_tooltip(path))
         self._file_items_by_key[self._normalized_path_key(path)] = item
         icon_size = int(self.file_list.iconSize().width() or DEFAULT_THUMBNAIL_SIZE)
