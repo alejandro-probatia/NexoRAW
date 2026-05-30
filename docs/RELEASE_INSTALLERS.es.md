@@ -20,6 +20,9 @@ instaladores multiplataforma. Antes de publicar los artefactos, verificar:
   explicita del operador;
 - los metadatos de perfil informan el modelo ArgyllCMS real, no siempre
   `matrix3x3`;
+- la build Linux Debian/Ubuntu genera `probraw_0.4.2_amd64.deb`, valida con
+  `packaging/debian/validate_deb.sh` y su SHA256 es
+  `269fa680103119763bc215e297181aed716a9503a4a176442f1f20e4224be579`;
 - la build Windows genera `ProbRAW-0.4.2-Setup.exe` y su `.sha256`:
   `69372cafa12e13651278228781c2db042423a6d9cf0244cf6f50d198ae0cab11`.
 

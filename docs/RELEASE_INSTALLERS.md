@@ -22,6 +22,9 @@ cross-platform installers. Before publishing artifacts, verify:
   confirmation before manual activation;
 - profile metadata reports the real ArgyllCMS model instead of always reporting
   `matrix3x3`;
+- the Linux Debian/Ubuntu build generates `probraw_0.4.2_amd64.deb`, validates
+  with `packaging/debian/validate_deb.sh`, and has SHA256
+  `269fa680103119763bc215e297181aed716a9503a4a176442f1f20e4224be579`;
 - the Windows build generates `ProbRAW-0.4.2-Setup.exe` and its `.sha256`:
   `69372cafa12e13651278228781c2db042423a6d9cf0244cf6f50d198ae0cab11`.
 
