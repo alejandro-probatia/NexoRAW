@@ -47,6 +47,7 @@ probraw --version >/dev/null
 probraw check-tools --strict >/dev/null
 probraw check-color-environment >/dev/null
 probraw check-display-profile >/dev/null
+probraw tune-performance >/dev/null
 if is_true "$REQUIRE_AMAZE"; then
   probraw check-amaze >/dev/null
 fi

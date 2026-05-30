@@ -31,7 +31,7 @@ from probraw.gui_config import PREVIEW_INTERACTIVE_TONAL_MAX_SIDE  # noqa: E402
 from probraw.provenance.c2pa import C2PASignConfig  # noqa: E402
 from probraw.provenance.probraw_proof import ProbRawProofConfig, ProbRawProofResult  # noqa: E402
 from probraw.raw import pipeline  # noqa: E402
-from probraw.raw.preview import standard_profile_to_srgb_display  # noqa: E402
+from probraw.raw.preview import standard_profile_to_srgb_display, standard_profile_to_srgb_u8_display  # noqa: E402
 from probraw.session import create_session, load_session  # noqa: E402
 from probraw.sidecar import load_raw_sidecar, raw_sidecar_path, write_raw_sidecar  # noqa: E402
 
@@ -2425,7 +2425,7 @@ def test_interactive_refresh_uses_visible_viewport_rect_without_downscaling(qapp
         assert 0 < w <= image.shape[1] - x
         assert 0 < h <= image.shape[0] - y
         assert w * h < image.shape[0] * image.shape[1]
-        assert request[14] is True
+        assert request[14] is False
         assert request[15] is False
     finally:
         window.slider_brightness.setSliderDown(False)
@@ -2459,7 +2459,7 @@ def test_detail_interactive_refresh_uses_real_pixel_viewport(qapp, monkeypatch):
         assert request[7] == 0
         assert request[8] is True
         assert request[13] is not None
-        assert request[14] is True
+        assert request[14] is False
         assert request[15] is False
     finally:
         window.slider_sharpen.setSliderDown(False)
@@ -2497,7 +2497,7 @@ def test_raw_cached_preview_uses_viewport_without_real_pixel_request(tmp_path: P
         request = captured["request"]
         assert request[7] == 0
         assert request[13] is not None
-        assert request[14] is True
+        assert request[14] is False
         assert request[15] is False
     finally:
         window.slider_brightness.setSliderDown(False)
@@ -2526,6 +2526,40 @@ def test_real_pixel_request_restores_full_source_when_display_is_proxy(qapp, mon
 
         request = captured["request"]
         assert request[7] == 0
+        assert request[13] is None
+        assert request[14] is True
+        assert request[15] is True
+    finally:
+        window.slider_brightness.setSliderDown(False)
+        window.close()
+
+
+def test_preview_scale_on_proxy_does_not_force_full_source(qapp, monkeypatch):
+    window = ICCRawMainWindow()
+    try:
+        image = gui_module.np.zeros((800, 1200, 3), dtype=gui_module.np.float32)
+        proxy_display = gui_module.np.zeros((400, 600, 3), dtype=gui_module.np.uint8)
+        captured: dict[str, object] = {}
+        window._original_linear = image
+        window._preview_srgb = image.copy()
+        window._current_result_display_u8 = proxy_display.copy()
+        window._last_loaded_preview_key = "full-source-with-proxy-display"
+        window._viewer_full_detail_requested = False
+        window.check_image_clip_overlay.setChecked(False)
+        window.image_result_single.resize(240, 160)
+        window.image_result_single.set_rgb_u8_image(proxy_display)
+        window.image_result_single.set_view_transform(
+            zoom=window.image_result_single.view_zoom_for_display_scale(1.0),
+            rotation=0,
+        )
+        window.slider_brightness.setSliderDown(True)
+
+        monkeypatch.setattr(window, "_queue_interactive_preview_request", lambda request: captured.setdefault("request", request))
+
+        window._refresh_preview()
+
+        request = captured["request"]
+        assert request[7] == PREVIEW_INTERACTIVE_TONAL_MAX_SIDE
         assert request[13] is None
         assert request[14] is True
         assert request[15] is True
@@ -2575,7 +2609,7 @@ def test_interactive_refresh_uses_visible_viewport_rect_with_clip_overlay(qapp, 
 
         request = captured["request"]
         assert request[13] is not None
-        assert request[14] is True
+        assert request[14] is False
         assert request[15] is True
     finally:
         window.slider_brightness.setSliderDown(False)
@@ -2951,8 +2985,8 @@ def test_slider_change_schedules_post_interaction_exact_refresh(qapp, monkeypatc
         window._on_slider_change()
 
         assert refreshes == [True]
-        assert histogram_delays == [80]
-        assert delays == [260]
+        assert histogram_delays == [preview_render_module.PREVIEW_EXACT_HISTOGRAM_IDLE_DELAY_MS]
+        assert delays == [preview_render_module.PREVIEW_POST_RENDER_EXACT_DELAY_MS]
     finally:
         window.close()
 
@@ -3049,7 +3083,7 @@ def test_exact_histogram_refresh_waits_while_slider_is_dragging(qapp, monkeypatc
 
         window._run_exact_histogram_refresh()
 
-        assert delays == [160]
+        assert delays == [preview_render_module.PREVIEW_EXACT_HISTOGRAM_IDLE_DELAY_MS]
         assert queued == []
     finally:
         window.slider_brightness.setSliderDown(False)
@@ -3141,6 +3175,40 @@ def test_parallel_interactive_viewport_matches_sequential_icc(tmp_path: Path, qa
         assert gui_module.np.array_equal(actual_display, expected_display)
         assert actual_srgb is not None
         assert gui_module.np.array_equal(actual_srgb, expected_srgb)
+    finally:
+        window.close()
+
+
+def test_parallel_interactive_viewport_matches_sequential_standard_space(qapp, monkeypatch):
+    monkeypatch.setenv("PROBRAW_INTERACTIVE_RENDER_WORKERS", "4")
+    window = ICCRawMainWindow()
+    try:
+        image = gui_module.np.linspace(0.0, 1.0, 96 * 128 * 3, dtype=gui_module.np.float32).reshape((96, 128, 3))
+        kwargs = {
+            "brightness_ev": 0.2,
+            "contrast": 0.14,
+            "highlights": -0.2,
+            "shadows": 0.18,
+            "vibrance": 0.12,
+            "tone_curve_points": [(0.0, 0.0), (0.4, 0.53), (1.0, 1.0)],
+        }
+
+        expected_adjusted = gui_module.apply_render_adjustments(image, **kwargs)
+        expected_srgb = standard_profile_to_srgb_u8_display(expected_adjusted, "srgb")
+
+        actual_srgb, actual_display = window._render_interactive_viewport_parallel(
+            image,
+            kwargs,
+            output_space="srgb",
+            source_profile=None,
+            monitor_profile=None,
+            include_srgb_patch=True,
+            workers=4,
+        )
+
+        assert actual_srgb is not None
+        assert gui_module.np.array_equal(actual_srgb, expected_srgb)
+        assert gui_module.np.array_equal(actual_display, expected_srgb)
     finally:
         window.close()
 
@@ -3499,8 +3567,11 @@ def test_tone_curve_range_slider_release_consolidates_once(qapp, monkeypatch):
         assert syncs == [True]
         assert histograms == [(True, True)]
         assert refreshes == [True]
-        assert exact_histogram_calls == [(80, False), (80, True)]
-        assert exact_preview_delays == [260]
+        assert exact_histogram_calls == [
+            (80, False),
+            (preview_render_module.PREVIEW_EXACT_HISTOGRAM_IDLE_DELAY_MS, True),
+        ]
+        assert exact_preview_delays == [preview_render_module.PREVIEW_POST_RENDER_EXACT_DELAY_MS]
         assert not window.tone_curve_editor.is_range_dragging()
     finally:
         window.slider_tone_curve_white.setSliderDown(False)
@@ -3610,7 +3681,8 @@ def test_interactive_worker_count_adapts_to_hardware(qapp, monkeypatch):
     window = ICCRawMainWindow()
     try:
         monkeypatch.delenv("PROBRAW_INTERACTIVE_RENDER_WORKERS", raising=False)
-        monkeypatch.setattr(preview_render_module.os, "cpu_count", lambda: 16)
+        monkeypatch.setattr(preview_render_module, "probraw_available_cpu_count", lambda: 16)
+        monkeypatch.setattr(preview_render_module, "probraw_interactive_worker_cap", lambda: 12)
         monkeypatch.setattr(window, "_system_total_memory_bytes", lambda: 64 * 1024 * 1024 * 1024)
         monkeypatch.setattr(window, "_system_available_memory_bytes", lambda: 32 * 1024 * 1024 * 1024)
 

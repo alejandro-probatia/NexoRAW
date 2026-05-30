@@ -750,6 +750,8 @@ class DisplayControlsMixin:
         self._interactive_source_cache_key = None
         self._interactive_source_cache_image = None
         self._interactive_source_cache_images = {}
+        self._interactive_detail_source_cache = {}
+        self._interactive_detail_source_cache_order = []
 
     def _add_path_row(
         self,

@@ -215,6 +215,7 @@ DESKTOP
   install -m 0644 "$_root/packaging/arch/README.md" "$pkgdir/usr/share/doc/probraw/ARCH_PACKAGE.md"
   install -m 0644 "$_root/packaging/arch/README.es.md" "$pkgdir/usr/share/doc/probraw/ARCH_PACKAGE.es.md"
   install -m 0755 "$_root/scripts/check_amaze_support.py" "$pkgdir/usr/share/doc/probraw/check_amaze_support.py"
+  install -m 0755 "$_root/scripts/benchmark_preview_load.py" "$pkgdir/usr/share/doc/probraw/benchmark_preview_load.py"
   install -m 0755 "$_root/scripts/validate_cachyos_install.sh" "$pkgdir/usr/share/doc/probraw/validate_cachyos_install.sh"
 
   find "$venv" -type d -name '__pycache__' -prune -exec rm -rf {} +

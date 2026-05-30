@@ -19,9 +19,15 @@ Lab diagnostics. Before publishing artifacts, verify:
 - Lab samples support compact cards, marker color, selected-sample highlighting
   and an expanded Lab a*b* graph;
 - thumbnails keep the filename above profile badges;
+- exposure, contrast, color and curve sliders keep bounded interactive previews
+  and postpone exact histogram/final refinement until controls are idle;
 - the Linux Debian/Ubuntu build generates `probraw_0.4.3_amd64.deb`, validates
   with `packaging/debian/validate_deb.sh`, and has SHA256
   `16e1329bff4514374f0d6d7866b602a1866bd6f95035422d3f51211df4f4050c`;
+- the Linux Arch/CachyOS build generates
+  `probraw-0.4.3-1-x86_64.pkg.tar.zst` with the `arch-cachyos-native` profile,
+  includes AMaZE, and has SHA256
+  `f1061fbf65a9c5ff7cb4ff97e5d82fda4cccf3994ed630678116b2b91a393557`;
 - the Windows build generates `ProbRAW-0.4.3-Setup.exe` and its `.sha256`,
   documented in `docs/releases/0.4.3.md`; its SHA256 is
   `c171576e88add213e812a3b13ea8f0f46ba529a170c3bc1b6d54a4d6f9639c57`.

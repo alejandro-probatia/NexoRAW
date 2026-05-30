@@ -62,6 +62,8 @@ from ...display_color import (
 )
 from ...gui_config import *  # noqa: F403
 from ...metadata_viewer import inspect_file_metadata, metadata_display_sections, metadata_sections_text
+from ...performance import available_cpu_count as probraw_available_cpu_count
+from ...performance import interactive_worker_cap as probraw_interactive_worker_cap
 from ...profile.export import (
     _resolve_batch_workers as resolve_batch_workers,
     profile_path_for_render_settings,

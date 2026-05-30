@@ -151,7 +151,7 @@ class BatchWorkflowMixin:
         worker_count = self._batch_worker_count(len(planned))
         resolved_tiff_maxworkers = resolve_tiff_maxworkers(tiff_maxworkers, compression=tiff_compression)
         if resolved_tiff_maxworkers is None and str(tiff_compression or "none").strip().lower() != "none":
-            resolved_tiff_maxworkers = max(1, int(os.cpu_count() or 1) // max(1, worker_count))
+            resolved_tiff_maxworkers = max(1, int(probraw_available_cpu_count()) // max(1, worker_count))
 
         def emit_progress(
             src: Path,

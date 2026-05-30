@@ -25,6 +25,8 @@ from ..core.utils import (
     tiff_compression_for_metadata,
     write_tiff16,
 )
+from ..performance import available_cpu_count as _runtime_available_cpu_count
+from ..performance import batch_worker_cap as _runtime_batch_worker_cap
 from .generic import (
     canonical_generic_output_space,
     ensure_generic_output_profile,
@@ -213,17 +215,12 @@ def _resolve_auto_batch_workers(
 ) -> int:
     cpu_bound = max(1, min(total_items, max(1, int(available_cpus))))
     memory_bound = _memory_limited_batch_workers(total_items, files=files, recipe=recipe)
-    return max(1, min(cpu_bound, memory_bound))
+    native_bound = max(1, min(total_items, _runtime_batch_worker_cap(available_cpus)))
+    return max(1, min(cpu_bound, memory_bound, native_bound))
 
 
 def _available_cpu_count() -> int:
-    available_cpus = int(os.cpu_count() or 1)
-    if hasattr(os, "sched_getaffinity"):
-        try:
-            available_cpus = max(1, len(os.sched_getaffinity(0)))
-        except Exception:
-            available_cpus = int(os.cpu_count() or 1)
-    return max(1, available_cpus)
+    return _runtime_available_cpu_count()
 
 
 def _resolve_batch_tiff_maxworkers(

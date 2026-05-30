@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 from pathlib import Path
 
 import numpy as np
@@ -333,6 +334,27 @@ def test_standard_profile_to_srgb_display_matches_colour_reference_for_prophoto(
     assert np.allclose(out, reference, atol=2e-6)
 
 
+@pytest.mark.parametrize(
+    ("space", "colour_space"),
+    [
+        ("prophoto_rgb", "ProPhoto RGB"),
+        ("adobe_rgb", "Adobe RGB (1998)"),
+    ],
+)
+def test_standard_profile_fast_decoding_matches_colour_reference(space: str, colour_space: str):
+    encoded = np.random.default_rng(21).uniform(0.0, 1.0, size=(18, 19, 3)).astype(np.float32)
+    rgb_space = colour.RGB_COLOURSPACES[colour_space]
+    linear = np.asarray(rgb_space.cctf_decoding(encoded), dtype=np.float32)
+    flat = linear.reshape((-1, 3))
+    transform = preview_module._standard_rgb_to_srgb_linear_transform(space, colour_space)
+    srgb_linear = (flat @ transform).reshape(encoded.shape)
+    expected = linear_to_srgb_display_u8(srgb_linear)
+
+    actual = standard_profile_to_srgb_u8_display(encoded, space)
+
+    assert np.array_equal(actual, expected)
+
+
 def test_preview_analysis_text_includes_global_stats():
     original = np.full((8, 8, 3), 0.4, dtype=np.float32)
     adjusted = np.full((8, 8, 3), 0.5, dtype=np.float32)
@@ -509,6 +531,65 @@ def test_extract_embedded_thumbnail_can_keep_raw_sensor_orientation(tmp_path: Pa
 
     assert thumb is not None
     assert thumb.shape[:2] == (2, 4)
+
+
+def test_extract_embedded_thumbnail_falls_back_to_exiftool_preview(tmp_path: Path, monkeypatch):
+    raw_path = tmp_path / "fallback.nef"
+    raw_path.write_bytes(b"raw")
+    source = np.zeros((32, 48, 3), dtype=np.uint8)
+    source[..., 0] = 220
+    encoded = io.BytesIO()
+    Image.fromarray(source, mode="RGB").save(encoded, format="JPEG")
+
+    class FakeProc:
+        returncode = 0
+        stdout = encoded.getvalue()
+
+    def fake_run_external(command, **_kwargs):
+        assert "-PreviewImage" in command
+        return FakeProc()
+
+    monkeypatch.setattr(preview_module, "open_rawpy", lambda _path: (_ for _ in ()).throw(RuntimeError("no thumb")))
+    monkeypatch.setattr(preview_module, "external_tool_path", lambda name: "exiftool" if name == "exiftool" else None)
+    monkeypatch.setattr(preview_module, "run_external", fake_run_external)
+
+    thumb = extract_embedded_thumbnail(raw_path, max_side=16)
+
+    assert thumb is not None
+    assert thumb.dtype == np.uint8
+    assert max(thumb.shape[:2]) <= 16
+    assert float(np.mean(thumb[..., 0])) > 150
+
+
+def test_extract_embedded_preview_falls_back_to_large_exiftool_preview(tmp_path: Path, monkeypatch):
+    raw_path = tmp_path / "fallback.nef"
+    raw_path.write_bytes(b"raw")
+    source = np.zeros((48, 64, 3), dtype=np.uint8)
+    source[..., 1] = 200
+    encoded = io.BytesIO()
+    Image.fromarray(source, mode="RGB").save(encoded, format="JPEG")
+    calls: list[str] = []
+
+    class FakeProc:
+        returncode = 0
+        stdout = encoded.getvalue()
+
+    def fake_run_external(command, **_kwargs):
+        tag = next(part for part in command if str(part).startswith("-") and str(part) != "-b")
+        calls.append(str(tag))
+        return FakeProc()
+
+    monkeypatch.setattr(preview_module, "open_rawpy", lambda _path: (_ for _ in ()).throw(RuntimeError("no thumb")))
+    monkeypatch.setattr(preview_module, "external_tool_path", lambda name: "exiftool" if name == "exiftool" else None)
+    monkeypatch.setattr(preview_module, "run_external", fake_run_external)
+
+    preview = preview_module.extract_embedded_preview(raw_path, max_preview_side=24, apply_orientation=False)
+
+    assert calls and calls[0] == "-OtherImage"
+    assert preview is not None
+    assert preview.dtype == np.float32
+    assert max(preview.shape[:2]) <= 24
+    assert float(np.mean(preview[..., 1])) > 0.45
 
 
 def test_load_image_for_preview_hq_uses_half_size_when_preview_is_smaller(tmp_path: Path, monkeypatch):

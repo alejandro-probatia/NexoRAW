@@ -1299,7 +1299,12 @@ class PreviewRecipeMixin:
             timer.setSingleShot(True)
             timer.timeout.connect(self._refresh_color_picker_samples_from_current_image)
             self._color_sample_refresh_timer = timer
-        timer.start(150)
+        interaction_active = (
+            self._is_preview_interaction_active()
+            if hasattr(self, "_is_preview_interaction_active")
+            else False
+        )
+        timer.start(650 if interaction_active else 150)
 
     def _color_sample_reading_is_current(self, sample: dict[str, Any]) -> bool:
         return str(sample.get("reading_status") or "ok").strip().lower() == "ok"
@@ -1333,6 +1338,12 @@ class PreviewRecipeMixin:
     def _refresh_color_picker_samples_from_current_image(self) -> None:
         samples = getattr(self, "_color_picker_samples", [])
         if not isinstance(samples, list) or not samples:
+            return
+        if (
+            hasattr(self, "_is_preview_interaction_active")
+            and self._is_preview_interaction_active()
+        ):
+            self._schedule_color_picker_samples_refresh()
             return
         if bool(getattr(self, "_color_picker_samples_refreshing", False)):
             return
@@ -2287,9 +2298,9 @@ class PreviewRecipeMixin:
             self._update_tone_curve_histogram_for_current_controls(force=True, async_update=True)
         self._on_render_control_change(preview=preview_enabled)
         if preview_enabled and self._original_linear is not None and hasattr(self, "_schedule_post_interaction_exact_preview_refresh"):
-            self._schedule_post_interaction_exact_preview_refresh(delay_ms=260)
+            self._schedule_post_interaction_exact_preview_refresh(delay_ms=PREVIEW_POST_RENDER_EXACT_DELAY_MS)
         if self._original_linear is not None and hasattr(self, "_schedule_exact_histogram_refresh"):
-            self._schedule_exact_histogram_refresh(delay_ms=80)
+            self._schedule_exact_histogram_refresh(delay_ms=PREVIEW_EXACT_HISTOGRAM_IDLE_DELAY_MS)
 
     def _on_tone_curve_points_changed(self, _points: object) -> None:
         if self._tone_curve_preset_key() != "custom":
@@ -2324,12 +2335,14 @@ class PreviewRecipeMixin:
     def _on_render_control_change(self, *_args: object, preview: bool = True) -> None:
         if int(getattr(self, "_suspend_render_adjustment_autosave", 0) or 0) > 0:
             return
-        if hasattr(self, "_push_edit_history_snapshot"):
+        interaction_active = (
+            self._is_direct_preview_interaction_active()
+            if hasattr(self, "_is_direct_preview_interaction_active")
+            else False
+        )
+        if hasattr(self, "_push_edit_history_snapshot") and not interaction_active:
             self._push_edit_history_snapshot("render")
-        if not (
-            hasattr(self, "_is_direct_preview_interaction_active")
-            and self._is_direct_preview_interaction_active()
-        ):
+        if not interaction_active:
             timer = getattr(self, "_tone_curve_preview_timer", None)
             if timer is not None:
                 timer.stop()
@@ -2347,11 +2360,6 @@ class PreviewRecipeMixin:
             if hasattr(self, "_refresh_named_adjustment_profile_combo"):
                 self._refresh_named_adjustment_profile_combo("color_contrast")
         if hasattr(self, "_schedule_render_adjustment_sidecar_persist"):
-            interaction_active = (
-                self._is_direct_preview_interaction_active()
-                if hasattr(self, "_is_direct_preview_interaction_active")
-                else False
-            )
             if not interaction_active:
                 self._schedule_render_adjustment_sidecar_persist()
 

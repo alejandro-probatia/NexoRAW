@@ -18,6 +18,10 @@ try:
 except Exception:
     pass
 
+from .performance import SYSTEM_CONFIG_PATH, configure_runtime, performance_report, write_performance_config
+
+configure_runtime()
+
 from .chart.detection import detect_chart, detect_chart_from_corners, draw_detection_overlay
 from .chart.sampling import (
     ReferenceCatalog,
@@ -284,6 +288,22 @@ def build_parser(prog: str | None = None) -> argparse.ArgumentParser:
         action="store_true",
         help="Devuelve codigo 2 si la auditoria de color detecta advertencias",
     )
+
+    s = sub.add_parser("tune-performance")
+    s.add_argument("--out", default=None, help="JSON de salida opcional")
+    s.add_argument(
+        "--mode",
+        choices=["conservative", "balanced", "aggressive"],
+        default=None,
+        help="Perfil de rendimiento a recomendar",
+    )
+    s.add_argument(
+        "--write-system",
+        action="store_true",
+        help=f"Escribe la politica detectada en {SYSTEM_CONFIG_PATH}",
+    )
+    s.add_argument("--path", default=None, help="Ruta alternativa para escribir la politica")
+    s.add_argument("--quiet", action="store_true", help="No imprime JSON si escribe configuracion")
 
     s = sub.add_parser("mtf-roi-worker", help=argparse.SUPPRESS)
     s.add_argument("request", help=argparse.SUPPRESS)
@@ -567,6 +587,22 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps(result, indent=2, ensure_ascii=False))
             if args.strict and result.get("status") != "ok":
                 return 2
+            return 0
+
+        if args.command == "tune-performance":
+            if args.write_system or args.path:
+                target = Path(args.path) if args.path else SYSTEM_CONFIG_PATH
+                result = write_performance_config(target, mode=args.mode)
+                result["written_path"] = str(target)
+                if args.out:
+                    write_json(Path(args.out), result)
+                if not args.quiet:
+                    print(json.dumps(result, indent=2, ensure_ascii=False))
+                return 0
+            result = performance_report(mode=args.mode)
+            if args.out:
+                write_json(Path(args.out), result)
+            print(json.dumps(result, indent=2, ensure_ascii=False))
             return 0
 
         if args.command == "mtf-roi-worker":

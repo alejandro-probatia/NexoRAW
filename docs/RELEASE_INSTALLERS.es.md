@@ -18,9 +18,16 @@ manual de cartas y diagnostico Lab. Antes de publicar los artefactos, verificar:
   muestra seleccionada y grafico Lab a*b* ampliado;
 - las miniaturas mantienen el nombre de archivo por encima de los iconos de
   perfil;
+- los sliders de exposicion, contraste, color y curvas mantienen previews
+  interactivas acotadas y posponen histograma exacto/refinado final hasta que el
+  control queda en reposo;
 - la build Linux Debian/Ubuntu genera `probraw_0.4.3_amd64.deb`, valida con
   `packaging/debian/validate_deb.sh` y su SHA256 es
   `16e1329bff4514374f0d6d7866b602a1866bd6f95035422d3f51211df4f4050c`;
+- la build Linux Arch/CachyOS genera
+  `probraw-0.4.3-1-x86_64.pkg.tar.zst` con perfil `arch-cachyos-native`, incluye
+  AMaZE y su SHA256 es
+  `f1061fbf65a9c5ff7cb4ff97e5d82fda4cccf3994ed630678116b2b91a393557`;
 - la build Windows genera `ProbRAW-0.4.3-Setup.exe` y su `.sha256`, documentados
   en `docs/releases/0.4.3.es.md`; su SHA256 es
   `c171576e88add213e812a3b13ea8f0f46ba529a170c3bc1b6d54a4d6f9639c57`.

@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 from pathlib import Path
 import os
+import subprocess
 import threading
 from dataclasses import asdict
 from functools import lru_cache
@@ -15,6 +16,7 @@ from PIL import Image, ImageCms, ImageOps
 
 from ..core.models import Recipe
 from ..core.recipe import load_recipe
+from ..core.external import external_tool_path, run_external
 from ..core.utils import RAW_EXTENSIONS, read_image
 from ..profile.export import apply_profile_matrix
 from ..profile.generic import generic_output_profile, is_generic_output_space
@@ -199,34 +201,42 @@ def extract_embedded_preview(
     max_preview_side: int = 0,
     apply_orientation: bool = True,
 ) -> np.ndarray | None:
+    decoded: np.ndarray | None = None
     try:
         with open_rawpy(input_path) as raw:
             raw_orientation = _rawpy_orientation(raw)
             thumb = raw.extract_thumb()
     except Exception:
-        return None
-
-    if thumb.format == rawpy.ThumbFormat.JPEG:
-        decoded = _decode_embedded_preview_jpeg(
-            bytes(thumb.data),
-            max_preview_side=max_preview_side,
-            raw_orientation=raw_orientation,
-            apply_orientation=apply_orientation,
-        )
-        if decoded is None:
-            return None
-    elif thumb.format == rawpy.ThumbFormat.BITMAP:
-        decoded = np.asarray(thumb.data)
-        if decoded.ndim == 2:
-            decoded = np.repeat(decoded[..., None], 3, axis=2)
-        elif decoded.ndim == 3 and decoded.shape[2] >= 3:
-            decoded = decoded[..., :3]
-        else:
-            return None
-        if apply_orientation:
-            decoded = _apply_orientation_array(decoded, raw_orientation)
-        decoded = _downscale_uint_preview(decoded, max_preview_side=max_preview_side)
+        decoded = None
     else:
+        if thumb.format == rawpy.ThumbFormat.JPEG:
+            decoded = _decode_embedded_preview_jpeg(
+                bytes(thumb.data),
+                max_preview_side=max_preview_side,
+                raw_orientation=raw_orientation,
+                apply_orientation=apply_orientation,
+            )
+        elif thumb.format == rawpy.ThumbFormat.BITMAP:
+            decoded = np.asarray(thumb.data)
+            if decoded.ndim == 2:
+                decoded = np.repeat(decoded[..., None], 3, axis=2)
+            elif decoded.ndim == 3 and decoded.shape[2] >= 3:
+                decoded = decoded[..., :3]
+            else:
+                decoded = None
+            if decoded is not None:
+                if apply_orientation:
+                    decoded = _apply_orientation_array(decoded, raw_orientation)
+                decoded = _downscale_uint_preview(decoded, max_preview_side=max_preview_side)
+
+    if decoded is None:
+        decoded = _extract_exiftool_embedded_preview_u8(
+            input_path,
+            max_side=int(max_preview_side),
+            apply_orientation=apply_orientation,
+            prefer_large=True,
+        )
+    if decoded is None:
         return None
 
     if np.issubdtype(decoded.dtype, np.integer):
@@ -246,34 +256,42 @@ def extract_embedded_thumbnail(
     max_side: int = 220,
     apply_orientation: bool = True,
 ) -> np.ndarray | None:
+    decoded: np.ndarray | None = None
     try:
         with open_rawpy(input_path) as raw:
             raw_orientation = _rawpy_orientation(raw)
             thumb = raw.extract_thumb()
     except Exception:
-        return None
-
-    if thumb.format == rawpy.ThumbFormat.JPEG:
-        decoded = _decode_embedded_preview_jpeg(
-            bytes(thumb.data),
-            max_preview_side=int(max_side),
-            raw_orientation=raw_orientation,
-            apply_orientation=apply_orientation,
-        )
-        if decoded is None:
-            return None
-    elif thumb.format == rawpy.ThumbFormat.BITMAP:
-        decoded = np.asarray(thumb.data)
-        if decoded.ndim == 2:
-            decoded = np.repeat(decoded[..., None], 3, axis=2)
-        elif decoded.ndim == 3 and decoded.shape[2] >= 3:
-            decoded = decoded[..., :3]
-        else:
-            return None
-        if apply_orientation:
-            decoded = _apply_orientation_array(decoded, raw_orientation)
-        decoded = _downscale_uint_preview(decoded, max_preview_side=int(max_side))
+        decoded = None
     else:
+        if thumb.format == rawpy.ThumbFormat.JPEG:
+            decoded = _decode_embedded_preview_jpeg(
+                bytes(thumb.data),
+                max_preview_side=int(max_side),
+                raw_orientation=raw_orientation,
+                apply_orientation=apply_orientation,
+            )
+        elif thumb.format == rawpy.ThumbFormat.BITMAP:
+            decoded = np.asarray(thumb.data)
+            if decoded.ndim == 2:
+                decoded = np.repeat(decoded[..., None], 3, axis=2)
+            elif decoded.ndim == 3 and decoded.shape[2] >= 3:
+                decoded = decoded[..., :3]
+            else:
+                decoded = None
+            if decoded is not None:
+                if apply_orientation:
+                    decoded = _apply_orientation_array(decoded, raw_orientation)
+                decoded = _downscale_uint_preview(decoded, max_preview_side=int(max_side))
+
+    if decoded is None:
+        decoded = _extract_exiftool_embedded_preview_u8(
+            input_path,
+            max_side=int(max_side),
+            apply_orientation=apply_orientation,
+            prefer_large=int(max_side) > 512,
+        )
+    if decoded is None:
         return None
     return _preview_array_to_u8(decoded)
 
@@ -299,6 +317,79 @@ def _decode_embedded_preview_jpeg(
                 if embedded_orientation in {0, 1, None}:
                     img = _apply_orientation_image(img, raw_orientation)
             img = img.convert("RGB")
+            if target > 0:
+                img.thumbnail((target, target), Image.Resampling.LANCZOS)
+            return np.asarray(img, dtype=np.uint8).copy()
+    except Exception:
+        return None
+
+
+def _extract_exiftool_embedded_preview_u8(
+    input_path: Path,
+    *,
+    max_side: int,
+    apply_orientation: bool,
+    prefer_large: bool,
+) -> np.ndarray | None:
+    exiftool = external_tool_path("exiftool")
+    if exiftool is None:
+        return None
+    tags = (
+        ("OtherImage", "JpgFromRaw", "PreviewImage", "ThumbnailImage")
+        if bool(prefer_large)
+        else ("PreviewImage", "ThumbnailImage", "OtherImage", "JpgFromRaw")
+    )
+    side = int(max_side)
+    for tag in tags:
+        try:
+            proc = run_external(
+                [exiftool, "-b", f"-{tag}", str(input_path)],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                timeout=4,
+            )
+        except subprocess.TimeoutExpired:
+            continue
+        except Exception:
+            continue
+        if proc.returncode != 0:
+            continue
+        data = proc.stdout if isinstance(proc.stdout, (bytes, bytearray)) else b""
+        if len(data) < 16:
+            continue
+        decoded = _decode_encoded_preview_image(
+            bytes(data),
+            max_side=side,
+            apply_orientation=apply_orientation,
+        )
+        if decoded is not None:
+            return decoded
+    return None
+
+
+def _decode_encoded_preview_image(
+    data: bytes,
+    *,
+    max_side: int,
+    apply_orientation: bool,
+) -> np.ndarray | None:
+    try:
+        with Image.open(io.BytesIO(data)) as img:
+            target = int(max_side)
+            if target > 0:
+                try:
+                    img.draft("RGB", (target, target))
+                except Exception:
+                    pass
+            if apply_orientation:
+                img = ImageOps.exif_transpose(img)
+            if "A" in img.getbands():
+                rgba = img.convert("RGBA")
+                base = Image.new("RGBA", rgba.size, (255, 255, 255, 255))
+                base.alpha_composite(rgba)
+                img = base.convert("RGB")
+            else:
+                img = img.convert("RGB")
             if target > 0:
                 img.thumbnail((target, target), Image.Resampling.LANCZOS)
             return np.asarray(img, dtype=np.uint8).copy()
@@ -1418,12 +1509,7 @@ def standard_profile_to_srgb_display(image_rgb: np.ndarray, output_space: str) -
     if profile.key == "srgb":
         return encoded.astype(np.float32, copy=False)
 
-    rgb_space = colour.RGB_COLOURSPACES[profile.colour_space]
-    decoder = getattr(rgb_space, "cctf_decoding", None)
-    if callable(decoder):
-        linear = np.asarray(decoder(encoded), dtype=np.float32)
-    else:
-        linear = np.power(encoded, float(profile.gamma)).astype(np.float32)
+    linear = _decode_standard_rgb_to_linear(encoded, profile.key, profile.colour_space, profile.gamma)
 
     flat = linear.reshape((-1, 3))
     transform = _standard_rgb_to_srgb_linear_transform(profile.key, profile.colour_space)
@@ -1441,18 +1527,40 @@ def standard_profile_to_srgb_u8_display(image_rgb: np.ndarray, output_space: str
     if profile.key == "srgb":
         return _float_rgb_to_u8(encoded)
 
-    rgb_space = colour.RGB_COLOURSPACES[profile.colour_space]
-    decoder = getattr(rgb_space, "cctf_decoding", None)
-    if callable(decoder):
-        linear = np.asarray(decoder(encoded), dtype=np.float32)
-    else:
-        linear = np.power(encoded, float(profile.gamma)).astype(np.float32)
+    linear = _decode_standard_rgb_to_linear(encoded, profile.key, profile.colour_space, profile.gamma)
 
     flat = linear.reshape((-1, 3))
     transform = _standard_rgb_to_srgb_linear_transform(profile.key, profile.colour_space)
     srgb_linear = flat @ transform
     srgb_linear = srgb_linear.reshape(encoded.shape)
     return linear_to_srgb_display_u8(srgb_linear)
+
+
+def _decode_standard_rgb_to_linear(
+    encoded_rgb: np.ndarray,
+    profile_key: str,
+    colour_space_name: str,
+    gamma: float,
+) -> np.ndarray:
+    encoded = np.clip(np.asarray(encoded_rgb, dtype=np.float32), 0.0, 1.0)
+    key = str(profile_key or "").strip().lower()
+    if key == "adobe_rgb":
+        return np.power(encoded.astype(np.float64), float(gamma)).astype(np.float32)
+    if key == "prophoto_rgb":
+        encoded64 = encoded.astype(np.float64)
+        e_t = 16 ** (1.8 / (1 - 1.8))
+        linear64 = np.where(
+            encoded64 < 16 * e_t,
+            encoded64 / 16.0,
+            np.power(encoded64, 1.8),
+        )
+        return linear64.astype(np.float32)
+
+    rgb_space = colour.RGB_COLOURSPACES[colour_space_name]
+    decoder = getattr(rgb_space, "cctf_decoding", None)
+    if callable(decoder):
+        return np.asarray(decoder(encoded), dtype=np.float32)
+    return np.power(encoded, float(gamma)).astype(np.float32)
 
 
 def _standard_rgb_to_srgb_linear_transform(profile_key: str, colour_space_name: str) -> np.ndarray:

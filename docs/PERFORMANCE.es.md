@@ -79,6 +79,16 @@ fallback conservador. La ruta normal de CLI usa procesos.
 
 Variables de control:
 
+- `probraw tune-performance`: muestra la deteccion de CPU/RAM, politica activa
+  y variables de entorno recomendadas. En instaladores de sistema se ejecuta
+  durante `postinst` para escribir `/etc/probraw/performance.json`.
+- `PROBRAW_PERFORMANCE_MODE`: `conservative`, `balanced` o `aggressive`.
+- `PROBRAW_NATIVE_THREADS`: hilos nativos por proceso para OpenMP/LibRaw.
+- `PROBRAW_OPENCV_THREADS`: hilos internos de OpenCV.
+- `PROBRAW_BATCH_NATIVE_THREADS`: presupuesto de hilos nativos por worker de
+  lote; el modo automatico reduce workers para evitar sobre-suscripcion.
+- `PROBRAW_BLAS_THREADS`: hilos para OpenBLAS/MKL/NumExpr cuando estan
+  presentes.
 - `PROBRAW_BATCH_WORKERS`: workers por defecto.
 - `PROBRAW_BATCH_MEMORY_RESERVE_MB`: RAM libre reservada antes de calcular
   workers automaticos.
@@ -89,6 +99,22 @@ Variables de control:
 - `PROBRAW_TIFF_MAXWORKERS`: hilos de compresion por TIFF para `tifffile`.
   Si se omite, ProbRAW reparte CPU automaticamente en lotes comprimidos; en una
   exportacion individual `tifffile` mantiene su modo automatico.
+
+Si se mueve una instalacion a otra maquina, la firma de hardware guardada deja
+de coincidir y ProbRAW vuelve a calcular la politica en runtime. Las variables
+de entorno del usuario siempre tienen prioridad sobre la politica detectada.
+
+## Garantias de calidad
+
+La politica de rendimiento solo cambia planificacion: numero de hilos, workers
+de lote, cache de resultados intermedios identicos y momento en que se ejecutan
+tareas no visuales. No cambia matrices ICC, curvas tonales, nitidez, MTF,
+demosaico ni cuantizacion canonica.
+
+Los tests de paridad comparan rutas paralelas y secuenciales de preview ICC y
+espacios estandar con igualdad exacta de pixeles `uint8`. La configuracion
+instalada se invalida si cambia la firma de hardware, por lo que un paquete
+movido a otro equipo recalcula limites en vez de reutilizar una politica ajena.
 
 Desde la serie posterior, el modo automatico ajusta ese presupuesto usando el
 tamano de las capturas y el algoritmo de demosaico. `PROBRAW_BATCH_WORKER_RAM_MB`
@@ -285,6 +311,31 @@ Benchmark sintetico local tras el cambio:
 | Nitidez 4000x6000 | ~1,75 s | ~86 ms |
 | Color/curvas | ~20-62 ms | ~20-62 ms |
 
+### Preview interactiva 0.4.3
+
+La ruta de sliders de exposicion, contraste, color y curvas prioriza ahora la
+respuesta visual inmediata y pospone el trabajo cientifico no visual hasta que
+el control queda en reposo:
+
+- un visor al 100% sobre una preview proxy ya no fuerza un render completo del
+  RAW; solo se considera pixel real cuando la imagen visible coincide con el
+  tamano fuente o cuando el usuario pide detalle completo;
+- los histogramas exactos de imagen completa no se calculan dentro de la tarea
+  de viewport durante el arrastre; se consolidan despues con temporizador idle;
+- las tareas de preview, histograma y refinado final arrancan con baja prioridad
+  de `QThread` para dejar CPU al hilo de interfaz;
+- el refinado final sigue usando la ruta precisa y los calculos de Color Lab,
+  MTF y exportacion canonica no cambian.
+
+Benchmark local en Arch/CachyOS con `AMG_20190709_TRASIEGO_0004.NEF`
+revelado a 1732x2600, DCB, Qt `offscreen`, 60 pasos por control:
+
+| Caso | Antes | Despues |
+| --- | ---: | ---: |
+| Primer cambio de brillo | ~555 ms | ~22-24 ms |
+| Arrastre de brillo | ~285 ms | ~37-46 ms |
+| Arrastre de curva tonal | ~551 ms | ~26-32 ms |
+
 ## Estrategia MTF RAW y visor global de operaciones
 
 Problema detectado: el analisis MTF frio sobre RAW obliga a obtener una imagen
@@ -404,6 +455,11 @@ Referencias:
   C2PA; cada imagen se procesa en un proceso independiente.
 - El resultado numerico del demosaico puede persistirse como `.npy` para evitar
   repetir LibRaw cuando solo cambian ajustes posteriores.
+- La preview provisional de RAW usa `exiftool` como respaldo cuando LibRaw/rawpy
+  no expone thumbnail embebido, evitando que el visor quede en blanco hasta que
+  termina el revelado colorimetrico.
+- `scripts/benchmark_preview_load.py` mide carga real de preview, placeholder
+  embebido, conversion ICC a pantalla y modo 1:1 opcional para comparar equipos.
 - La escritura TIFF16 usa menos temporales intermedios que la expresion
   `round(clip(x) * 65535).astype(uint16)`.
 - El analisis MTF frio se mueve a un worker externo con cache persistente de ROI

@@ -195,6 +195,7 @@ install -m 0644 "$ROOT/docs/DECISIONS.md" "$BUILD_ROOT/usr/share/doc/probraw/DEC
 install -m 0644 "$ROOT/docs/C2PA_CAI.md" "$BUILD_ROOT/usr/share/doc/probraw/C2PA_CAI.md"
 install -m 0644 "$ROOT/docs/PROBRAW_PROOF.md" "$BUILD_ROOT/usr/share/doc/probraw/PROBRAW_PROOF.md"
 install -m 0755 "$ROOT/scripts/check_amaze_support.py" "$BUILD_ROOT/usr/share/doc/probraw/check_amaze_support.py"
+install -m 0755 "$ROOT/scripts/benchmark_preview_load.py" "$BUILD_ROOT/usr/share/doc/probraw/benchmark_preview_load.py"
 
 INSTALLED_SIZE="$(du -sk "$BUILD_ROOT" | awk '{print $1}')"
 cat > "$BUILD_ROOT/DEBIAN/control" <<EOF
@@ -220,6 +221,9 @@ EOF
 cat > "$BUILD_ROOT/DEBIAN/postinst" <<'SH'
 #!/usr/bin/env sh
 set -e
+if [ -x /opt/probraw/venv/bin/probraw ]; then
+  /opt/probraw/venv/bin/probraw tune-performance --write-system --quiet >/dev/null 2>&1 || true
+fi
 if command -v update-desktop-database >/dev/null 2>&1; then
   update-desktop-database -q /usr/share/applications || true
 fi

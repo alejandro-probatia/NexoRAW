@@ -6,6 +6,10 @@ import sys
 from typing import Any
 import warnings
 
+from .performance import configure_runtime
+
+configure_runtime()
+
 import numpy as np
 
 warnings.filterwarnings(
@@ -408,6 +412,8 @@ if QtWidgets is not None:
                 Path | None,
                 tuple[int, int, int, int] | None,
                 bool,
+                bool,
+                bool,
             ] | None = None
             self._interactive_preview_expected_key: str | None = None
             self._interactive_preview_last_ms: float | None = None
@@ -540,6 +546,8 @@ if QtWidgets is not None:
             self._interactive_source_cache_key: tuple[object, ...] | None = None
             self._interactive_source_cache_image: np.ndarray | None = None
             self._interactive_source_cache_images: dict[tuple[object, ...], np.ndarray] = {}
+            self._interactive_detail_source_cache: dict[str, np.ndarray] = {}
+            self._interactive_detail_source_cache_order: list[str] = []
             self._interactive_bypass_display_icc = _env_flag(
                 PREVIEW_INTERACTIVE_BYPASS_DISPLAY_ICC_ENV,
                 default=False,

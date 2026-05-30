@@ -304,6 +304,7 @@ def test_resolve_batch_workers_accepts_explicit_override(monkeypatch):
 def test_resolve_batch_workers_accepts_auto_keywords(monkeypatch):
     monkeypatch.setattr(export_module, "_available_cpu_count", lambda: 8)
     monkeypatch.setattr(export_module, "_available_physical_memory_bytes", lambda: 32 * 1024 * 1024 * 1024)
+    monkeypatch.setattr(export_module, "_runtime_batch_worker_cap", lambda _cpus: 8)
     monkeypatch.setenv("PROBRAW_BATCH_WORKERS", "auto")
     assert _resolve_batch_workers(2) == 2
     monkeypatch.setenv("PROBRAW_BATCH_WORKERS", "max")
@@ -329,9 +330,21 @@ def test_resolve_batch_workers_auto_honours_memory_env_tuning(monkeypatch):
     monkeypatch.setenv("PROBRAW_BATCH_WORKER_RAM_MB", "512")
     monkeypatch.setattr(export_module, "_available_cpu_count", lambda: 12)
     monkeypatch.setattr(export_module, "_available_physical_memory_bytes", lambda: 3 * 1024 * 1024 * 1024)
+    monkeypatch.setattr(export_module, "_runtime_batch_worker_cap", lambda _cpus: 12)
 
     # 3 GiB available - 512 MiB reserve = 2.5 GiB budget => 5 workers @ 512 MiB.
     assert _resolve_batch_workers(12) == 5
+
+
+def test_resolve_batch_workers_auto_limits_by_native_thread_budget(monkeypatch):
+    monkeypatch.delenv("PROBRAW_BATCH_WORKERS", raising=False)
+    monkeypatch.setenv("PROBRAW_BATCH_MEMORY_RESERVE_MB", "512")
+    monkeypatch.setenv("PROBRAW_BATCH_WORKER_RAM_MB", "512")
+    monkeypatch.setattr(export_module, "_available_cpu_count", lambda: 12)
+    monkeypatch.setattr(export_module, "_available_physical_memory_bytes", lambda: 16 * 1024 * 1024 * 1024)
+    monkeypatch.setattr(export_module, "_runtime_batch_worker_cap", lambda _cpus: 3)
+
+    assert _resolve_batch_workers(12) == 3
 
 
 def test_resolve_batch_workers_auto_uses_capture_size_estimate(tmp_path: Path, monkeypatch):
@@ -341,6 +354,7 @@ def test_resolve_batch_workers_auto_uses_capture_size_estimate(tmp_path: Path, m
     monkeypatch.delenv("PROBRAW_BATCH_WORKER_RAM_MB", raising=False)
     monkeypatch.setattr(export_module, "_available_cpu_count", lambda: 8)
     monkeypatch.setattr(export_module, "_available_physical_memory_bytes", lambda: 8 * 1024 * 1024 * 1024)
+    monkeypatch.setattr(export_module, "_runtime_batch_worker_cap", lambda _cpus: 8)
 
     workers = _resolve_batch_workers(
         8,

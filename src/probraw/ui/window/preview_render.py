@@ -110,11 +110,14 @@ class PreviewRenderMixin:
                 self._preview_last_slider_group = "render"
                 self._mark_preview_control_interaction(duration_ms=900)
             self._schedule_preview_refresh()
-            self._schedule_exact_histogram_refresh(delay_ms=80, mark_pending=False)
+            self._schedule_exact_histogram_refresh(
+                delay_ms=PREVIEW_EXACT_HISTOGRAM_IDLE_DELAY_MS,
+                mark_pending=False,
+            )
             if sender in detail_sliders:
-                self._schedule_post_interaction_exact_preview_refresh(delay_ms=480)
+                self._schedule_post_interaction_exact_preview_refresh(delay_ms=PREVIEW_POST_DETAIL_EXACT_DELAY_MS)
             elif sender in render_sliders or sender is None:
-                self._schedule_post_interaction_exact_preview_refresh(delay_ms=260)
+                self._schedule_post_interaction_exact_preview_refresh(delay_ms=PREVIEW_POST_RENDER_EXACT_DELAY_MS)
         if sender in detail_sliders:
             if hasattr(self, "_set_active_named_adjustment_profile_id"):
                 self._set_active_named_adjustment_profile_id("detail", "")
@@ -184,14 +187,14 @@ class PreviewRenderMixin:
             if render_release:
                 self._mark_preview_control_interaction(duration_ms=250)
                 self._schedule_preview_refresh()
-                self._schedule_post_interaction_exact_preview_refresh(delay_ms=260)
+                self._schedule_post_interaction_exact_preview_refresh(delay_ms=PREVIEW_POST_RENDER_EXACT_DELAY_MS)
             elif detail_release:
                 self._mark_preview_control_interaction(duration_ms=450, detail=True)
                 self._schedule_preview_refresh()
-                self._schedule_post_interaction_exact_preview_refresh(delay_ms=480)
+                self._schedule_post_interaction_exact_preview_refresh(delay_ms=PREVIEW_POST_DETAIL_EXACT_DELAY_MS)
             else:
                 self._schedule_preview_refresh()
-            self._schedule_exact_histogram_refresh(delay_ms=80)
+            self._schedule_exact_histogram_refresh(delay_ms=PREVIEW_EXACT_HISTOGRAM_IDLE_DELAY_MS)
         if (
             sender in render_sliders
             or str(getattr(self, "_preview_last_slider_group", "") or "") == "render"
@@ -437,6 +440,86 @@ class PreviewRenderMixin:
             )
         ) or (sharpen_amount > 1e-6 and abs(sharpen_radius - 1.0) > 1e-6)
 
+    def _interactive_detail_cache_key(
+        self,
+        source: np.ndarray,
+        detail_kwargs: dict[str, float],
+        *,
+        source_key: str | None,
+        max_side_limit: int,
+        viewport_rect: tuple[int, int, int, int] | None,
+    ) -> str:
+        return json.dumps(
+            {
+                "source": source_key or self._last_loaded_preview_key or str(id(self._original_linear)),
+                "shape": tuple(int(v) for v in np.asarray(source).shape),
+                "dtype": str(np.asarray(source).dtype),
+                "max_side_limit": int(max_side_limit),
+                "viewport_rect": tuple(int(v) for v in viewport_rect) if viewport_rect is not None else None,
+                "detail": {
+                    "denoise_luminance": float(detail_kwargs.get("denoise_luminance", 0.0)),
+                    "denoise_color": float(detail_kwargs.get("denoise_color", 0.0)),
+                    "sharpen_amount": float(detail_kwargs.get("sharpen_amount", 0.0)),
+                    "sharpen_radius": float(detail_kwargs.get("sharpen_radius", 1.0)),
+                    "lateral_ca_red_scale": float(detail_kwargs.get("lateral_ca_red_scale", 1.0)),
+                    "lateral_ca_blue_scale": float(detail_kwargs.get("lateral_ca_blue_scale", 1.0)),
+                },
+            },
+            sort_keys=True,
+        )
+
+    def _interactive_detail_adjusted_source(
+        self,
+        source: np.ndarray,
+        detail_kwargs: dict[str, float],
+        *,
+        source_key: str | None,
+        max_side_limit: int,
+        viewport_rect: tuple[int, int, int, int] | None,
+        use_cache: bool,
+    ) -> np.ndarray:
+        if not self._detail_kwargs_have_effect(detail_kwargs):
+            return np.asarray(source, dtype=np.float32)
+        cache_key = self._interactive_detail_cache_key(
+            source,
+            detail_kwargs,
+            source_key=source_key,
+            max_side_limit=int(max_side_limit),
+            viewport_rect=viewport_rect,
+        )
+        if bool(use_cache):
+            cache = getattr(self, "_interactive_detail_source_cache", None)
+            if isinstance(cache, dict):
+                cached = cache.get(cache_key)
+                if cached is not None:
+                    order = getattr(self, "_interactive_detail_source_cache_order", None)
+                    if isinstance(order, list):
+                        self._interactive_detail_source_cache_order = [k for k in order if k != cache_key]
+                        self._interactive_detail_source_cache_order.append(cache_key)
+                    return np.asarray(cached, dtype=np.float32)
+
+        adjusted = apply_adjustments(
+            source,
+            denoise_luminance=float(detail_kwargs.get("denoise_luminance", 0.0)),
+            denoise_color=float(detail_kwargs.get("denoise_color", 0.0)),
+            sharpen_amount=float(detail_kwargs.get("sharpen_amount", 0.0)),
+            sharpen_radius=float(detail_kwargs.get("sharpen_radius", 1.0)),
+            lateral_ca_red_scale=float(detail_kwargs.get("lateral_ca_red_scale", 1.0)),
+            lateral_ca_blue_scale=float(detail_kwargs.get("lateral_ca_blue_scale", 1.0)),
+        )
+        if bool(use_cache):
+            cache = getattr(self, "_interactive_detail_source_cache", None)
+            order = getattr(self, "_interactive_detail_source_cache_order", None)
+            if isinstance(cache, dict) and isinstance(order, list):
+                cache[cache_key] = np.asarray(adjusted, dtype=np.float32)
+                order = [k for k in order if k != cache_key]
+                order.append(cache_key)
+                while len(order) > 4:
+                    old = order.pop(0)
+                    cache.pop(old, None)
+                self._interactive_detail_source_cache_order = order
+        return np.asarray(adjusted, dtype=np.float32)
+
     def _apply_render_adjustments_tiled(
         self,
         source: np.ndarray,
@@ -562,7 +645,7 @@ class PreviewRenderMixin:
         px = max(0, int(pixels))
         if px < int(PREVIEW_INTERACTIVE_PARALLEL_MIN_PIXELS):
             return 1
-        cpu_count = os.cpu_count() or 1
+        cpu_count = probraw_available_cpu_count()
         if cpu_count <= 2:
             return 1
         total = self._system_total_memory_bytes() if hasattr(self, "_system_total_memory_bytes") else None
@@ -588,7 +671,8 @@ class PreviewRenderMixin:
             pixel_cap = 6
         else:
             pixel_cap = 4
-        return max(1, min(int(cpu_count) - 1, int(memory_cap), int(pixel_cap), 16))
+        runtime_cap = probraw_interactive_worker_cap()
+        return max(1, min(int(cpu_count) - 1, int(memory_cap), int(pixel_cap), int(runtime_cap), 16))
 
     @staticmethod
     def _interactive_worker_perf_bucket(pixels: int) -> int:
@@ -796,6 +880,21 @@ class PreviewRenderMixin:
     def _real_pixel_view_requested(self) -> bool:
         if bool(getattr(self, "_viewer_full_detail_requested", False)):
             return True
+        if self._original_linear is None:
+            return False
+        current_display = getattr(self, "_current_result_display_u8", None)
+        if current_display is None:
+            return False
+        try:
+            display_shape = tuple(int(v) for v in np.asarray(current_display).shape[:2])
+            source_shape = (
+                int(np.asarray(self._original_linear).shape[0]),
+                int(np.asarray(self._original_linear).shape[1]),
+            )
+        except Exception:
+            return False
+        if display_shape != source_shape:
+            return False
         panel = getattr(self, "image_result_single", None)
         if panel is None or not hasattr(panel, "current_display_scale"):
             return False
@@ -1003,7 +1102,10 @@ class PreviewRenderMixin:
 
         thread.succeeded.connect(ok)
         thread.failed.connect(fail)
-        thread.start()
+        try:
+            thread.start(QtCore.QThread.Priority.LowPriority)
+        except Exception:
+            thread.start()
 
     def _tone_curve_histogram_enabled(self) -> bool:
         return bool(hasattr(self, "tone_curve_editor"))
@@ -1192,7 +1294,10 @@ class PreviewRenderMixin:
 
         thread.succeeded.connect(ok)
         thread.failed.connect(fail)
-        thread.start()
+        try:
+            thread.start(QtCore.QThread.Priority.LowPriority)
+        except Exception:
+            thread.start()
 
     def _source_profile_for_preview_recipe(self, recipe: Recipe) -> Path:
         profile_path = self._active_session_icc_for_settings()
@@ -1257,6 +1362,7 @@ class PreviewRenderMixin:
             tuple[int, int, int, int] | None,
             bool,
             bool,
+            bool,
         ],
     ) -> None:
         (
@@ -1276,6 +1382,7 @@ class PreviewRenderMixin:
             viewport_rect,
             _include_histogram,
             _include_colorimetric_patch,
+            _cache_detail_adjustments,
         ) = request
         self._interactive_preview_expected_key = request_key
         if self._interactive_preview_task_active:
@@ -1310,6 +1417,7 @@ class PreviewRenderMixin:
             tuple[int, int, int, int] | None,
             bool,
             bool,
+            bool,
         ],
     ) -> None:
         self._interactive_preview_task_token = int(getattr(self, "_interactive_preview_task_token", 0)) + 1
@@ -1339,6 +1447,7 @@ class PreviewRenderMixin:
             tuple[int, int, int, int] | None,
             bool,
             bool,
+            bool,
         ],
     ) -> None:
         (
@@ -1358,6 +1467,7 @@ class PreviewRenderMixin:
             viewport_rect,
             include_histogram,
             include_colorimetric_patch,
+            cache_detail_adjustments,
         ) = request
         self._interactive_preview_task_token = int(getattr(self, "_interactive_preview_task_token", 0)) + 1
         task_token = int(self._interactive_preview_task_token)
@@ -1387,12 +1497,22 @@ class PreviewRenderMixin:
                 and int(source.shape[0]) * int(source.shape[1]) > 4_000_000
                 and (not bool(apply_detail) or not self._detail_kwargs_have_effect(detail_kwargs))
             )
+            can_parallelize_render = bool(viewport_rect is not None and (not bool(apply_detail) or bool(cache_detail_adjustments)))
             viewport_workers = (
                 self._interactive_preview_worker_count(int(source.shape[0]) * int(source.shape[1]))
-                if viewport_rect is not None and not bool(apply_detail)
+                if can_parallelize_render
                 else 1
             )
             if viewport_workers > 1:
+                if bool(apply_detail):
+                    source = self._interactive_detail_adjusted_source(
+                        source,
+                        detail_kwargs,
+                        source_key=source_key,
+                        max_side_limit=int(max_side_limit),
+                        viewport_rect=viewport_rect,
+                        use_cache=bool(cache_detail_adjustments),
+                    )
                 source_pixels = int(source.shape[0]) * int(source.shape[1])
                 work_started = time.perf_counter()
                 result_srgb, display_u8 = self._render_interactive_viewport_parallel(
@@ -1429,14 +1549,13 @@ class PreviewRenderMixin:
                     worker_perf,
                 )
             if apply_detail:
-                detail_adjusted = apply_adjustments(
+                detail_adjusted = self._interactive_detail_adjusted_source(
                     source,
-                    denoise_luminance=float(detail_kwargs.get("denoise_luminance", 0.0)),
-                    denoise_color=float(detail_kwargs.get("denoise_color", 0.0)),
-                    sharpen_amount=float(detail_kwargs.get("sharpen_amount", 0.0)),
-                    sharpen_radius=float(detail_kwargs.get("sharpen_radius", 1.0)),
-                    lateral_ca_red_scale=float(detail_kwargs.get("lateral_ca_red_scale", 1.0)),
-                    lateral_ca_blue_scale=float(detail_kwargs.get("lateral_ca_blue_scale", 1.0)),
+                    detail_kwargs,
+                    source_key=source_key,
+                    max_side_limit=int(max_side_limit),
+                    viewport_rect=viewport_rect,
+                    use_cache=bool(cache_detail_adjustments),
                 )
             else:
                 # During tonal curve/slider drag prioritize responsiveness and
@@ -1640,7 +1759,10 @@ class PreviewRenderMixin:
 
         thread.succeeded.connect(ok)
         thread.failed.connect(fail)
-        thread.start()
+        try:
+            thread.start(QtCore.QThread.Priority.LowPriority)
+        except Exception:
+            thread.start()
         QtCore.QTimer.singleShot(
             self._interactive_preview_timeout_ms(
                 source_linear=source_linear,
@@ -1750,6 +1872,7 @@ class PreviewRenderMixin:
                     return
             if interactive:
                 apply_detail = bool(detail_interactive or self._detail_kwargs_have_effect(detail_kwargs))
+                cache_detail_adjustments = bool(apply_detail and not detail_interactive)
                 viewport_rect = self._interactive_viewport_rect(
                     compare_enabled=compare_enabled,
                     apply_detail=bool(apply_detail),
@@ -1774,8 +1897,10 @@ class PreviewRenderMixin:
                     or overlay_enabled
                     or not defer_exact_histogram
                 )
-                if defer_exact_histogram:
-                    include_histogram = bool(self._interactive_histogram_due(interval_ms=80))
+                if defer_exact_histogram and viewport_rect is not None:
+                    include_histogram = False
+                elif defer_exact_histogram:
+                    include_histogram = bool(self._interactive_histogram_due(interval_ms=140))
                 else:
                     include_histogram = bool(
                         True
@@ -1808,6 +1933,7 @@ class PreviewRenderMixin:
                         viewport_rect,
                         bool(include_histogram),
                         bool(include_colorimetric_patch),
+                        bool(cache_detail_adjustments),
                     )
                 )
                 return
@@ -1840,6 +1966,7 @@ class PreviewRenderMixin:
                         None,
                         False,
                         True,
+                        False,
                     )
                 )
                 return
@@ -2004,7 +2131,10 @@ class PreviewRenderMixin:
         if self._original_linear is None:
             return
         if self._is_direct_preview_interaction_active():
-            self._schedule_exact_histogram_refresh(delay_ms=160, mark_pending=False)
+            self._schedule_exact_histogram_refresh(
+                delay_ms=PREVIEW_EXACT_HISTOGRAM_IDLE_DELAY_MS,
+                mark_pending=False,
+            )
             return
         try:
             recipe = self._color_managed_preview_recipe(self._build_effective_recipe())

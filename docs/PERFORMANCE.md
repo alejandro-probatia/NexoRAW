@@ -67,6 +67,15 @@ conservative fallback. The normal CLI route uses processes.
 
 Control variables:
 
+- `probraw tune-performance`: shows CPU/RAM detection, active policy and
+  recommended environment variables. System installers run it during `postinst`
+  to write `/etc/probraw/performance.json`.
+- `PROBRAW_PERFORMANCE_MODE`: `conservative`, `balanced` or `aggressive`.
+- `PROBRAW_NATIVE_THREADS`: native threads per process for OpenMP/LibRaw.
+- `PROBRAW_OPENCV_THREADS`: OpenCV internal threads.
+- `PROBRAW_BATCH_NATIVE_THREADS`: native-thread budget per batch worker; the
+  automatic mode reduces workers to avoid oversubscription.
+- `PROBRAW_BLAS_THREADS`: threads for OpenBLAS/MKL/NumExpr when present.
 - `PROBRAW_BATCH_WORKERS`: default workers.
 - `PROBRAW_BATCH_MEMORY_RESERVE_MB`: Free RAM reserved before calculating
   automatic workers.
@@ -77,6 +86,22 @@ Control variables:
 - `PROBRAW_TIFF_MAXWORKERS`: compression threads per TIFF for `tifffile`.
   If omitted, ProbRAW distributes CPU automatically in compressed batches; for
   a single export, `tifffile` keeps its automatic mode.
+
+If an installation is moved to another machine, the stored hardware signature no
+longer matches and ProbRAW recalculates the policy at runtime. User environment
+variables always have priority over the detected policy.
+
+## Quality Guarantees
+
+The performance policy only changes scheduling: thread counts, batch workers,
+cache reuse of identical intermediate results, and when non-visual tasks run. It
+does not change ICC matrices, tone curves, sharpening, MTF, demosaicing or
+canonical quantization.
+
+Parity tests compare parallel and sequential ICC preview and standard-space
+preview routes with exact `uint8` pixel equality. The installed configuration is
+invalidated when the hardware signature changes, so a package moved to another
+machine recalculates limits instead of reusing a foreign policy.
 
 ## Numerical demosaic cache
 
@@ -252,6 +277,31 @@ Local synthetic benchmark after the change:
 | Sharpness 4000x6000 | ~1.75 s | ~86 ms |
 | Color/curves | ~20-62 ms | ~20-62 ms |
 
+### Interactive Preview 0.4.3
+
+The exposure, contrast, color and curve slider path now prioritizes immediate
+visual response and postpones non-visual scientific work until controls are
+idle:
+
+- 100% viewer scale on a proxy preview no longer forces a full RAW render; real
+  pixels are requested only when the visible image matches the source size or
+  when the user explicitly asks for full detail;
+- exact full-image histograms are not computed inside the viewport task during
+  dragging; they are consolidated later through an idle timer;
+- preview, histogram and final refinement tasks start with low `QThread`
+  priority to leave CPU time for the UI thread;
+- final refinement still uses the precise path, and Color Lab, MTF and
+  canonical export calculations are unchanged.
+
+Local Arch/CachyOS benchmark with `AMG_20190709_TRASIEGO_0004.NEF` developed to
+1732x2600, DCB, Qt `offscreen`, 60 steps per control:
+
+| Case | Before | After |
+| --- | ---: | ---: |
+| First brightness change | ~555 ms | ~22-24 ms |
+| Brightness drag | ~285 ms | ~37-46 ms |
+| Tone curve drag | ~551 ms | ~26-32 ms |
+
 ## RAW MTF Strategy And Global Operation Viewer
 
 Detected problem: cold MTF analysis on RAW files needs a real-resolution image.
@@ -349,6 +399,11 @@ References:
   C2PA; each image is processed in a separate process.
 - The numerical result of the demosaic can be persisted as `.npy` to avoid
   repeat LibRaw when only later settings change.
+- The provisional RAW preview falls back to `exiftool` when LibRaw/rawpy does
+  not expose an embedded thumbnail, avoiding a blank viewer until the
+  color-managed render finishes.
+- `scripts/benchmark_preview_load.py` measures real preview load, embedded
+  placeholder, ICC display conversion and optional 1:1 mode across machines.
 - The TIFF16 script uses fewer temporary intermediates than the expression
   `round(clip(x) * 65535).astype(uint16)`.
 - Cold MTF analysis now runs through an external worker with persistent
