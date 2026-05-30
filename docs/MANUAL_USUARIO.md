@@ -10,7 +10,7 @@ settings, profiles, hashes and audit artifacts.
 
 ![ProbRAW: main development and profiling interface](assets/screenshots/probraw-portada.png)
 
-This manual covers the complete ProbRAW 0.3.x workflow: session creation, color
+This manual covers the complete ProbRAW 0.4.x workflow: session creation, color
 chart profiling, manual work without a chart, settings copy/paste, render queue,
 TIFF export, metadata, Proof, C2PA, 3D/Lab 2D gamut diagnostics, Lab eyedropper
 samples, comparative color sample sets, chart reference management, session
@@ -146,6 +146,9 @@ detected installer for the system, its size and whether SHA-256 verification is
 available. When you continue, it downloads the installer to
 `Downloads/ProbRAW updates`, verifies the hash when the release publishes it and
 opens the installer visibly so you can confirm each step.
+Installer and checksum names are validated before writing to disk so an update
+asset cannot escape the downloads folder. On Linux the updater accepts `.deb`,
+`.rpm`, AppImage and Arch `pkg.tar.*` assets when they match the platform.
 
 Before installing, save open work. If the installer asks for it, close ProbRAW
 and reopen it after installation to confirm the version in
@@ -185,6 +188,12 @@ Minimal workflow:
 3. Press `Crear sesión` or `Abrir sesión`.
 4. Place RAW files and chart captures in `01_ORG/`.
 5. Go to `2. Ajustar / Aplicar`.
+
+When opening an existing session, ProbRAW normalizes persisted folders so
+`00_configuraciones/`, `01_ORG/`, `02_DRV/`, profiles, references, work and cache
+remain inside the session root. If an old `session.json` or one copied from
+another system contains external absolute paths, they are replaced by the
+project's canonical paths.
 
 ## 5. Left Panel: Browsing, Diagnostics and Metadata
 
@@ -325,6 +334,12 @@ Best practices:
 - use Lab D50 values with 2-degree observer for the current ICC workflow;
 - document the measurement source in `Fuente`;
 - press `Validar` before building the profile.
+
+QA checks do not block ICC generation unless there are no valid chart samples.
+If independent validation is missing, ProbRAW registers the profile as `draft`
+and leaves manual activation to the operator. A `rejected` profile never
+autoactivates; activating it from the session list or menu requires an explicit
+confirmation because it may introduce casts, clipping or unreliable conversions.
 
 ### Chart Data, Session ICC Profiles and 3D Gamut Comparison
 
@@ -630,7 +645,7 @@ additional conversion to the monitor is only for correct display on each system.
 | `Perfil ICC RGB estandar` | Uses a standard RGB ICC profile. Technically these are standard RGB spaces represented by ICC profiles; ProPhoto RGB is the default. |
 | `Espacio RGB estandar` | `sRGB`, `Adobe RGB` or `ProPhoto RGB`. Changing it applies it to the selected image. |
 | `Perfiles ICC de la sesion` | Selects an ICC generated or registered in the project. If none exists yet, the interface says so and keeps ProPhoto RGB as the safe fallback. |
-| `Perfil de sesion` | Session ICC list. Choosing one makes it active on the selected image. |
+| `Perfil de sesion` | Session ICC list. Choosing one makes it active on the selected image when its QA state allows it. `rejected` profiles ask for confirmation before activation. |
 | `Generar perfil ICC` | Shows the chart workflow for creating a new camera/session ICC. |
 | `Activar seleccionado` | Activates the ICC selected in the session list. |
 | `Cargar ICC de camara...` | Selects an existing external ICC from the system and registers it for use in the project. |
@@ -658,7 +673,7 @@ additional conversion to the monitor is only for correct display on each system.
 | `Confianza mínima` | `0.00` to `1.00`. Acceptance threshold for automatic detection. |
 | `Permitir fallback` | Allows alternative criteria if automatic detection does not reach the threshold. Use only if you will review QA. |
 | `Formato ICC` | `.icc` or `.icm`. |
-| `Tipo de perfil ICC` | `shaper+matrix (-as)`, `gamma+matrix (-ag)`, `matrix only (-am)`, `Lab cLUT (-al)` or `XYZ cLUT (-ax)`. |
+| `Tipo de perfil ICC` | `shaper+matrix (-as)`, `gamma+matrix (-ag)`, `matrix only (-am)`, `Lab cLUT (-al)` or `XYZ cLUT (-ax)`. For ColorChecker 24, `-as` is recommended; cLUT modes are advanced and can overfit with too few patches. |
 | `Calidad colprof` | Low, Medium, High, Ultra. Higher quality costs more compute. |
 | `Args extra colprof` | Advanced ArgyllCMS arguments, for example `-D "Museum Camera Profile"`. The default uses `-u -R` to avoid an unrealistically unconstrained gamut. |
 | `Cámara (opcional)` | Reserved profile metadata field. In the current interface it is filled automatically or kept hidden. |

@@ -10,7 +10,7 @@ Revelado RAW/TIFF reproducible y auditable para fotografía científica, forense
 patrimonial, con perfilado ICC por sesión, ajustes paramétricos por archivo y
 trazabilidad abierta AGPL.
 
-![Licencia AGPL-3.0-or-later](https://img.shields.io/badge/licencia-AGPL--3.0--or--later-blue) ![CI](https://img.shields.io/badge/CI-pendiente-lightgrey) ![Versión](https://img.shields.io/badge/version-v0.4.1-brightgreen) ![Python](https://img.shields.io/badge/python-3.11%2B-blue) ![Plataformas](https://img.shields.io/badge/plataformas-Linux%20%7C%20macOS%20%7C%20Windows-informational)
+![Licencia AGPL-3.0-or-later](https://img.shields.io/badge/licencia-AGPL--3.0--or--later-blue) ![CI](https://img.shields.io/badge/CI-pendiente-lightgrey) ![Versión](https://img.shields.io/badge/version-v0.4.2-brightgreen) ![Python](https://img.shields.io/badge/python-3.11%2B-blue) ![Plataformas](https://img.shields.io/badge/plataformas-Linux%20%7C%20macOS%20%7C%20Windows-informational)
 
 ![Interfaz principal de ProbRAW](docs/assets/screenshots/probraw-portada.png)
 
@@ -29,24 +29,24 @@ El flujo actual está centrado de forma deliberada en ICC:
 - el panel de diagnóstico permite revisar carta, gamut 3D/Lab 2D y muestras Lab
   agrupadas con comparación DeltaE entre conjuntos;
 - la gestión ICC del monitor afecta solo a la previsualización en pantalla;
-- el soporte DCP no es un objetivo activo de implementación en la línea 0.3.
+- el soporte DCP no es un objetivo activo de implementación en la línea 0.4.
 
 ## Estado Actual
 
-ProbRAW 0.4.1 es adecuado para pruebas controladas, revisión metodológica y
+ProbRAW 0.4.2 es adecuado para pruebas controladas, revisión metodológica y
 validación de candidata a release. Todavía no es un sistema certificado para
 producción científica o forense.
 
-La version actual estabiliza el flujo de muestras Lab: las lecturas se
-refrescan tras cambios de color/exposicion/contraste desde valores actuales de
-pixel real, el RGB se informa como enteros 0-255, y la GUI usa una interfaz
-espanola gris oscuro neutra con botones compactos de informacion para notas de
-precision.
+La version actual refuerza el flujo ICC y la fiabilidad de release: explica las
+opciones ArgyllCMS en la interfaz, evita activar automaticamente perfiles
+`draft` o `rejected`, exige confirmacion explicita para perfiles rechazados,
+normaliza rutas de sesion dentro del proyecto y endurece la descarga de
+instaladores.
 
 La última validación de empaquetado pasó con:
 
 ```text
-La validacion de release esta documentada en docs/releases/0.4.1.es.md.
+La validacion de release esta documentada en docs/releases/0.4.2.es.md.
 CachyOS probraw 0.3.18-3: pacman -Qkk -> 18160 ficheros, 0 alterados; validate_cachyos_install -> OK
 ```
 

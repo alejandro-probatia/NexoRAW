@@ -440,7 +440,15 @@ class BatchWorkflowMixin:
             QtWidgets.QMessageBox.information(self, self.tr("Info"), "El perfil ICC de entrada aún no existe.")
             return
         status = self._profile_status_for_path(p) or self.tr("no disponible")
-        if not self._profile_can_be_active(p, allow_rejected=True):
+        allow_rejected = False
+        if status == "rejected":
+            allow_rejected = self._confirm_rejected_icc_activation(p)
+            if not allow_rejected:
+                self.path_profile_active.clear()
+                self.chk_apply_profile.setChecked(False)
+                self._save_active_session(silent=True)
+                return
+        if not self._profile_can_be_active(p, allow_rejected=allow_rejected):
             QtWidgets.QMessageBox.warning(
                 self,
                 self.tr("Perfil no activable"),
@@ -472,7 +480,7 @@ class BatchWorkflowMixin:
             },
             activate=True,
             save=False,
-            allow_rejected=status == "rejected",
+            allow_rejected=allow_rejected,
         )
         self._invalidate_preview_cache()
         self._schedule_preview_refresh()

@@ -4,7 +4,7 @@ from dataclasses import dataclass
 import hashlib
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 import re
 import shutil
 import subprocess
@@ -12,6 +12,7 @@ import sys
 import tempfile
 from typing import Any
 from urllib import request
+from urllib.parse import unquote, urlsplit
 
 from .version import __version__
 
@@ -88,6 +89,38 @@ def _asset_size(asset: dict[str, Any]) -> int | None:
     return size if size >= 0 else None
 
 
+def _filename_from_url(url: str | None) -> str:
+    path = unquote(urlsplit(str(url or "")).path)
+    return Path(path).name
+
+
+def _safe_release_asset_name(name: str | None, *, fallback: str) -> str:
+    raw = str(name or "").strip() or str(fallback or "").strip() or "probraw-update.bin"
+    windows = PureWindowsPath(raw)
+    posix = PurePosixPath(raw)
+    if (
+        raw in {".", ".."}
+        or "\x00" in raw
+        or "\r" in raw
+        or "\n" in raw
+        or "/" in raw
+        or "\\" in raw
+        or windows.drive
+        or windows.root
+        or posix.root
+    ):
+        raise RuntimeError(f"Nombre de asset de actualizacion no seguro: {raw!r}")
+    return raw
+
+
+def _path_inside_directory(path: Path, directory: Path) -> bool:
+    try:
+        path.resolve(strict=False).relative_to(directory.resolve(strict=False))
+        return True
+    except Exception:
+        return False
+
+
 def _find_checksum_asset(assets: list[dict[str, Any]], asset_name: str) -> tuple[str | None, str | None]:
     expected = f"{asset_name}.sha256".lower()
     for asset in assets:
@@ -113,7 +146,11 @@ def _pick_asset(
         return None, None, None, None, None, None
 
     wanted_ext = _wanted_asset_extensions()
-    candidates = [a for a in assets if _asset_url(a)]
+    candidates = [
+        a
+        for a in assets
+        if _asset_url(a) and _asset_supported_by_platform(_asset_name(a))
+    ]
 
     for ext in wanted_ext:
         for asset in candidates:
@@ -135,10 +172,31 @@ def _pick_asset(
 
 def _wanted_asset_extensions() -> list[str]:
     if sys.platform == "win32":
-        return [".exe", ".msi"]
+        return [".exe", ".msi", ".zip"]
     if sys.platform == "darwin":
-        return [".dmg", ".pkg", ".zip", ".tar.gz"]
-    return [".deb", ".pkg.tar.zst", ".pkg.tar.xz", ".pkg.tar", ".rpm", ".appimage", ".tar.gz"]
+        return [".dmg", ".pkg", ".zip"]
+    return [".deb", ".pkg.tar.zst", ".pkg.tar.xz", ".pkg.tar", ".rpm", ".appimage"]
+
+
+def _asset_supported_by_platform(name: str) -> bool:
+    lowered = str(name or "").strip().lower()
+    if not lowered or _is_checksum_or_metadata_asset(lowered):
+        return False
+    if sys.platform == "win32":
+        if lowered.endswith((".exe", ".msi")):
+            return True
+        return lowered.endswith(".zip") and any(
+            token in lowered for token in ("win", "windows", "portable")
+        )
+    if sys.platform == "darwin":
+        if lowered.endswith((".dmg", ".pkg")):
+            return True
+        return lowered.endswith(".zip") and any(
+            token in lowered for token in ("mac", "macos", "darwin", "osx", ".app")
+        )
+    return lowered.endswith((".deb", ".rpm", ".appimage")) or lowered.endswith(
+        (".pkg.tar.zst", ".pkg.tar.xz", ".pkg.tar")
+    )
 
 
 def check_latest_release(*, api_url: str | None = None, repository: str | None = None, timeout: float = 8.0) -> UpdateCheckResult:
@@ -249,8 +307,13 @@ def download_update_asset(
         raise RuntimeError("La release no expone un asset descargable para esta plataforma.")
     dest_dir = Path(target_dir) if target_dir is not None else Path(tempfile.mkdtemp(prefix="probraw-update-"))
     dest_dir.mkdir(parents=True, exist_ok=True)
-    name = result.asset_name or Path(result.asset_url).name or "probraw-update.bin"
+    name = _safe_release_asset_name(
+        result.asset_name,
+        fallback=_filename_from_url(result.asset_url),
+    )
     out_path = dest_dir / name
+    if not _path_inside_directory(out_path, dest_dir):
+        raise RuntimeError(f"Ruta de descarga de actualizacion no segura: {out_path}")
     user_agent = f"ProbRAW/{result.current_version}"
     _download_url(result.asset_url, out_path, user_agent=user_agent, timeout=timeout)
     if verify_checksum:
@@ -260,7 +323,14 @@ def download_update_asset(
             checksum_text = _read_checksum_url(result.checksum_asset_url, user_agent=user_agent, timeout=timeout)
             expected = _normalize_sha256_digest(checksum_text)
             if result.checksum_asset_name:
-                (dest_dir / result.checksum_asset_name).write_text(checksum_text, encoding="utf-8")
+                checksum_name = _safe_release_asset_name(
+                    result.checksum_asset_name,
+                    fallback=f"{name}.sha256",
+                )
+                checksum_path = dest_dir / checksum_name
+                if not _path_inside_directory(checksum_path, dest_dir):
+                    raise RuntimeError(f"Ruta de checksum de actualizacion no segura: {checksum_path}")
+                checksum_path.write_text(checksum_text, encoding="utf-8")
         if not expected:
             raise RuntimeError(
                 "No se pudo verificar SHA-256 del instalador: "
@@ -297,6 +367,26 @@ def launch_installer(path: Path, *, silent: bool = True) -> None:
     if sys.platform == "darwin":
         subprocess.Popen(["open", str(installer)])
         return
+    if suffix == ".deb":
+        apt = shutil.which("apt") or shutil.which("apt-get")
+        dpkg = shutil.which("dpkg")
+        if apt:
+            args = [apt, "install"]
+            if silent:
+                args.append("-y")
+            args.append(str(installer))
+            pkexec = shutil.which("pkexec")
+            if pkexec and hasattr(os, "geteuid") and os.geteuid() != 0:
+                args.insert(0, pkexec)
+            subprocess.Popen(args)
+            return
+        if dpkg:
+            args = [dpkg, "-i", str(installer)]
+            pkexec = shutil.which("pkexec")
+            if pkexec and hasattr(os, "geteuid") and os.geteuid() != 0:
+                args.insert(0, pkexec)
+            subprocess.Popen(args)
+            return
     if name.endswith((".pkg.tar.zst", ".pkg.tar.xz", ".pkg.tar")) and shutil.which("pacman"):
         args = ["pacman", "-U"]
         if silent:
@@ -307,6 +397,26 @@ def launch_installer(path: Path, *, silent: bool = True) -> None:
             args.insert(0, pkexec)
         subprocess.Popen(args)
         return
+    if suffix == ".rpm":
+        manager = shutil.which("dnf") or shutil.which("yum")
+        rpm = shutil.which("rpm")
+        if manager:
+            args = [manager, "install"]
+            if silent:
+                args.append("-y")
+            args.append(str(installer))
+            pkexec = shutil.which("pkexec")
+            if pkexec and hasattr(os, "geteuid") and os.geteuid() != 0:
+                args.insert(0, pkexec)
+            subprocess.Popen(args)
+            return
+        if rpm:
+            args = [rpm, "-Uvh", str(installer)]
+            pkexec = shutil.which("pkexec")
+            if pkexec and hasattr(os, "geteuid") and os.geteuid() != 0:
+                args.insert(0, pkexec)
+            subprocess.Popen(args)
+            return
     if suffix == ".appimage":
         installer.chmod(installer.stat().st_mode | 0o111)
         subprocess.Popen([str(installer)])

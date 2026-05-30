@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 import json
-from pathlib import Path
+import os
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any
 
 
@@ -63,6 +64,14 @@ def _default_session_name(root: Path) -> str:
     return root.name or "session"
 
 
+def _path_is_inside(path: Path, root: Path) -> bool:
+    try:
+        path.expanduser().resolve(strict=False).relative_to(root.expanduser().resolve(strict=False))
+        return True
+    except Exception:
+        return False
+
+
 def _normalize_directories(payload: dict[str, Any], root: Path) -> dict[str, str]:
     normalized: dict[str, str] = {"root": str(root)}
     raw_dirs = payload if isinstance(payload, dict) else {}
@@ -70,17 +79,34 @@ def _normalize_directories(payload: dict[str, Any], root: Path) -> dict[str, str
     for key, rel in DEFAULT_SUBDIRECTORIES.items():
         raw_value = raw_dirs.get(key)
         if isinstance(raw_value, str) and raw_value.strip():
-            candidate = Path(raw_value).expanduser()
+            if _foreign_absolute_path(raw_value):
+                candidate = root / rel
+            else:
+                candidate = Path(raw_value).expanduser()
             if not candidate.is_absolute():
                 candidate = root / candidate
         else:
             candidate = root / rel
 
-        candidate = candidate.resolve()
+        if not _path_is_inside(candidate, root):
+            candidate = root / rel
+
+        candidate = candidate.resolve(strict=False)
         candidate.mkdir(parents=True, exist_ok=True)
         normalized[key] = str(candidate)
 
     return normalized
+
+
+def _foreign_absolute_path(value: str) -> bool:
+    text = str(value or "").strip()
+    if not text:
+        return False
+    if os.name != "nt":
+        candidate = PureWindowsPath(text)
+        return bool(candidate.drive)
+    candidate = PurePosixPath(text)
+    return candidate.is_absolute() and not Path(text).is_absolute()
 
 
 def _normalize_metadata(payload: dict[str, Any], root: Path) -> dict[str, str]:

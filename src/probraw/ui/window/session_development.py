@@ -78,8 +78,18 @@ class SessionDevelopmentMixin:
         if path is None or path.suffix.lower() not in self._icc_profile_suffixes() or not path.exists():
             return None
         source = str(descriptor.get("source") or "generated")
+        source_key = source.strip().lower()
         if not self._icc_profile_catalog_path_allowed(path, source):
             return None
+        stored_profile_path = self._session_relative_or_absolute(path)
+        if (
+            source_key == "loaded"
+            and self._active_session_root is not None
+            and not self._path_is_inside(path, self._active_session_root)
+        ):
+            raw_candidate = Path(str(raw_path)).expanduser()
+            if raw_candidate.is_absolute():
+                stored_profile_path = str(raw_candidate)
 
         report_path = self._session_scoped_profile_metadata_path(
             self._session_stored_path(descriptor.get("profile_report_path"))
@@ -101,7 +111,7 @@ class SessionDevelopmentMixin:
             "id": str(descriptor.get("id") or self._icc_profile_id_for_path(path)),
             "name": name,
             "source": source,
-            "path": self._session_relative_or_absolute(path),
+            "path": stored_profile_path,
             "profile_report_path": self._session_relative_or_absolute(report_path) if report_path is not None else "",
             "development_profile_id": str(descriptor.get("development_profile_id") or ""),
             "development_profile_path": self._session_relative_or_absolute(development_profile_path)
@@ -491,13 +501,24 @@ class SessionDevelopmentMixin:
         existing = getattr(self, "radio_icc_existing", None)
         if existing is not None and not existing.isChecked():
             existing.setChecked(True)
-        if not self._activate_icc_profile_id(profile_id, save=True, refresh_preview=True, allow_rejected=True):
-            self._refresh_icc_profile_combo()
-            return
-        self._auto_apply_current_icc_choice_to_selected_image()
         profile = self._icc_profile_by_id(profile_id)
         path = self._session_stored_path(profile.get("path")) if profile else None
         status = self._profile_status_for_path(path) if path is not None else ""
+        allow_rejected = False
+        if status == "rejected":
+            allow_rejected = self._confirm_rejected_icc_activation(path)
+            if not allow_rejected:
+                self._refresh_icc_profile_combo()
+                return
+        if not self._activate_icc_profile_id(
+            profile_id,
+            save=True,
+            refresh_preview=True,
+            allow_rejected=allow_rejected,
+        ):
+            self._refresh_icc_profile_combo()
+            return
+        self._auto_apply_current_icc_choice_to_selected_image()
         if status == "rejected":
             self._log_preview(
                 self.tr("Perfil ICC activado manualmente pese a estado QA rechazada:") + f" {path}"
@@ -640,6 +661,24 @@ class SessionDevelopmentMixin:
             self._save_active_session(silent=True)
         return profile_id
 
+    def _confirm_rejected_icc_activation(self, profile_path: Path | None) -> bool:
+        if profile_path is None:
+            return False
+        response = QtWidgets.QMessageBox.question(
+            self,
+            self.tr("Activar perfil rechazado"),
+            self.tr(
+                "Este perfil ICC esta marcado como rejected por QA colorimetrica. "
+                "Puede producir dominantes, clipping o conversiones no fiables.\n\n"
+                "Solo deberia activarse para diagnostico o comparacion, no para revelado final.\n\n"
+                "Quieres activarlo igualmente?"
+            )
+            + f"\n\n{profile_path}",
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+            QtWidgets.QMessageBox.No,
+        )
+        return response == QtWidgets.QMessageBox.Yes
+
     def _activate_icc_profile_id(
         self,
         profile_id: str,
@@ -690,13 +729,20 @@ class SessionDevelopmentMixin:
             return
         profile = self._icc_profile_by_id(profile_id)
         path = self._session_stored_path(profile.get("path")) if profile else None
+        status = self._profile_status_for_path(path) if path is not None else ""
+        allow_rejected = False
+        if status == "rejected":
+            allow_rejected = self._confirm_rejected_icc_activation(path)
+            if not allow_rejected:
+                self._refresh_icc_profile_combo()
+                return
         if (
             profile is None
             or path is None
             or not path.exists()
-            or not self._profile_can_be_active(path, allow_rejected=True)
+            or not self._profile_can_be_active(path, allow_rejected=allow_rejected)
         ):
-            status = self._profile_status_for_path(path) if path is not None else self.tr("no disponible")
+            status = status or self.tr("no disponible")
             QtWidgets.QMessageBox.warning(
                 self,
                 self.tr("Perfil no activable"),
@@ -704,7 +750,7 @@ class SessionDevelopmentMixin:
             )
             self._refresh_icc_profile_combo()
             return
-        self._activate_icc_profile_id(profile_id, save=True, allow_rejected=True)
+        self._activate_icc_profile_id(profile_id, save=True, allow_rejected=allow_rejected)
         self._set_status(self.tr("Perfil activo:") + f" {path}")
 
     def _strip_version_suffix(self, stem: str) -> str:

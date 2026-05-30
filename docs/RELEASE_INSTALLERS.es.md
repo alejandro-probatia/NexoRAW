@@ -4,6 +4,25 @@ La publicacion de instaladores de ProbRAW tiene una regla simple: ningun
 artefacto se sube al repositorio ni a GitHub Releases sin pasar primero las
 validaciones de paquete e instalacion.
 
+## Release 0.4.2
+
+La 0.4.2 es una release de fiabilidad para perfilado ICC, actualizacion e
+instaladores multiplataforma. Antes de publicar los artefactos, verificar:
+
+- suite completa local: `523 passed, 1 skipped, 2 warnings`;
+- `download_update_asset` rechaza nombres de asset/checksum con rutas externas;
+- Linux reconoce `.deb`, `.rpm`, AppImage y Arch `pkg.tar.*` sin elegir ruedas o
+  tarballs fuente como instalador;
+- los directorios persistidos en `session.json` quedan confinados en la raiz de
+  sesion;
+- los perfiles `draft` se registran sin autoactivarse;
+- los perfiles `rejected` no se autoactivan y solo se activan tras confirmacion
+  explicita del operador;
+- los metadatos de perfil informan el modelo ArgyllCMS real, no siempre
+  `matrix3x3`;
+- la build Windows genera `ProbRAW-0.4.2-Setup.exe` y su `.sha256`:
+  `69372cafa12e13651278228781c2db042423a6d9cf0244cf6f50d198ae0cab11`.
+
 ## Linux `.deb`
 
 Construir siempre con AMaZE exigido:

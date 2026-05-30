@@ -67,8 +67,18 @@ def test_build_profile_generates_icc_and_sidecar(tmp_path: Path, monkeypatch):
     assert out_icc.stat().st_size > 256
     assert Path(result.output_profile_json).exists()
     assert result.metadata["profile_engine_used"] == "argyll"
+    assert result.model == "argyll_shaper_matrix"
+    assert result.metadata["profile_model"] == "argyll_shaper_matrix"
+    assert result.metadata["argyll_profile_model_flag"] == "-as"
     assert result.patch_errors[0].reference_lab == samples[0].reference_lab
     assert result.patch_errors[0].profile_lab == samples[0].reference_lab
+
+
+def test_argyll_profile_model_reflects_colprof_flags():
+    assert profiling._argyll_profile_model(["-qm", "-as", "-u", "-R"]) == ("argyll_shaper_matrix", "-as")
+    assert profiling._argyll_profile_model(["-qh", "-al"]) == ("argyll_lab_clut", "-al")
+    assert profiling._argyll_profile_model(["-qu", "-ax"]) == ("argyll_xyz_clut", "-ax")
+    assert profiling._argyll_profile_model(["-qh", "-Zcustom"]) == ("argyll_custom", None)
 
 
 def test_standard_gamut_diagnostics_include_expected_rgb_spaces():

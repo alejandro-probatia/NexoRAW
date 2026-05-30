@@ -57,6 +57,29 @@ DEFAULT_QA_MEAN_DELTA_E2000_MAX = 5.0
 DEFAULT_QA_MAX_DELTA_E2000_MAX = 10.0
 
 
+def _emit_workflow_progress(
+    progress_callback: Any | None,
+    progress: float,
+    phase: str,
+    detail: str = "",
+    *,
+    current: int | None = None,
+    total: int | None = None,
+) -> None:
+    if progress_callback is None:
+        return
+    payload: dict[str, Any] = {
+        "progress": max(0, min(100, int(round(float(progress))))),
+        "phase": str(phase),
+        "detail": str(detail or ""),
+    }
+    if current is not None:
+        payload["current"] = int(current)
+    if total is not None:
+        payload["total"] = int(total)
+    progress_callback(payload)
+
+
 def auto_generate_profile_from_charts(
     chart_captures_dir: Path,
     recipe: Recipe,
@@ -82,7 +105,14 @@ def auto_generate_profile_from_charts(
     cache_dir: Path | None = None,
     profile_workers: int | None = None,
     profile_artifacts: str = "full",
+    progress_callback: Any | None = None,
 ) -> dict[str, Any]:
+    _emit_workflow_progress(
+        progress_callback,
+        1,
+        "Preparando perfil",
+        "Normalizando receta y preparando carpetas de trabajo",
+    )
     requested_recipe = recipe
     profile_recipe, recipe_normalizations = sanitize_recipe_for_profiling(requested_recipe)
     render_recipe = requested_recipe
@@ -111,6 +141,12 @@ def auto_generate_profile_from_charts(
         validation_holdout_count,
         preferred_training_files=list(manual_detection_map.keys()) if manual_detection_map else None,
     )
+    _emit_workflow_progress(
+        progress_callback,
+        6,
+        "Seleccionando capturas",
+        f"{len(training_files)} de entrenamiento, {len(validation_files)} de validacion",
+    )
 
     initial_pass = _collect_chart_samples(
         chart_files=training_files,
@@ -129,6 +165,10 @@ def auto_generate_profile_from_charts(
         cache_dir=cache_dir,
         workers=profile_workers,
         artifacts=profile_artifacts,
+        progress_callback=progress_callback,
+        progress_start=8,
+        progress_end=28 if calibrate_development else 54,
+        progress_phase="Muestreando carta",
     )
     accepted_samples = initial_pass["accepted_samples"]
     skipped: list[dict[str, Any]] = list(initial_pass["skipped"])
@@ -142,6 +182,12 @@ def auto_generate_profile_from_charts(
             f"{suffix}"
         )
 
+    _emit_workflow_progress(
+        progress_callback,
+        31 if calibrate_development else 58,
+        "Agregando muestras",
+        "Combinando parches medidos antes de construir el perfil",
+    )
     aggregated_initial = _aggregate_samples(accepted_samples, strategy=profile_recipe.sampling_strategy)
     write_json(work_dir / "samples_aggregated_development_source.json", aggregated_initial)
 
@@ -150,6 +196,12 @@ def auto_generate_profile_from_charts(
     development_payload: dict[str, Any] | None = None
 
     if calibrate_development:
+        _emit_workflow_progress(
+            progress_callback,
+            36,
+            "Calibrando revelado",
+            "Ajustando neutralidad y respuesta tonal de la receta de perfilado",
+        )
         development = build_development_profile(samples=aggregated_initial, base_recipe=profile_recipe)
         development_profile_file = development_profile_out or (work_dir / "development_profile.json")
         calibrated_recipe_file = calibrated_recipe_out or (work_dir / "recipe_calibrated.yml")
@@ -168,6 +220,12 @@ def auto_generate_profile_from_charts(
         development_profile_path = str(development_profile_file)
         calibrated_recipe_path = str(calibrated_recipe_file)
 
+        _emit_workflow_progress(
+            progress_callback,
+            44,
+            "Remuestreando carta",
+            "Repitiendo deteccion y muestreo con la receta calibrada",
+        )
         calibrated_pass = _collect_chart_samples(
             chart_files=training_files,
             recipe=profile_recipe,
@@ -184,6 +242,10 @@ def auto_generate_profile_from_charts(
             cache_dir=cache_dir,
             workers=profile_workers,
             artifacts=profile_artifacts,
+            progress_callback=progress_callback,
+            progress_start=45,
+            progress_end=62,
+            progress_phase="Remuestreando carta",
         )
         accepted_samples = calibrated_pass["accepted_samples"]
         skipped.extend(calibrated_pass["skipped"])
@@ -196,11 +258,23 @@ def auto_generate_profile_from_charts(
                 f"{suffix}"
             )
 
+    _emit_workflow_progress(
+        progress_callback,
+        64,
+        "Preparando ICC",
+        "Escribiendo datos medidos y receta cientifica para colprof",
+    )
     aggregated_samples = _aggregate_samples(accepted_samples, strategy=profile_recipe.sampling_strategy)
     aggregated_samples_path = work_dir / "samples_aggregated.json"
     write_json(aggregated_samples_path, aggregated_samples)
     save_recipe(profile_recipe, profile_recipe_file)
 
+    _emit_workflow_progress(
+        progress_callback,
+        68,
+        "Construyendo ICC",
+        "Calculando la transformacion colorimetrica del perfil de entrada",
+    )
     profile_result = build_profile(
         samples=aggregated_samples,
         recipe=profile_recipe,
@@ -212,9 +286,21 @@ def auto_generate_profile_from_charts(
     if training_neutral_axis_error is not None:
         profile_result.metadata["neutral_axis_error"] = training_neutral_axis_error
 
+    _emit_workflow_progress(
+        progress_callback,
+        76,
+        "ICC construido",
+        f"Perfil escrito en {Path(profile_out).name}",
+    )
     validation_payload: dict[str, Any] | None = None
     qa_report_path: str | None = None
     if validation_files:
+        _emit_workflow_progress(
+            progress_callback,
+            78,
+            "Preparando validacion",
+            "Reutilizando geometria de carta para capturas independientes",
+        )
         validation_detection_map = _validation_detection_map(
             validation_files=validation_files,
             manual_detection_map=manual_detection_map,
@@ -224,6 +310,12 @@ def auto_generate_profile_from_charts(
             allow_fallback_detection=allow_fallback_detection,
             work_dir=work_dir,
             cache_dir=cache_dir,
+        )
+        _emit_workflow_progress(
+            progress_callback,
+            82,
+            "Validando ICC",
+            "Muestreando capturas de validacion independiente",
         )
         validation_pass = _collect_chart_samples(
             chart_files=validation_files,
@@ -242,6 +334,10 @@ def auto_generate_profile_from_charts(
             cache_dir=cache_dir,
             workers=profile_workers,
             artifacts=profile_artifacts,
+            progress_callback=progress_callback,
+            progress_start=83,
+            progress_end=90,
+            progress_phase="Validando ICC",
         )
         validation_samples = validation_pass["accepted_samples"]
         skipped.extend(validation_pass["skipped"])
@@ -249,6 +345,12 @@ def auto_generate_profile_from_charts(
         validation_result_payload: dict[str, Any] | None = None
         validation_samples_path: str | None = None
         if validation_samples:
+            _emit_workflow_progress(
+                progress_callback,
+                92,
+                "Calculando QA",
+                "Comparando Lab medido contra referencia y perfil ICC",
+            )
             aggregated_validation = _aggregate_samples(validation_samples, strategy=profile_recipe.sampling_strategy)
             aggregated_validation_path = work_dir / "samples_aggregated_validation.json"
             write_json(aggregated_validation_path, aggregated_validation)
@@ -283,7 +385,20 @@ def auto_generate_profile_from_charts(
             "qa_report": qa_report,
             "qa_report_path": qa_report_path,
         }
+    else:
+        _emit_workflow_progress(
+            progress_callback,
+            90,
+            "Sin validacion independiente",
+            "No hay capturas reservadas para holdout; el perfil quedara como draft",
+        )
 
+    _emit_workflow_progress(
+        progress_callback,
+        95,
+        "Escribiendo informes",
+        "Guardando metadatos, QA y recomendaciones de perfil",
+    )
     profile_generated_at = _utc_now_iso()
     profile_valid_until = _profile_valid_until(profile_generated_at, profile_validity_days)
     profile_status = _build_profile_status(
@@ -316,6 +431,12 @@ def auto_generate_profile_from_charts(
     write_json(Path(profile_result.output_profile_json), profile_result.metadata)
     write_json(profile_report_out, profile_result)
 
+    _emit_workflow_progress(
+        progress_callback,
+        100,
+        "Perfil finalizado",
+        f"Estado: {profile_status['status']}",
+    )
     return {
         "chart_captures_total": len(chart_files),
         "training_captures_total": len(training_files),
@@ -1318,6 +1439,10 @@ def _collect_chart_samples(
     cache_dir: Path | None = None,
     workers: int | None = None,
     artifacts: str = "full",
+    progress_callback: Any | None = None,
+    progress_start: int = 0,
+    progress_end: int = 100,
+    progress_phase: str = "Muestreando carta",
 ) -> dict[str, Any]:
     for d in (chart_dev_dir, detect_dir, sample_dir, overlay_dir):
         d.mkdir(parents=True, exist_ok=True)
@@ -1359,17 +1484,39 @@ def _collect_chart_samples(
         )
 
     result_slots: list[dict[str, Any] | None] = [None] * len(jobs)
+    completed_jobs = 0
+
+    def store_result(result: dict[str, Any]) -> None:
+        nonlocal completed_jobs
+        result_index = int(result["index"])
+        result_slots[result_index - 1] = result
+        completed_jobs += 1
+        capture_name = chart_files[result_index - 1].name if 0 < result_index <= len(chart_files) else ""
+        detail = f"{completed_jobs}/{len(jobs)} capturas procesadas"
+        if capture_name:
+            detail = f"{detail}: {capture_name}"
+        span = int(progress_end) - int(progress_start)
+        progress = int(progress_start) + (span * completed_jobs / max(1, len(jobs)))
+        _emit_workflow_progress(
+            progress_callback,
+            progress,
+            progress_phase,
+            detail,
+            current=completed_jobs,
+            total=len(jobs),
+        )
+
     if worker_count <= 1:
         for job in jobs:
             result = _process_chart_sample_job(job)
-            result_slots[int(result["index"]) - 1] = result
+            store_result(result)
     else:
         multiprocessing.freeze_support()
         with ProcessPoolExecutor(max_workers=worker_count) as executor:
             futures = [executor.submit(_process_chart_sample_job, job) for job in jobs]
             for future in as_completed(futures):
                 result = future.result()
-                result_slots[int(result["index"]) - 1] = result
+                store_result(result)
 
     for result in result_slots:
         if result is None:

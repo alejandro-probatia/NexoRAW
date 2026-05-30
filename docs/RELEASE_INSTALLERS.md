@@ -6,6 +6,25 @@ The ProbRAW installer release has a simple rule: no
 artifact is uploaded to the repository or GitHub Releases without first passing the
 package and installation validations.
 
+## Release 0.4.2
+
+0.4.2 is a reliability release for ICC profiling, update handling and
+cross-platform installers. Before publishing artifacts, verify:
+
+- full local suite: `523 passed, 1 skipped, 2 warnings`;
+- `download_update_asset` rejects asset/checksum names that contain external
+  paths;
+- Linux recognizes `.deb`, `.rpm`, AppImage and Arch `pkg.tar.*` without
+  selecting wheels or source tarballs as installers;
+- persisted `session.json` directories remain confined to the session root;
+- `draft` profiles are registered without autoactivation;
+- `rejected` profiles never autoactivate and require explicit operator
+  confirmation before manual activation;
+- profile metadata reports the real ArgyllCMS model instead of always reporting
+  `matrix3x3`;
+- the Windows build generates `ProbRAW-0.4.2-Setup.exe` and its `.sha256`:
+  `69372cafa12e13651278228781c2db042423a6d9cf0244cf6f50d198ae0cab11`.
+
 ## Linux `.deb`
 
 Always build with AMaZE required:

@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import json
+import os
 from pathlib import Path
+
+import pytest
 
 from probraw.session import (
     DEFAULT_SUBDIRECTORIES,
@@ -117,3 +121,70 @@ def test_cache_dir_creates_project_cache_subdirectory(tmp_path: Path):
     assert path == (root / "00_configuraciones" / "cache" / "demosaic").resolve()
     assert path.exists()
     assert path.is_dir()
+
+
+def test_load_session_confines_same_platform_absolute_directories(tmp_path: Path):
+    root = tmp_path / "session_external_path"
+    create_session(root, name="External path")
+    outside = tmp_path / "outside_profiles"
+    session_file_path(root).write_text(
+        f"""
+        {{
+          "version": 1,
+          "metadata": {{"name": "External path"}},
+          "directories": {{"profiles": {json.dumps(str(outside))}}},
+          "state": {{}},
+          "queue": []
+        }}
+        """,
+        encoding="utf-8",
+    )
+
+    loaded = load_session(root)
+
+    expected = (root / DEFAULT_SUBDIRECTORIES["profiles"]).resolve()
+    assert loaded["directories"]["profiles"] == str(expected)
+    assert not outside.exists()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="solo valida rutas absolutas Windows en hosts POSIX")
+def test_load_session_does_not_create_foreign_windows_directories_on_posix(tmp_path: Path):
+    root = tmp_path / "session_foreign_windows_path"
+    create_session(root, name="Foreign Windows path")
+
+    save_session(
+        root,
+        {
+            "metadata": {"name": "Foreign Windows path"},
+            "directories": {"profiles": r"C:\Users\Example\ProbRAW\profiles"},
+            "state": {},
+            "queue": [],
+        },
+    )
+
+    loaded = load_session(root)
+
+    expected = (root / DEFAULT_SUBDIRECTORIES["profiles"]).resolve()
+    assert loaded["directories"]["profiles"] == str(expected)
+    assert not (root / r"C:\Users\Example\ProbRAW\profiles").exists()
+
+
+@pytest.mark.skipif(os.name != "nt", reason="solo valida rutas absolutas POSIX en hosts Windows")
+def test_load_session_does_not_create_foreign_posix_directories_on_windows(tmp_path: Path):
+    root = tmp_path / "session_foreign_posix_path"
+    create_session(root, name="Foreign POSIX path")
+
+    save_session(
+        root,
+        {
+            "metadata": {"name": "Foreign POSIX path"},
+            "directories": {"profiles": "/var/tmp/probraw/profiles"},
+            "state": {},
+            "queue": [],
+        },
+    )
+
+    loaded = load_session(root)
+
+    expected = (root / DEFAULT_SUBDIRECTORIES["profiles"]).resolve()
+    assert loaded["directories"]["profiles"] == str(expected)

@@ -10,7 +10,7 @@ Reproducible and auditable RAW/TIFF development for scientific, forensic and
 heritage photography, with session ICC profiling, per-file parametric settings
 and open AGPL traceability.
 
-![AGPL-3.0-or-later License](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue) ![CI](https://img.shields.io/badge/CI-pending-lightgrey) ![Version](https://img.shields.io/badge/version-v0.4.1-brightgreen) ![Python](https://img.shields.io/badge/python-3.11%2B-blue) ![Platforms](https://img.shields.io/badge/platforms-Linux%20%7C%20macOS%20%7C%20Windows-informational)
+![AGPL-3.0-or-later License](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue) ![CI](https://img.shields.io/badge/CI-pending-lightgrey) ![Version](https://img.shields.io/badge/version-v0.4.2-brightgreen) ![Python](https://img.shields.io/badge/python-3.11%2B-blue) ![Platforms](https://img.shields.io/badge/platforms-Linux%20%7C%20macOS%20%7C%20Windows-informational)
 
 ![ProbRAW main interface](docs/assets/screenshots/probraw-portada.png)
 
@@ -29,23 +29,23 @@ The current workflow is intentionally ICC-centered:
 - the diagnostics panel can review chart data, 3D/Lab 2D gamut and grouped Lab
   samples with DeltaE comparison between sets;
 - monitor ICC management affects only on-screen preview;
-- DCP support is not an active implementation target for the 0.3 line.
+- DCP support is not an active implementation target for the 0.4 line.
 
 ## Current Status
 
-ProbRAW 0.4.1 is suitable for controlled testing, method review and release
+ProbRAW 0.4.2 is suitable for controlled testing, method review and release
 candidate validation. It is not yet a certified scientific or forensic
 production system.
 
-The current version stabilizes the Lab sample workflow: readings are refreshed
-after color/exposure/contrast changes from current real-pixel values, RGB is
-reported as 0-255 integers, and the GUI uses a neutral dark-gray Spanish
-interface with compact information buttons for precision notes.
+The current version hardens the ICC and release workflow: ArgyllCMS options are
+explained in the interface, `draft` and `rejected` profiles no longer activate
+automatically, rejected profiles require explicit confirmation, session paths are
+kept inside the project and installer downloads are sanitized.
 
 The latest packaging validation passed with:
 
 ```text
-Release validation is recorded in docs/releases/0.4.1.md.
+Release validation is recorded in docs/releases/0.4.2.md.
 CachyOS probraw 0.3.18-3: pacman -Qkk -> 18160 files, 0 altered; validate_cachyos_install -> OK
 ```
 

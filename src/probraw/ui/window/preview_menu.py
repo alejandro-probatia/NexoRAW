@@ -482,7 +482,12 @@ class PreviewMenuMixin:
             return
         profile_path = Path(path).expanduser()
         status = self._profile_status_for_path(profile_path) or self.tr("no disponible")
-        if not self._profile_can_be_active(profile_path, allow_rejected=True):
+        allow_rejected = False
+        if status == "rejected":
+            allow_rejected = self._confirm_rejected_icc_activation(profile_path)
+            if not allow_rejected:
+                return
+        if not self._profile_can_be_active(profile_path, allow_rejected=allow_rejected):
             QtWidgets.QMessageBox.warning(
                 self,
                 self.tr("Perfil no activable"),
@@ -503,7 +508,7 @@ class PreviewMenuMixin:
             },
             activate=True,
             save=False,
-            allow_rejected=status == "rejected",
+            allow_rejected=allow_rejected,
         )
         if profile_id:
             self._active_icc_profile_id = profile_id

@@ -65,13 +65,44 @@ class DisplayControlsMixin:
         a = QtGui.QAction(text, self)
         if shortcut:
             a.setShortcut(shortcut)
+        a.setToolTip(str(text))
+        a.setStatusTip(str(text))
         a.triggered.connect(callback)
         return a
 
     def _button(self, text: str, callback) -> QtWidgets.QPushButton:
         b = QtWidgets.QPushButton(text)
+        icon = self._button_icon_for_text(text)
+        if not icon.isNull():
+            b.setIcon(icon)
+            b.setIconSize(QtCore.QSize(16, 16))
+        b.setToolTip(str(text))
+        b.setStatusTip(str(text))
+        b.setAccessibleName(str(text))
+        b.setCursor(QtCore.Qt.PointingHandCursor)
+        b.setMinimumHeight(28)
         b.clicked.connect(callback)
         return b
+
+    def _button_icon_for_text(self, text: str) -> QtGui.QIcon:
+        lowered = str(text or "").casefold()
+        mapping = [
+            (("inicio", "home"), "SP_DirHomeIcon"),
+            (("abrir", "importar", "cargar"), "SP_DialogOpenButton"),
+            (("guardar", "exportar"), "SP_DialogSaveButton"),
+            (("recargar", "actualizar"), "SP_BrowserReload"),
+            (("carpeta", "directorio"), "SP_DirOpenIcon"),
+            (("crear", "nueva", "nuevo", "generar"), "SP_FileDialogNewFolder"),
+            (("aplicar", "validar", "usar", "asignar", "revelar"), "SP_DialogApplyButton"),
+            (("limpiar", "quitar", "eliminar"), "SP_TrashIcon"),
+            (("cerrar", "salir"), "SP_DialogCloseButton"),
+        ]
+        for keywords, icon_name in mapping:
+            if any(keyword in lowered for keyword in keywords):
+                style_icon = getattr(self, "_style_icon", None)
+                if callable(style_icon):
+                    return style_icon(icon_name)
+        return QtGui.QIcon()
 
     def _go_home_directory(self) -> None:
         self._set_current_directory(self._default_work_directory())
@@ -732,10 +763,37 @@ class DisplayControlsMixin:
         dir_mode: bool,
     ) -> tuple[QtWidgets.QWidget, QtWidgets.QWidget, QtWidgets.QWidget]:
         label = QtWidgets.QLabel(label_text)
+        label.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+        label.setToolTip(str(label_text))
         grid.addWidget(label, row, 0)
+        line_edit.setClearButtonEnabled(True)
+        line_edit.setToolTip(str(label_text))
+        line_edit.setStatusTip(str(label_text))
+        if not line_edit.placeholderText():
+            if dir_mode:
+                line_edit.setPlaceholderText(self.tr("Selecciona un directorio"))
+            elif save_mode:
+                line_edit.setPlaceholderText(self.tr("Ruta de salida"))
+            else:
+                line_edit.setPlaceholderText(self.tr("Selecciona un archivo"))
         grid.addWidget(line_edit, row, 1)
         browse = QtWidgets.QPushButton(self.tr("..."))
-        browse.setMaximumWidth(36)
+        browse.setText("")
+        if dir_mode:
+            browse.setIcon(self._button_icon_for_text(self.tr("Abrir carpeta")))
+            browse.setToolTip(self.tr("Seleccionar directorio"))
+        elif save_mode:
+            browse.setIcon(self._button_icon_for_text(self.tr("Guardar archivo")))
+            browse.setToolTip(self.tr("Elegir ruta de salida"))
+        else:
+            browse.setIcon(self._button_icon_for_text(self.tr("Abrir archivo")))
+            browse.setToolTip(self.tr("Seleccionar archivo"))
+        browse.setStatusTip(browse.toolTip())
+        browse.setAccessibleName(browse.toolTip())
+        browse.setCursor(QtCore.Qt.PointingHandCursor)
+        browse.setIconSize(QtCore.QSize(16, 16))
+        browse.setMaximumWidth(40)
+        browse.setMinimumWidth(36)
         browse.clicked.connect(
             lambda: self._browse_for_path(
                 target=line_edit,

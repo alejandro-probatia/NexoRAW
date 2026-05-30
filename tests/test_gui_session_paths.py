@@ -51,6 +51,42 @@ def _activate_fake_session_icc(window: ICCRawMainWindow, root: Path) -> Path:
     return profile
 
 
+def test_startup_operational_paths_are_session_scoped(qapp):
+    window = ICCRawMainWindow()
+    try:
+        root = Path(window.session_root_path.text()).expanduser()
+        assert root.name == "probraw_session"
+        for widget in (
+            window.profile_out_path_edit,
+            window.path_profile_out,
+            window.profile_report_out,
+            window.profile_workdir,
+            window.develop_profile_out,
+            window.calibrated_recipe_out,
+            window.path_recipe,
+            window.path_preview_png,
+            window.batch_out_dir,
+        ):
+            assert window._path_is_inside(Path(widget.text()).expanduser(), root)
+    finally:
+        window.close()
+
+
+@pytest.mark.skipif(os.name != "nt", reason="semantica especifica de rutas con unidad en Windows")
+def test_session_stored_path_preserves_windows_drive_anchored_paths(tmp_path: Path, qapp):
+    window = ICCRawMainWindow()
+    try:
+        window._active_session_root = tmp_path.resolve()
+
+        stored = window._session_stored_path("C:external.icc")
+
+        assert stored is not None
+        assert str(stored).startswith("C:")
+        assert not window._path_is_inside(stored, tmp_path)
+    finally:
+        window.close()
+
+
 def test_activate_session_migrates_temp_outputs_to_session_paths(tmp_path: Path, monkeypatch, qapp):
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg_config"))
     root = tmp_path / "session_root"
@@ -350,11 +386,15 @@ def test_session_icc_catalog_drops_generated_profiles_outside_project_root(tmp_p
         assert loaded["path"] == str(loaded_profile)
         assert loaded["profile_report_path"] == ""
 
-        serialized = json.dumps(load_session(root))
-        assert str(outside_profile) not in serialized
-        assert str(outside_report) not in serialized
-        assert str(loaded_profile) in serialized
-        assert str(loaded_report) not in serialized
+        saved_profiles = load_session(root)["state"]["icc_profiles"]
+        saved_paths = {profile.get("path") for profile in saved_profiles if isinstance(profile, dict)}
+        saved_report_paths = {
+            profile.get("profile_report_path") for profile in saved_profiles if isinstance(profile, dict)
+        }
+        assert str(outside_profile) not in saved_paths
+        assert str(outside_report) not in saved_report_paths
+        assert str(loaded_profile) in saved_paths
+        assert str(loaded_report) not in saved_report_paths
     finally:
         window.close()
 
@@ -3840,6 +3880,23 @@ def test_colprof_args_default_to_restricted_input_gamut(qapp):
         window.close()
 
 
+def test_recommended_colprof_preset_restores_conservative_colorchecker_defaults(qapp):
+    window = ICCRawMainWindow()
+    try:
+        window._apply_recipe_to_controls(Recipe(argyll_colprof_args=["-qh", "-al"]))
+        assert window._uses_risky_colorchecker24_colprof_model()
+
+        window._set_recommended_colprof_args()
+
+        assert window.combo_profile_quality.currentData() == "m"
+        assert window.combo_profile_algo.currentData() == "-as"
+        assert window.edit_colprof_args.text() == "-u -R"
+        assert window._build_colprof_args() == ["-qm", "-as", "-u", "-R"]
+        assert not window._uses_risky_colorchecker24_colprof_model()
+    finally:
+        window.close()
+
+
 def test_loading_or_using_icc_profile_enables_apply_profile(tmp_path: Path, monkeypatch, qapp):
     root = tmp_path / "session"
     payload = create_session(root, name="Sesion perfiles")
@@ -3895,6 +3952,11 @@ def test_manual_menu_load_allows_rejected_session_icc(tmp_path: Path, monkeypatc
             "warning",
             lambda *_args, **_kwargs: pytest.fail("No debe bloquear un ICC rejected elegido manualmente"),
         )
+        monkeypatch.setattr(
+            QtWidgets.QMessageBox,
+            "question",
+            lambda *_args, **_kwargs: QtWidgets.QMessageBox.Yes,
+        )
 
         window._menu_load_profile()
 
@@ -3921,6 +3983,11 @@ def test_use_generated_profile_allows_rejected_manual_activation(tmp_path: Path,
             "warning",
             lambda *_args, **_kwargs: pytest.fail("No debe bloquear un ICC generated rejected elegido manualmente"),
         )
+        monkeypatch.setattr(
+            QtWidgets.QMessageBox,
+            "question",
+            lambda *_args, **_kwargs: QtWidgets.QMessageBox.Yes,
+        )
 
         window._use_generated_profile_as_active()
 
@@ -3930,6 +3997,33 @@ def test_use_generated_profile_allows_rejected_manual_activation(tmp_path: Path,
         saved_state = load_session(root)["state"]
         assert saved_state["profile_active_path"] == str(profile)
         assert saved_state["active_icc_profile_id"] == window._active_icc_profile_id
+    finally:
+        window.close()
+
+
+def test_use_generated_profile_rejected_manual_activation_requires_confirmation(tmp_path: Path, monkeypatch, qapp):
+    root = tmp_path / "session"
+    payload = create_session(root, name="Sesion perfiles")
+
+    window = ICCRawMainWindow()
+    try:
+        window._activate_session(root, payload)
+        profile = Path(window.profile_out_path_edit.text())
+        profile.parent.mkdir(parents=True, exist_ok=True)
+        profile.write_bytes(b"generated profile" * 32)
+        profile.with_suffix(".profile.json").write_text('{"profile_status": "rejected"}', encoding="utf-8")
+        monkeypatch.setattr(
+            QtWidgets.QMessageBox,
+            "question",
+            lambda *_args, **_kwargs: QtWidgets.QMessageBox.No,
+        )
+
+        window._use_generated_profile_as_active()
+
+        assert not window.chk_apply_profile.isChecked()
+        assert window._active_session_icc_for_settings() is None
+        saved_state = load_session(root)["state"]
+        assert saved_state["profile_active_path"] == ""
     finally:
         window.close()
 
@@ -4013,7 +4107,7 @@ def test_profile_generation_versions_session_icc_outputs_and_registers_profile(t
             "profile": {"error_summary": {}, "patch_errors": []},
         }
 
-    def run_task(_label, task, on_success):
+    def run_task(_label, task, on_success, *, on_progress=None):
         on_success(task())
 
     monkeypatch.setattr(gui_module.ReferenceCatalog, "from_path", staticmethod(lambda _path: object()))
@@ -4082,7 +4176,7 @@ def test_profile_report_with_high_training_error_is_not_activable(tmp_path: Path
         window.close()
 
 
-def test_rejected_session_icc_remains_selectable_for_manual_activation(tmp_path: Path, qapp):
+def test_rejected_session_icc_remains_selectable_for_manual_activation(tmp_path: Path, monkeypatch, qapp):
     root = tmp_path / "session"
     payload = create_session(root, name="perfil_manual")
 
@@ -4110,6 +4204,11 @@ def test_rejected_session_icc_remains_selectable_for_manual_activation(tmp_path:
         assert window.icc_profile_combo.isEnabled()
         assert not window._profile_can_be_active(profile)
         assert window._profile_can_be_active(profile, allow_rejected=True)
+        monkeypatch.setattr(
+            QtWidgets.QMessageBox,
+            "question",
+            lambda *_args, **_kwargs: QtWidgets.QMessageBox.Yes,
+        )
 
         index = window.icc_profile_combo.findData(profile_id)
         assert index >= 0
@@ -4117,6 +4216,53 @@ def test_rejected_session_icc_remains_selectable_for_manual_activation(tmp_path:
 
         assert window.radio_icc_existing.isChecked()
         assert window._paths_equivalent(Path(window.path_profile_active.text()), profile)
+        assert window._active_icc_profile_id == profile_id
+        assert window._active_session_icc_for_settings() == profile
+    finally:
+        window.close()
+
+
+def test_selecting_generated_session_icc_assigns_profile_to_active_raw_sidecar(tmp_path: Path, qapp):
+    root = tmp_path / "session"
+    payload = create_session(root, name="perfil_sesion")
+    raw = root / "01_ORG" / "target.NEF"
+    raw.parent.mkdir(parents=True, exist_ok=True)
+    raw.write_bytes(b"raw bytes")
+
+    window = ICCRawMainWindow()
+    try:
+        window._activate_session(root, payload)
+        window._selected_file = raw
+        profile = root / "00_configuraciones" / "profiles" / "perfil_sesion.icc"
+        profile.parent.mkdir(parents=True, exist_ok=True)
+        profile.write_bytes(b"fake icc profile bytes" * 16)
+        profile.with_suffix(".profile.json").write_text('{"profile_status": "validated"}', encoding="utf-8")
+        profile_id = window._register_icc_profile(
+            {
+                "name": "perfil_sesion",
+                "source": "generated",
+                "path": str(profile),
+                "status": "validated",
+            },
+            activate=False,
+        )
+
+        index = window.icc_profile_combo.findData(profile_id)
+        assert index >= 0
+        assert window.icc_profile_combo.currentData() != profile_id
+        window.icc_profile_combo.setCurrentIndex(index)
+
+        sidecar = load_raw_sidecar(raw)
+        color = sidecar["color_management"]
+        stored_profile = window._session_stored_path(color["icc_profile_path"])
+        assert stored_profile is not None
+        assert window._paths_equivalent(stored_profile, profile)
+        assert color["mode"] == "camera_rgb_with_input_icc"
+        assert color["icc_profile_role"] == "session_input_icc"
+        assert sidecar["adjustment_profiles"]["icc"]["id"] == profile_id
+        assert sidecar["adjustment_profiles"]["icc"]["name"] == "perfil_sesion"
+        assert sidecar["adjustment_profiles"]["icc"]["kind"] == "icc"
+        assert sidecar["recipe"]["output_space"] == "scene_linear_camera_rgb"
         assert window._active_icc_profile_id == profile_id
         assert window._active_session_icc_for_settings() == profile
     finally:
@@ -4329,7 +4475,7 @@ def test_generate_profile_prefers_pending_manual_points_over_stale_chart_selecti
             "profile": {"error_summary": {}, "patch_errors": []},
         }
 
-    def run_task(_label, task, on_success):
+    def run_task(_label, task, on_success, *, on_progress=None):
         on_success(task())
 
     monkeypatch.setattr(gui_module.ReferenceCatalog, "from_path", staticmethod(lambda _path: object()))
@@ -4432,7 +4578,7 @@ def test_generate_profile_draft_does_not_auto_activate(tmp_path: Path, monkeypat
             },
         }
 
-    def run_task(_label, task, on_success):
+    def run_task(_label, task, on_success, *, on_progress=None):
         on_success(task())
 
     monkeypatch.setattr(gui_module.ReferenceCatalog, "from_path", staticmethod(lambda _path: object()))
@@ -5982,7 +6128,7 @@ def test_generate_profile_uses_explicit_color_reference_selection(tmp_path: Path
         captured.update(kwargs)
         return {"chart_captures_used": 2}
 
-    def run_task(_label, task, _on_success):
+    def run_task(_label, task, _on_success, *, on_progress=None):
         captured["payload"] = task()
 
     monkeypatch.setattr(gui_module.ReferenceCatalog, "from_path", staticmethod(lambda _path: object()))
@@ -7214,6 +7360,34 @@ def test_global_progress_panel_tracks_preview_load_threshold(tmp_path: Path, qap
         assert "Vista previa cargada" in window.global_status_label.text()
         assert "1.4s" in window.global_progress_time_label.text()
         assert window.global_progress.value() == 100
+    finally:
+        window.close()
+
+
+def test_profile_generation_progress_updates_global_panel(qapp):
+    window = ICCRawMainWindow()
+    try:
+        window._monitor_task_start("Generacion de perfil avanzado con carta + ICC")
+
+        window._apply_profile_generation_progress(
+            {
+                "progress": 42,
+                "phase": "Remuestreando carta",
+                "detail": "1/2 capturas procesadas: carta_01.tiff",
+                "current": 1,
+                "total": 2,
+            }
+        )
+
+        assert window.monitor_progress.minimum() == 0
+        assert window.monitor_progress.maximum() == 100
+        assert window.monitor_progress.value() == 42
+        assert window.global_progress.minimum() == 0
+        assert window.global_progress.maximum() == 100
+        assert window.global_progress.value() == 42
+        assert "Avance: 42%" in window.global_progress_time_label.text()
+        assert "Remuestreando carta" in window.global_progress_phase_label.text()
+        assert "carta_01.tiff" in window.global_progress_phase_label.text()
     finally:
         window.close()
 

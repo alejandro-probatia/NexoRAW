@@ -8,7 +8,19 @@ class SessionPathsMixin:
         suggested = (self._current_dir / "probraw_session").resolve()
         self.session_root_path.setText(str(suggested))
         self.session_name_edit.setText(suggested.name)
-        self._populate_session_directory_fields(self._session_paths_from_root(suggested))
+        paths = self._session_paths_from_root(suggested)
+        self._populate_session_directory_fields(paths)
+        defaults = self._session_default_outputs(paths=paths, session_name=suggested.name)
+        self.profile_out_path_edit.setText(str(defaults["profile_out"]))
+        self.path_profile_out.setText(str(defaults["profile_out"]))
+        self.profile_report_out.setText(str(defaults["profile_report"]))
+        self.profile_workdir.setText(str(defaults["workdir"]))
+        self.develop_profile_out.setText(str(defaults["development_profile"]))
+        self.calibrated_recipe_out.setText(str(defaults["calibrated_recipe"]))
+        self.path_recipe.setText(str(defaults["recipe"]))
+        self.batch_out_dir.setText(str(defaults["tiff_dir"]))
+        if hasattr(self, "path_preview_png"):
+            self.path_preview_png.setText(str(defaults["preview"]))
 
     def _session_paths_from_root(self, root: Path) -> dict[str, Path]:
         absolute = root.expanduser().resolve()
@@ -78,7 +90,7 @@ class SessionPathsMixin:
         if not text:
             return None
         candidate = Path(text).expanduser()
-        if candidate.is_absolute() or self._active_session_root is None:
+        if candidate.is_absolute() or candidate.anchor or self._active_session_root is None:
             return candidate
         return self._active_session_root / candidate
 

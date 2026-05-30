@@ -191,12 +191,38 @@ TIFF_COMPRESSION_OPTIONS = [
 ]
 
 PROFILE_ALGO_OPTIONS = [
-    ("shaper+matrix (-as)", "-as"),
-    ("gamma+matrix (-ag)", "-ag"),
-    ("matrix only (-am)", "-am"),
-    ("Lab cLUT (-al)", "-al"),
-    ("XYZ cLUT (-ax)", "-ax"),
+    ("Recomendado: matriz + curvas por canal (-as)", "-as"),
+    ("Matriz + gamma comun (-ag)", "-ag"),
+    ("Solo matriz colorimetrica (-am)", "-am"),
+    ("Avanzado: tabla Lab cLUT (-al)", "-al"),
+    ("Avanzado: tabla XYZ cLUT (-ax)", "-ax"),
 ]
+
+PROFILE_ALGO_HELP = {
+    "-as": (
+        "Shaper + matrix. Ajusta una matriz 3x3 de camara a XYZ/Lab y curvas "
+        "tonales por canal. Es el modo conservador para ColorChecker 24: reduce "
+        "el riesgo de sobreajuste, clipping y extrapolaciones agresivas en altas luces."
+    ),
+    "-ag": (
+        "Gamma + matrix. Similar al modo recomendado, pero usa una respuesta tonal "
+        "mas simple. Puede servir para camaras muy regulares, aunque suele ser menos "
+        "flexible que shaper + matrix."
+    ),
+    "-am": (
+        "Matrix only. Solo calcula la matriz colorimetrica; no modela la respuesta "
+        "tonal. Es util para pruebas tecnicas, no como opcion general de perfilado RAW."
+    ),
+    "-al": (
+        "Lab cLUT. Genera una tabla de correccion en Lab. Requiere muchas muestras "
+        "bien distribuidas; con ColorChecker 24 puede sobreajustar y empujar el rango "
+        "a los extremos."
+    ),
+    "-ax": (
+        "XYZ cLUT. Genera una tabla de correccion en XYZ. Es una opcion avanzada con "
+        "riesgo similar a Lab cLUT si hay pocos parches o una carta generica."
+    ),
+}
 
 PROFILE_QUALITY_OPTIONS = [
     ("Low", "l"),
@@ -204,6 +230,36 @@ PROFILE_QUALITY_OPTIONS = [
     ("High", "h"),
     ("Ultra", "u"),
 ]
+
+PROFILE_QUALITY_HELP = {
+    "l": "Baja. Mas rapida; adecuada solo para pruebas.",
+    "m": "Media. Equilibrio recomendado para perfiles de sesion con ColorChecker 24.",
+    "h": "Alta. Mayor coste de calculo; util cuando hay buena senal y validacion.",
+    "u": "Ultra. Coste alto; normalmente innecesaria con una ColorChecker 24.",
+}
+
+RECOMMENDED_COLPROF_EXTRA_ARGS = "-u -R"
+
+COLPROF_OPTIONS_HELP = (
+    "Tipo de perfil ICC:\n"
+    "- Matriz + curvas por canal (-as): recomendado para ColorChecker 24. Modela una "
+    "matriz camara->PCS y curvas tonales por canal con bajo riesgo de sobreajuste.\n"
+    "- Matriz + gamma comun (-ag): modelo matricial con respuesta tonal mas simple.\n"
+    "- Solo matriz (-am): prueba tecnica; no modela respuesta tonal.\n"
+    "- Lab cLUT (-al): tabla en Lab. Argyll la usa por defecto si no se fuerza otro "
+    "modelo, pero con 24 parches puede interpolar de forma agresiva.\n"
+    "- XYZ cLUT (-ax): tabla en XYZ; tambien avanzada y dependiente de muchas muestras.\n\n"
+    "Calidad colprof:\n"
+    "- Low: rapido para pruebas.\n"
+    "- Medium: recomendado por defecto.\n"
+    "- High/Ultra: mas calculo; util solo si la captura y la validacion son solidas.\n\n"
+    "Argumentos extra recomendados:\n"
+    "- -u: en perfiles de entrada, escala automaticamente el punto blanco para permitir "
+    "extrapolacion.\n"
+    "- -R: restringe blanco <= 1.0 y mantiene negro/primarios positivos.\n\n"
+    "Si aparecen avisos de altas luces, evita cLUT con ColorChecker 24 y revisa "
+    "exposicion, blancos y referencia Lab antes de endurecer la calidad."
+)
 
 PROFILE_FORMAT_OPTIONS = [".icc", ".icm"]
 

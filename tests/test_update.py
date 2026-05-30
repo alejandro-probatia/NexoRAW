@@ -4,6 +4,7 @@ from dataclasses import asdict
 import hashlib
 import io
 import json
+import os
 
 import probraw.update as update_mod
 
@@ -225,6 +226,78 @@ def test_download_update_asset_rejects_invalid_checksum_body(monkeypatch, tmp_pa
         raise AssertionError("invalid checksum body should fail closed")
 
 
+def test_download_update_asset_rejects_unsafe_asset_name(tmp_path) -> None:
+    check = update_mod.UpdateCheckResult(
+        current_version="0.2.8",
+        latest_version="0.2.9",
+        update_available=True,
+        is_latest=False,
+        repository="example/repo",
+        release_url="https://example.com/release",
+        api_url="https://example.com/api",
+        asset_url="https://example.com/ProbRAW-0.2.9-Setup.exe",
+        asset_name="../escaped.exe",
+        asset_size=None,
+        asset_digest=None,
+        checksum_asset_url=None,
+        checksum_asset_name=None,
+        published_at="2026-04-27T10:00:00Z",
+    )
+
+    try:
+        update_mod.download_update_asset(check, target_dir=tmp_path, verify_checksum=False)
+    except RuntimeError as exc:
+        assert "no seguro" in str(exc)
+    else:  # pragma: no cover
+        raise AssertionError("unsafe asset name should fail closed")
+
+    assert not (tmp_path.parent / "escaped.exe").exists()
+
+
+def test_download_update_asset_rejects_unsafe_checksum_name(monkeypatch, tmp_path) -> None:
+    installer = b"fake installer"
+    digest = hashlib.sha256(installer).hexdigest()
+    check = update_mod.UpdateCheckResult(
+        current_version="0.2.8",
+        latest_version="0.2.9",
+        update_available=True,
+        is_latest=False,
+        repository="example/repo",
+        release_url="https://example.com/release",
+        api_url="https://example.com/api",
+        asset_url="https://example.com/ProbRAW-0.2.9-Setup.exe",
+        asset_name="ProbRAW-0.2.9-Setup.exe",
+        asset_size=len(installer),
+        asset_digest=None,
+        checksum_asset_url="https://example.com/ProbRAW-0.2.9-Setup.exe.sha256",
+        checksum_asset_name="../escaped.sha256",
+        published_at="2026-04-27T10:00:00Z",
+    )
+
+    class _FakeResponse(io.BytesIO):
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    def fake_open(req, **_kwargs):
+        if req.full_url.endswith(".sha256"):
+            return _FakeResponse(f"{digest}  ProbRAW-0.2.9-Setup.exe\n".encode("utf-8"))
+        return _FakeResponse(installer)
+
+    monkeypatch.setattr(update_mod.request, "urlopen", fake_open)
+
+    try:
+        update_mod.download_update_asset(check, target_dir=tmp_path)
+    except RuntimeError as exc:
+        assert "no seguro" in str(exc)
+    else:  # pragma: no cover
+        raise AssertionError("unsafe checksum name should fail closed")
+
+    assert not (tmp_path.parent / "escaped.sha256").exists()
+
+
 def test_pick_asset_fallback_skips_metadata_assets(monkeypatch) -> None:
     monkeypatch.setattr(update_mod.sys, "platform", "win32")
     assets = [
@@ -250,6 +323,41 @@ def test_pick_asset_fallback_skips_metadata_assets(monkeypatch) -> None:
     assert name == "ProbRAW-portable.zip"
     assert url == "https://example.com/ProbRAW-portable.zip"
     assert size == 123
+
+
+def test_pick_asset_windows_does_not_fallback_to_linux_package(monkeypatch) -> None:
+    monkeypatch.setattr(update_mod.sys, "platform", "win32")
+    assets = [
+        {
+            "name": "probraw_0.4.0_amd64.deb",
+            "browser_download_url": "https://example.com/probraw_0.4.0_amd64.deb",
+            "size": 123,
+        },
+        {
+            "name": "probraw-0.4.0.tar.gz",
+            "browser_download_url": "https://example.com/probraw-0.4.0.tar.gz",
+            "size": 456,
+        },
+    ]
+
+    name, url, size, digest, checksum_name, checksum_url = update_mod._pick_asset(assets)
+
+    assert (name, url, size, digest, checksum_name, checksum_url) == (None, None, None, None, None, None)
+
+
+def test_pick_asset_macos_does_not_use_python_source_tarball(monkeypatch) -> None:
+    monkeypatch.setattr(update_mod.sys, "platform", "darwin")
+    assets = [
+        {
+            "name": "probraw-0.4.0.tar.gz",
+            "browser_download_url": "https://example.com/probraw-0.4.0.tar.gz",
+            "size": 123,
+        },
+    ]
+
+    name, url, size, digest, checksum_name, checksum_url = update_mod._pick_asset(assets)
+
+    assert (name, url, size, digest, checksum_name, checksum_url) == (None, None, None, None, None, None)
 
 
 def test_pick_asset_prefers_macos_zip_over_source_tarball(monkeypatch) -> None:
@@ -318,6 +426,26 @@ def test_pick_asset_prefers_arch_package_over_python_source_tarball(monkeypatch)
     assert checksum_url == "https://example.com/probraw-0.4.0-1-x86_64.pkg.tar.zst.sha256"
 
 
+def test_pick_asset_linux_ignores_python_source_assets(monkeypatch) -> None:
+    monkeypatch.setattr(update_mod.sys, "platform", "linux")
+    assets = [
+        {
+            "name": "probraw-0.4.0-py3-none-any.whl",
+            "browser_download_url": "https://example.com/probraw-0.4.0-py3-none-any.whl",
+            "size": 10,
+        },
+        {
+            "name": "probraw-0.4.0.tar.gz",
+            "browser_download_url": "https://example.com/probraw-0.4.0.tar.gz",
+            "size": 30,
+        },
+    ]
+
+    name, url, size, digest, checksum_name, checksum_url = update_mod._pick_asset(assets)
+
+    assert (name, url, size, digest, checksum_name, checksum_url) == (None, None, None, None, None, None)
+
+
 def test_launch_installer_uses_pkexec_pacman_for_arch_package(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr(update_mod.sys, "platform", "linux")
     monkeypatch.setattr(update_mod.shutil, "which", lambda name: f"/usr/bin/{name}" if name in {"pacman", "pkexec"} else None)
@@ -332,6 +460,42 @@ def test_launch_installer_uses_pkexec_pacman_for_arch_package(monkeypatch, tmp_p
     assert calls == [["/usr/bin/pkexec", "pacman", "-U", "--noconfirm", str(package.resolve())]]
 
 
+def test_launch_installer_uses_pkexec_apt_for_debian_package(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(update_mod.sys, "platform", "linux")
+    monkeypatch.setattr(
+        update_mod.shutil,
+        "which",
+        lambda name: f"/usr/bin/{name}" if name in {"apt", "pkexec"} else None,
+    )
+    monkeypatch.setattr(update_mod.os, "geteuid", lambda: 1000, raising=False)
+    calls = []
+    monkeypatch.setattr(update_mod.subprocess, "Popen", lambda args: calls.append(args))
+    package = tmp_path / "probraw_0.4.0_amd64.deb"
+    package.write_bytes(b"deb")
+
+    update_mod.launch_installer(package, silent=True)
+
+    assert calls == [["/usr/bin/pkexec", "/usr/bin/apt", "install", "-y", str(package.resolve())]]
+
+
+def test_launch_installer_uses_pkexec_dnf_for_rpm_package(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(update_mod.sys, "platform", "linux")
+    monkeypatch.setattr(
+        update_mod.shutil,
+        "which",
+        lambda name: f"/usr/bin/{name}" if name in {"dnf", "pkexec"} else None,
+    )
+    monkeypatch.setattr(update_mod.os, "geteuid", lambda: 1000, raising=False)
+    calls = []
+    monkeypatch.setattr(update_mod.subprocess, "Popen", lambda args: calls.append(args))
+    package = tmp_path / "probraw-0.4.0-1.x86_64.rpm"
+    package.write_bytes(b"rpm")
+
+    update_mod.launch_installer(package, silent=True)
+
+    assert calls == [["/usr/bin/pkexec", "/usr/bin/dnf", "install", "-y", str(package.resolve())]]
+
+
 def test_launch_installer_runs_appimage_directly(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr(update_mod.sys, "platform", "linux")
     calls = []
@@ -342,4 +506,5 @@ def test_launch_installer_runs_appimage_directly(monkeypatch, tmp_path) -> None:
     update_mod.launch_installer(appimage)
 
     assert calls == [[str(appimage.resolve())]]
-    assert appimage.stat().st_mode & 0o111
+    if os.name != "nt":
+        assert appimage.stat().st_mode & 0o111

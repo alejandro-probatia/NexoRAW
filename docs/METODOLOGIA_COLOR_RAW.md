@@ -8,7 +8,7 @@ monitor ICC profiles.
 
 The current decision is to keep a scientific ICC-centered workflow. DCP
 integration was evaluated as a possible future direction, but it is not active
-scope for the 0.3 series because it adds complexity and can mix colorimetric
+scope for the 0.4 series because it adds complexity and can mix colorimetric
 decisions with appearance decisions.
 
 ## References
@@ -84,7 +84,7 @@ Current implementation:
 
 ## Per-file Development Profile
 
-ProbRAW 0.2 treats parametric development as a property assigned to each RAW file
+ProbRAW treats parametric development as a property assigned to each RAW file
 through its backpack:
 
 ```text
@@ -122,6 +122,43 @@ When a valid chart capture exists:
 
 The advanced profile can be copied to images captured under comparable camera,
 lens, illuminant, base exposure and recipe conditions.
+
+## ICC Profile QA State
+
+ProbRAW must allow profile generation even when the working case is not ideal.
+Methodological checks become state, warning or recommendation, not a hard block,
+except when there are no valid chart samples or when available independent
+validation proves the colorimetric error is outside threshold.
+
+Operational recommendations:
+
+- when more than one chart capture exists, reserve one for independent
+  validation when possible;
+- with only one capture, generate the ICC as `draft` and record the missing
+  independent validation;
+- with ColorChecker 24, default to `shaper+matrix (-as)`; cLUT profiles remain
+  available as an advanced option, but they are documented as an overfit risk
+  without a chart with many more patches;
+- review the neutral row separately: a*/b* residuals, casts, exposure and light
+  uniformity can reveal issues that a mean DeltaE does not show;
+- for critical work, prefer measured D50 Lab values for the physical chart in
+  use, including serial, date and instrument, instead of a generic ColorChecker
+  reference.
+
+States:
+
+- `validated`: usable independent validation exists and passes thresholds;
+- `draft`: the profile was generated, but independent validation is missing or
+  inconclusive; the operator may activate it manually;
+- `rejected`: available validation or training error exceeds the configured
+  thresholds; it never autoactivates and can only be activated with explicit
+  confirmation for diagnosis or comparison;
+- `expired`: the validated profile exceeded its configured validity window.
+
+Profile metadata must report the real model requested from ArgyllCMS:
+`argyll_shaper_matrix`, `argyll_gamma_matrix`, `argyll_matrix`,
+`argyll_lab_clut`, `argyll_xyz_clut` or `argyll_custom`. The 3x3 matrix stored in
+the report is diagnostic when the real ICC was generated with a cLUT.
 
 ## Lab Sample Analysis
 

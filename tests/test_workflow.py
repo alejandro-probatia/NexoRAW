@@ -314,6 +314,7 @@ def test_auto_generate_profile_from_charts_only(tmp_path: Path, monkeypatch):
 
     profile_out = tmp_path / "profile_only.icc"
     profile_report = tmp_path / "profile_only_report.json"
+    progress_events: list[dict[str, object]] = []
 
     result = auto_generate_profile_from_charts(
         chart_captures_dir=charts_dir,
@@ -327,6 +328,7 @@ def test_auto_generate_profile_from_charts_only(tmp_path: Path, monkeypatch):
         allow_fallback_detection=True,
         qa_mean_delta_e2000_max=999.0,
         qa_max_delta_e2000_max=999.0,
+        progress_callback=progress_events.append,
     )
 
     assert profile_out.exists()
@@ -338,6 +340,10 @@ def test_auto_generate_profile_from_charts_only(tmp_path: Path, monkeypatch):
     assert any(item["id"] == "independent_validation_recommended" for item in result["workflow_recommendations"])
     assert read_json(profile_report)["metadata"]["profile_status"] == "draft"
     assert read_json(profile_report)["metadata"]["workflow_recommendations"] == result["workflow_recommendations"]
+    assert progress_events
+    assert progress_events[-1]["progress"] == 100
+    assert "Muestreando carta" in {event["phase"] for event in progress_events}
+    assert "Construyendo ICC" in {event["phase"] for event in progress_events}
 
 
 def test_auto_generate_profile_from_explicit_chart_files(tmp_path: Path, monkeypatch):

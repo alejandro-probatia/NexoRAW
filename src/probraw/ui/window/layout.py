@@ -76,9 +76,11 @@ class LayoutMixin:
         self.global_status_label = QtWidgets.QLabel(self.tr("Listo"))
         self.global_status_label.setWordWrap(True)
         self.global_status_label.setStyleSheet("font-size: 12px; color: #f0f0f0; font-weight: 600;")
+        self.global_status_label.setToolTip(self.tr("Estado de la operacion principal"))
         self.global_progress_time_label = QtWidgets.QLabel(self.tr("Tiempo: --"))
         self.global_progress_time_label.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
         self.global_progress_time_label.setStyleSheet("font-size: 11px; color: #d4d4d4;")
+        self.global_progress_time_label.setToolTip(self.tr("Tiempo transcurrido o estimado"))
         task_top.addWidget(self.global_status_label, 2)
         task_top.addWidget(self.global_progress_time_label, 1)
         task_bar.addLayout(task_top)
@@ -88,11 +90,13 @@ class LayoutMixin:
         self.global_progress.setValue(0)
         self.global_progress.setTextVisible(False)
         self.global_progress.setMaximumHeight(8)
+        self.global_progress.setToolTip(self.tr("Progreso de la tarea en segundo plano"))
         task_bar.addWidget(self.global_progress)
 
         self.global_progress_phase_label = QtWidgets.QLabel(self.tr("Sin operación en curso"))
         self.global_progress_phase_label.setWordWrap(True)
         self.global_progress_phase_label.setStyleSheet("font-size: 11px; color: #a6a6a6;")
+        self.global_progress_phase_label.setToolTip(self.tr("Fase actual de la operacion"))
         task_bar.addWidget(self.global_progress_phase_label)
         root_layout.addWidget(task_panel)
 
@@ -104,6 +108,9 @@ class LayoutMixin:
         self.main_tabs.addTab(session_tab, self.tr("1. Sesión"))
         self.main_tabs.addTab(raw_tab, self.tr("2. Ajustar / Aplicar"))
         self.main_tabs.addTab(queue_tab, self.tr("3. Cola de Revelado"))
+        self.main_tabs.setTabToolTip(0, self.tr("Crear, abrir y revisar una sesion de trabajo"))
+        self.main_tabs.setTabToolTip(1, self.tr("Seleccionar imagen, ajustar color, ICC, nitidez y exportacion"))
+        self.main_tabs.setTabToolTip(2, self.tr("Preparar y ejecutar revelados por lote"))
         self.main_tabs.currentChanged.connect(self._on_mtf_context_visibility_changed)
 
         root_layout.addWidget(self.main_tabs, 1)
@@ -375,20 +382,26 @@ class LayoutMixin:
         grid = QtWidgets.QGridLayout(session_box)
 
         self.session_root_path = QtWidgets.QLineEdit(str(self._current_dir / "probraw_session"))
+        self.session_root_path.setPlaceholderText(self.tr("Directorio raiz del proyecto"))
+        self.session_root_path.setToolTip(self.tr("Carpeta que contiene la estructura persistente de la sesion"))
         self._add_path_row(grid, 0, self.tr("Directorio raíz de sesión"), self.session_root_path, file_mode=False, save_mode=False, dir_mode=True)
         self.session_root_path.editingFinished.connect(self._on_session_root_edited)
         self.session_root_path.textChanged.connect(lambda _text: self._session_root_update_timer.start(150))
 
         grid.addWidget(QtWidgets.QLabel(self.tr("Nombre de sesión")), 1, 0)
         self.session_name_edit = QtWidgets.QLineEdit("")
+        self.session_name_edit.setPlaceholderText(self.tr("Nombre visible de la sesion"))
+        self.session_name_edit.setToolTip(self.tr("Nombre que se guardara en session.json y en la lista de recientes"))
         grid.addWidget(self.session_name_edit, 1, 1, 1, 2)
 
         grid.addWidget(QtWidgets.QLabel(self.tr("Condiciones de iluminación")), 2, 0)
         self.session_illumination_edit = QtWidgets.QLineEdit("")
+        self.session_illumination_edit.setPlaceholderText(self.tr("Iluminante, entorno y estabilidad de la luz"))
         grid.addWidget(self.session_illumination_edit, 2, 1, 1, 2)
 
         grid.addWidget(QtWidgets.QLabel(self.tr("Notas de toma")), 3, 0)
         self.session_capture_edit = QtWidgets.QLineEdit("")
+        self.session_capture_edit.setPlaceholderText(self.tr("Camara, optica, carta, distancia o incidencias"))
         grid.addWidget(self.session_capture_edit, 3, 1, 1, 2)
 
         row = QtWidgets.QHBoxLayout()
@@ -409,6 +422,7 @@ class LayoutMixin:
         recent_grid = QtWidgets.QGridLayout(recent_box)
         self.recent_sessions_combo = QtWidgets.QComboBox()
         self.recent_sessions_combo.setMinimumContentsLength(32)
+        self.recent_sessions_combo.setToolTip(self.tr("Sesiones abiertas recientemente en este equipo"))
         recent_grid.addWidget(self.recent_sessions_combo, 0, 0, 1, 2)
         recent_grid.addWidget(self._button(self.tr("Abrir reciente"), self._open_selected_recent_session), 0, 2)
         recent_grid.addWidget(self._button(self.tr("Actualizar lista"), self._refresh_recent_sessions_combo), 1, 0, 1, 3)
@@ -456,6 +470,15 @@ class LayoutMixin:
         self.session_dir_config.setReadOnly(True)
         self.session_dir_work = QtWidgets.QLineEdit("")
         self.session_dir_work.setReadOnly(True)
+        for directory_field in (
+            self.session_dir_charts,
+            self.session_dir_raw,
+            self.session_dir_profiles,
+            self.session_dir_exports,
+            self.session_dir_config,
+            self.session_dir_work,
+        ):
+            directory_field.setToolTip(self.tr("Ruta gestionada por la sesion"))
 
         dirs_grid.addWidget(QtWidgets.QLabel(self.tr("00_configuraciones")), 0, 0)
         dirs_grid.addWidget(self.session_dir_config, 0, 1)
@@ -534,20 +557,21 @@ class LayoutMixin:
         self.reference_status_label.setStyleSheet("font-size: 12px; color: #d8d8d8;")
         grid.addWidget(self.reference_status_label, 5, 0, 1, 3)
 
-        self.profile_out_path_edit = QtWidgets.QLineEdit("/tmp/camera_profile_gui.icc")
+        temp_dir = Path(tempfile.gettempdir())
+        self.profile_out_path_edit = QtWidgets.QLineEdit(str(temp_dir / "camera_profile_gui.icc"))
         self.path_profile_out = self.profile_out_path_edit
         self._add_path_row(grid, 6, self.tr("Perfil ICC de entrada"), self.profile_out_path_edit, file_mode=False, save_mode=True, dir_mode=False)
 
-        self.profile_report_out = QtWidgets.QLineEdit("/tmp/profile_report_gui.json")
+        self.profile_report_out = QtWidgets.QLineEdit(str(temp_dir / "profile_report_gui.json"))
         self._hide_row_widgets(self._add_path_row(grid, 7, self.tr("Reporte perfil JSON"), self.profile_report_out, file_mode=False, save_mode=True, dir_mode=False))
 
-        self.profile_workdir = QtWidgets.QLineEdit("/tmp/probraw_profile_work")
+        self.profile_workdir = QtWidgets.QLineEdit(str(temp_dir / "probraw_profile_work"))
         self._hide_row_widgets(self._add_path_row(grid, 8, self.tr("Directorio artefactos"), self.profile_workdir, file_mode=False, save_mode=False, dir_mode=True))
 
-        self.develop_profile_out = QtWidgets.QLineEdit("/tmp/development_profile_gui.json")
+        self.develop_profile_out = QtWidgets.QLineEdit(str(temp_dir / "development_profile_gui.json"))
         self._hide_row_widgets(self._add_path_row(grid, 9, self.tr("Perfil de ajuste avanzado JSON"), self.develop_profile_out, file_mode=False, save_mode=True, dir_mode=False))
 
-        self.calibrated_recipe_out = QtWidgets.QLineEdit("/tmp/recipe_calibrated_gui.yml")
+        self.calibrated_recipe_out = QtWidgets.QLineEdit(str(temp_dir / "recipe_calibrated_gui.yml"))
         self._hide_row_widgets(self._add_path_row(grid, 10, self.tr("Receta calibrada"), self.calibrated_recipe_out, file_mode=False, save_mode=True, dir_mode=False))
 
         grid.addWidget(QtWidgets.QLabel(self.tr("Tipo de carta")), 11, 0)
@@ -576,31 +600,49 @@ class LayoutMixin:
         self.combo_profile_algo = QtWidgets.QComboBox()
         for label, flag in PROFILE_ALGO_OPTIONS:
             self.combo_profile_algo.addItem(self.tr(label), flag)
+            self.combo_profile_algo.setItemData(
+                self.combo_profile_algo.count() - 1,
+                self.tr(PROFILE_ALGO_HELP.get(flag, "")),
+                QtCore.Qt.ToolTipRole,
+            )
+        self.combo_profile_algo.setToolTip(self.tr(COLPROF_OPTIONS_HELP))
         grid.addWidget(self.combo_profile_algo, 15, 1, 1, 2)
 
         grid.addWidget(QtWidgets.QLabel(self.tr("Calidad colprof")), 16, 0)
         self.combo_profile_quality = QtWidgets.QComboBox()
         for label, q in PROFILE_QUALITY_OPTIONS:
             self.combo_profile_quality.addItem(self.tr(label), q)
+            self.combo_profile_quality.setItemData(
+                self.combo_profile_quality.count() - 1,
+                self.tr(PROFILE_QUALITY_HELP.get(q, "")),
+                QtCore.Qt.ToolTipRole,
+            )
         self.combo_profile_quality.setCurrentIndex(1)
+        self.combo_profile_quality.setToolTip(self.tr("Precision de calculo de ArgyllCMS. Medium es el equilibrio recomendado."))
         grid.addWidget(self.combo_profile_quality, 16, 1, 1, 2)
 
         grid.addWidget(QtWidgets.QLabel(self.tr("Args extra colprof")), 17, 0)
         self.edit_colprof_args = QtWidgets.QLineEdit("")
         self.edit_colprof_args.setPlaceholderText(self.tr("Ejemplo: -D \"Perfil Camara Museo\""))
-        grid.addWidget(self.edit_colprof_args, 17, 1, 1, 2)
+        self.edit_colprof_args.setToolTip(self.tr(COLPROF_OPTIONS_HELP))
+        colprof_args_row = QtWidgets.QHBoxLayout()
+        colprof_args_row.addWidget(self.edit_colprof_args, 1)
+        colprof_args_row.addWidget(self._button(self.tr("Recomendado"), self._set_recommended_colprof_args))
+        grid.addLayout(colprof_args_row, 17, 1, 1, 2)
+
+        grid.addWidget(self._info_row(self.tr("Opciones ArgyllCMS"), self.tr(COLPROF_OPTIONS_HELP)), 18, 0, 1, 3)
 
         label_camera = QtWidgets.QLabel(self.tr("Cámara (opcional)"))
-        grid.addWidget(label_camera, 18, 0)
+        grid.addWidget(label_camera, 19, 0)
         self.profile_camera = QtWidgets.QLineEdit("")
-        grid.addWidget(self.profile_camera, 18, 1, 1, 2)
+        grid.addWidget(self.profile_camera, 19, 1, 1, 2)
         label_camera.hide()
         self.profile_camera.hide()
 
         label_lens = QtWidgets.QLabel(self.tr("Lente (opcional)"))
-        grid.addWidget(label_lens, 19, 0)
+        grid.addWidget(label_lens, 20, 0)
         self.profile_lens = QtWidgets.QLineEdit("")
-        grid.addWidget(self.profile_lens, 19, 1, 1, 2)
+        grid.addWidget(self.profile_lens, 20, 1, 1, 2)
         label_lens.hide()
         self.profile_lens.hide()
 
@@ -793,6 +835,10 @@ class LayoutMixin:
         self.left_tabs.addTab(self._build_analysis_panel(), self.tr("Diagnóstico"))
         self.left_tabs.addTab(self._build_metadata_panel(), self.tr("Metadatos"))
         self.left_tabs.addTab(self._build_preview_log_panel(), self.tr("Log"))
+        self.left_tabs.setTabToolTip(0, self.tr("Unidades, carpetas y miniaturas"))
+        self.left_tabs.setTabToolTip(1, self.tr("Diagnostico de imagen, carta y muestras"))
+        self.left_tabs.setTabToolTip(2, self.tr("Metadatos EXIF, GPS y C2PA"))
+        self.left_tabs.setTabToolTip(3, self.tr("Trazas de previsualizacion y procesos"))
         self.left_tabs.currentChanged.connect(self._expand_left_pane_for_tab_access)
         self.left_tabs.tabBarClicked.connect(self._expand_left_pane_for_tab_access)
         layout.addWidget(self.left_tabs, 1)
@@ -1875,6 +1921,7 @@ class LayoutMixin:
         color_scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
         color_scroll.setWidget(self._build_color_management_calibration_panel())
         self.right_workflow_tabs.addTab(color_scroll, self.tr("Color / calibración"))
+        self.right_workflow_tabs.setTabToolTip(0, self.tr("Gestion ICC, perfiles de sesion y perfilado con carta"))
 
         self.config_tabs = CollapsibleToolPanel()
         self.config_tabs.addItem(self._build_tab_color_adjustments(), self.tr("Color"), expanded=True)
@@ -1888,6 +1935,7 @@ class LayoutMixin:
         personalized_layout.addWidget(self._build_histogram_header_panel(), 0)
         personalized_layout.addWidget(self.config_tabs, 1)
         self.right_workflow_tabs.addTab(personalized_page, self.tr("Color y contraste"))
+        self.right_workflow_tabs.setTabToolTip(1, self.tr("Ajustes visuales persistentes por imagen"))
 
         sharpness_page = QtWidgets.QWidget()
         sharpness_layout = QtWidgets.QVBoxLayout(sharpness_page)
@@ -1900,6 +1948,7 @@ class LayoutMixin:
         sharpness_scroll.setWidget(self._build_tab_preview_settings())
         sharpness_layout.addWidget(sharpness_scroll, 1)
         self.right_workflow_tabs.addTab(sharpness_page, self.tr("Nitidez"))
+        self.right_workflow_tabs.setTabToolTip(2, self.tr("MTF, enfoque, ruido y aberracion cromatica"))
 
         self.raw_export_tabs = CollapsibleToolPanel()
         self._advanced_raw_config = self._build_tab_raw_config(self.tr("Criterios RAW globales"))
@@ -1909,6 +1958,7 @@ class LayoutMixin:
         self._development_profiles_panel.hide()
         self.raw_export_tabs.addItem(self._build_tab_batch_config(), self.tr("Exportar derivados"), expanded=True)
         self.right_workflow_tabs.addTab(self.raw_export_tabs, self.tr("RAW / exportación"))
+        self.right_workflow_tabs.setTabToolTip(3, self.tr("Criterios RAW, perfiles basicos y exportacion TIFF"))
 
         layout.addWidget(self.right_workflow_tabs, 1)
         self.right_workflow_tabs.currentChanged.connect(self._on_mtf_context_visibility_changed)

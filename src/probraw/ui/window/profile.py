@@ -705,6 +705,41 @@ class ProfileWorkflowMixin:
         self._set_status(self.tr("Directorio lote:") + f" {self._current_dir}")
         self._save_active_session(silent=True)
 
+    def _set_recommended_colprof_args(self) -> None:
+        self._set_combo_data(self.combo_profile_quality, "m")
+        self._set_combo_data(self.combo_profile_algo, "-as")
+        self.edit_colprof_args.setText(RECOMMENDED_COLPROF_EXTRA_ARGS)
+        self._set_status(self.tr("ArgyllCMS: preset recomendado para ColorChecker 24 aplicado"))
+        self._save_active_session(silent=True)
+
+    def _uses_risky_colorchecker24_colprof_model(self) -> bool:
+        chart_type = str(self.profile_chart_type.currentText() or "").strip().lower()
+        model = str(self.combo_profile_algo.currentData() or "").strip()
+        return chart_type == "colorchecker24" and model in {"-al", "-ax"}
+
+    def _confirm_risky_colorchecker24_colprof_model(self) -> bool:
+        if not self._uses_risky_colorchecker24_colprof_model():
+            return True
+        model = str(self.combo_profile_algo.currentData() or "").strip()
+        explanation = PROFILE_ALGO_HELP.get(model, "")
+        response = QtWidgets.QMessageBox.question(
+            self,
+            self.tr("Perfil ICC avanzado"),
+            self.tr(
+                "Has elegido un perfil cLUT para ColorChecker 24. En colorimetria, una cLUT necesita muchas "
+                "muestras bien distribuidas para interpolar con estabilidad. Con 24 parches puede sobreajustar, "
+                "estirar el rango hacia los extremos y aumentar el riesgo de clipping en altas luces.\n\n"
+            )
+            + self.tr(explanation)
+            + "\n\n"
+            + self.tr("Para el flujo normal se recomienda matriz + curvas por canal (-as), calidad Medium y -u -R.")
+            + "\n\n"
+            + self.tr("Quieres continuar con el modo avanzado?"),
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+            QtWidgets.QMessageBox.No,
+        )
+        return response == QtWidgets.QMessageBox.Yes
+
     def _on_generate_profile(self) -> None:
         self._ensure_session_output_controls()
         charts = Path(self.profile_charts_dir.text().strip())
@@ -754,6 +789,9 @@ class ProfileWorkflowMixin:
                     self.tr("Selecciona una o mas miniaturas con carta, carga una carta en el visor o abre una carpeta con capturas RAW/DNG/TIFF."),
                 )
                 return
+        if not self._confirm_risky_colorchecker24_colprof_model():
+            self._set_recommended_colprof_args()
+            return
         manual_detections = self._manual_detections_for_profile(chart_capture_files)
         reference_path = Path(self.path_reference.text().strip())
         requested_profile_out = Path(self.profile_out_path_edit.text().strip())
@@ -789,7 +827,7 @@ class ProfileWorkflowMixin:
         self.develop_profile_out.setText(str(development_profile_out))
         self.calibrated_recipe_out.setText(str(calibrated_recipe_out))
 
-        def task():
+        def task(progress_emit=None):
             task_manual_detections = dict(manual_detections or {})
             if pending_manual_detection is not None:
                 source, detection = self._build_pending_manual_detection(
@@ -821,6 +859,7 @@ class ProfileWorkflowMixin:
                 manual_detections=task_manual_detections or None,
                 validation_holdout_count=validation_holdout_count,
                 profile_workers=1,
+                progress_callback=progress_emit,
             )
 
         def on_success(payload) -> None:
@@ -904,7 +943,48 @@ class ProfileWorkflowMixin:
             self._save_active_session(silent=True)
             self._refresh_gamut_diagnostics(profile_out=profile_out, focus=False)
 
-        self._start_background_task(self.tr("Generacion de perfil avanzado con carta + ICC"), task, on_success)
+        self._start_background_task(
+            self.tr("Generacion de perfil avanzado con carta + ICC"),
+            task,
+            on_success,
+            on_progress=self._apply_profile_generation_progress,
+        )
+
+    def _apply_profile_generation_progress(self, payload: Any) -> None:
+        if not isinstance(payload, dict):
+            return
+        try:
+            progress = int(round(float(payload.get("progress", 0))))
+        except Exception:
+            progress = 0
+        progress = max(0, min(100, progress))
+        phase = str(payload.get("phase") or self.tr("Generando perfil"))
+        detail = str(payload.get("detail") or "").strip()
+        current = payload.get("current")
+        total = payload.get("total")
+        if current is not None and total is not None:
+            try:
+                capture_text = f"{int(current)}/{int(total)}"
+            except Exception:
+                capture_text = ""
+            if capture_text and capture_text not in detail:
+                detail = f"{detail} ({capture_text})" if detail else capture_text
+        phase_text = f"{phase}: {detail}" if detail else phase
+
+        if hasattr(self, "monitor_progress"):
+            self.monitor_progress.setRange(0, 100)
+            self.monitor_progress.setValue(progress)
+        if hasattr(self, "monitor_status_label"):
+            self.monitor_status_label.setText(f"{self.tr('Ejecutando:')} {phase} ({progress}%)")
+        self._set_global_operation_progress(
+            "task",
+            f"{self.tr('Ejecutando:')} {self.tr('Generacion de perfil avanzado con carta + ICC')}",
+            time_text=f"{self.tr('Avance:')} {progress}%",
+            phase_text=phase_text,
+            minimum=0,
+            maximum=100,
+            value=progress,
+        )
 
     def _set_profile_output_payload(self, payload: Any) -> None:
         if not hasattr(self, "profile_output"):
@@ -1587,7 +1667,8 @@ class ProfileWorkflowMixin:
             )
             return
 
-        workdir = Path(self.profile_workdir.text().strip() or "/tmp/probraw_profile_work")
+        workdir_text = self.profile_workdir.text().strip()
+        workdir = Path(workdir_text) if workdir_text else self._session_default_outputs()["workdir"]
         default_dir = workdir / "manual_detections"
         default_dir.mkdir(parents=True, exist_ok=True)
         default_path = default_dir / f"{self._selected_file.stem}.manual_detection.json"

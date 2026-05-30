@@ -186,8 +186,14 @@ Estados:
 - `draft`: el perfil se ha generado, pero falta validación independiente o esta
   no es concluyente; puede activarse manualmente bajo criterio del operador;
 - `rejected`: una validación disponible o el entrenamiento superan los umbrales
-  de error definidos;
+  de error definidos; no se autoactiva y solo puede activarse con confirmación
+  explícita para diagnóstico o comparación;
 - `expired`: el perfil validado ha superado su ventana de vigencia configurada.
+
+Los metadatos del perfil deben reflejar el modelo real solicitado a ArgyllCMS:
+`argyll_shaper_matrix`, `argyll_gamma_matrix`, `argyll_matrix`,
+`argyll_lab_clut`, `argyll_xyz_clut` o `argyll_custom`. La matriz 3x3 guardada
+en el reporte es diagnóstica cuando el ICC real se ha generado con una cLUT.
 
 ## Flujo Sin Carta de Color
 

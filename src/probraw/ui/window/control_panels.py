@@ -773,7 +773,7 @@ class ControlPanelsMixin:
         assign_row.addWidget(self._button(self.tr("Aplicar ICC a sesion"), self._assign_active_icc_profile_to_session_raws))
         grid.addLayout(assign_row, 2, 0, 1, 3)
 
-        self.path_profile_active = QtWidgets.QLineEdit("/tmp/camera_profile.icc")
+        self.path_profile_active = QtWidgets.QLineEdit("")
         self._add_path_row(grid, 3, self.tr("Perfil ICC de la imagen"), self.path_profile_active, file_mode=True, save_mode=False, dir_mode=False)
 
         self.icc_profile_status_label = QtWidgets.QLabel(self.tr("Sin perfiles ICC de sesión"))
@@ -793,6 +793,17 @@ class ControlPanelsMixin:
         self.radio_icc_generic = QtWidgets.QRadioButton(self.tr("Perfil ICC RGB estandar"))
         self.radio_icc_existing = QtWidgets.QRadioButton(self.tr("Perfiles ICC de la sesion"))
         self.radio_icc_generate = QtWidgets.QRadioButton(self.tr("Generar perfil ICC"))
+        self.radio_icc_generic.setToolTip(
+            self.tr("Usa un perfil RGB conocido para trabajar sin carta o sin ICC de sesion.")
+        )
+        self.radio_icc_existing.setToolTip(
+            self.tr("Activa un ICC generado o registrado dentro de esta sesion.")
+        )
+        self.radio_icc_generate.setToolTip(
+            self.tr("Abre el bloque de carta de color para crear un ICC nuevo.")
+        )
+        for radio in (self.radio_icc_generic, self.radio_icc_existing, self.radio_icc_generate):
+            radio.setStatusTip(radio.toolTip())
         self.radio_icc_custom = self.radio_icc_existing
         self.radio_icc_generic.setChecked(True)
         grid.addWidget(self.radio_icc_generic, 0, 0, 1, 3)
@@ -832,7 +843,10 @@ class ControlPanelsMixin:
         grid.addWidget(self.radio_icc_generate, 6, 0, 1, 3)
         self.icc_workflow_decision_label = QtWidgets.QLabel("")
         self.icc_workflow_decision_label.setWordWrap(True)
-        self.icc_workflow_decision_label.setStyleSheet("font-size: 12px; color: #d8d8d8;")
+        self.icc_workflow_decision_label.setStyleSheet(
+            "font-size: 12px; color: #d8d8d8; background-color: #242424; "
+            "border-left: 3px solid #2f8acb; padding: 5px 6px;"
+        )
         grid.addWidget(self.icc_workflow_decision_label, 7, 0, 1, 3)
 
         self.radio_icc_generic.toggled.connect(lambda _checked: self._on_icc_workflow_choice_changed())
@@ -879,9 +893,11 @@ class ControlPanelsMixin:
         grid = QtWidgets.QGridLayout()
 
         self.batch_input_dir = QtWidgets.QLineEdit(str(self._current_dir))
+        self.batch_input_dir.setToolTip(self.tr("Carpeta de RAW/DNG/TIFF originales que se exportaran en lote"))
         self._add_path_row(grid, 0, self.tr("RAW a revelar (carpeta)"), self.batch_input_dir, file_mode=False, save_mode=False, dir_mode=True)
 
-        self.batch_out_dir = QtWidgets.QLineEdit("/tmp/probraw_batch_tiffs")
+        self.batch_out_dir = QtWidgets.QLineEdit(str(Path(tempfile.gettempdir()) / "probraw_batch_tiffs"))
+        self.batch_out_dir.setToolTip(self.tr("Carpeta de salida para TIFF derivados"))
         self._add_path_row(grid, 1, self.tr("Salida TIFF derivados"), self.batch_out_dir, file_mode=False, save_mode=False, dir_mode=True)
 
         self.batch_embed_profile = QtWidgets.QCheckBox(self.tr("Incrustar/aplicar ICC en TIFF"))
@@ -897,6 +913,7 @@ class ControlPanelsMixin:
 
         self.batch_apply_adjustments = QtWidgets.QCheckBox(self.tr("Aplicar ajustes básicos y de nitidez"))
         self.batch_apply_adjustments.setChecked(True)
+        self.batch_apply_adjustments.setToolTip(self.tr("Incluye color, contraste y nitidez guardados en la imagen o la sesion"))
         grid.addWidget(self.batch_apply_adjustments, 3, 0, 1, 3)
 
         row_1 = QtWidgets.QHBoxLayout()
