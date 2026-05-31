@@ -60,3 +60,13 @@ def test_bundled_tool_dirs_includes_macos_package_manager_paths(monkeypatch, tmp
     assert "/opt/homebrew/bin" in paths
     assert "/usr/local/bin" in paths
     assert "/opt/local/bin" in paths
+
+
+def test_bundled_tool_dirs_includes_arch_vendor_perl_path(monkeypatch, tmp_path):
+    monkeypatch.setattr(external.sys, "platform", "linux", raising=False)
+    monkeypatch.setattr(external.sys, "executable", str(tmp_path / "venv" / "bin" / "python"), raising=False)
+    monkeypatch.delenv("PROBRAW_TOOL_DIR", raising=False)
+
+    paths = {str(path) for path in external.bundled_tool_dirs()}
+
+    assert "/usr/bin/vendor_perl" in paths

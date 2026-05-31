@@ -22,6 +22,38 @@ To maintain full traceability, each change must:
 
 No entries yet.
 
+## [0.4.4] - 2026-05-31
+
+### Added
+
+- Added automatic runtime performance policy detection for installers through
+  `probraw tune-performance`, including CPU/RAM based thread limits and system
+  config invalidation when hardware changes.
+- Added `scripts/benchmark_preview_load.py` to measure real RAW preview load,
+  embedded placeholder extraction, display ICC conversion and optional 1:1
+  preview timing across machines.
+
+### Changed
+
+- Interactive exposure, contrast, color and curve previews now prioritize the
+  visible viewport during direct manipulation, defer non-visual exact work until
+  idle and avoid forcing full RAW renders from proxy views.
+- System package post-install hooks now write the detected performance policy
+  when the packaged CLI is available.
+
+### Fixed
+
+- Fixed the viewport preview request policy after a recent non-drag control
+  change: colorimetric preview patches remain deferred, but exact histograms are
+  not incorrectly suppressed once no slider or curve is actively being dragged.
+- Fixed Arch/Linux ExifTool discovery when `perl-image-exiftool` installs the
+  executable under `/usr/bin/vendor_perl`, allowing strict package checks and
+  metadata preview extraction to work without manual `PATH` changes.
+
+### Tests
+
+- Validated with the full local suite: `558 passed, 1 skipped, 2 warnings`.
+
 ## [0.4.3] - 2026-05-30
 
 ### Added

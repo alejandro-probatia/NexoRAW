@@ -4,6 +4,25 @@ La publicacion de instaladores de ProbRAW tiene una regla simple: ningun
 artefacto se sube al repositorio ni a GitHub Releases sin pasar primero las
 validaciones de paquete e instalacion.
 
+## Release 0.4.4
+
+La 0.4.4 es una release de rendimiento e instaladores para planificacion de
+preview interactiva, ajuste automatico de runtime y artefactos Arch/Windows/
+Debian actualizados. Antes de publicar los artefactos, verificar:
+
+- suite completa local: `558 passed, 1 skipped, 2 warnings`;
+- compilacion Python sin errores;
+- las previews de viewport tras cambios recientes sin arrastre mantienen activo
+  el histograma exacto y difieren las muestras colorimetricas hasta reposo;
+- `probraw tune-performance` informa una politica CPU/RAM acotada y los hooks de
+  paquete de sistema la ejecutan de forma oportunista durante post-install;
+- la build Linux Debian/Ubuntu genera `probraw_0.4.4_amd64.deb` y valida con
+  `packaging/debian/validate_deb.sh`;
+- la build Linux Arch genera `probraw-0.4.4-1-x86_64.pkg.tar.zst`, incluye AMaZE
+  registra el perfil de build `arch-generic` y valida la deteccion estricta de
+  ExifTool desde la ruta Arch `/usr/bin/vendor_perl`;
+- la build Windows genera `ProbRAW-0.4.4-Setup.exe` y su `.sha256`.
+
 ## Release 0.4.3
 
 La 0.4.3 es una release de precision para perfilado ICC desde RAW/DNG, marcado

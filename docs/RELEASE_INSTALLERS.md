@@ -6,6 +6,25 @@ The ProbRAW installer release has a simple rule: no
 artifact is uploaded to the repository or GitHub Releases without first passing the
 package and installation validations.
 
+## Release 0.4.4
+
+0.4.4 is a performance and installer release for interactive preview scheduling,
+automatic runtime tuning and refreshed Arch/Windows/Debian artifacts. Before
+publishing artifacts, verify:
+
+- full local suite: `558 passed, 1 skipped, 2 warnings`;
+- Python compilation completes without errors;
+- viewport previews after recent non-drag slider changes keep exact histograms
+  enabled while deferring colorimetric patches until idle;
+- `probraw tune-performance` reports a bounded CPU/RAM policy and system package
+  hooks run it opportunistically during post-install;
+- the Linux Debian/Ubuntu build generates `probraw_0.4.4_amd64.deb` and
+  validates with `packaging/debian/validate_deb.sh`;
+- the Linux Arch build generates `probraw-0.4.4-1-x86_64.pkg.tar.zst`, includes
+  AMaZE, records the `arch-generic` build profile and validates strict
+  ExifTool discovery from Arch's `/usr/bin/vendor_perl` package path;
+- the Windows build generates `ProbRAW-0.4.4-Setup.exe` and its `.sha256`.
+
 ## Release 0.4.3
 
 0.4.3 is a precision release for RAW/DNG ICC profiling, manual chart marking and

@@ -1891,11 +1891,12 @@ class PreviewRenderMixin:
                     getattr(self, "check_image_clip_overlay", None)
                     and self.check_image_clip_overlay.isChecked()
                 )
-                defer_exact_histogram = self._is_preview_interaction_active()
+                defer_interactive_color_patch = self._is_preview_interaction_active()
+                defer_exact_histogram = self._is_direct_preview_interaction_active()
                 include_colorimetric_patch = bool(
                     viewport_rect is None
                     or overlay_enabled
-                    or not defer_exact_histogram
+                    or not defer_interactive_color_patch
                 )
                 if defer_exact_histogram and viewport_rect is not None:
                     include_histogram = False

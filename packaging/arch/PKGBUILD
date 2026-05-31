@@ -140,6 +140,12 @@ PY
 
   rm -f "$venv/bin/nexoraw" "$venv/bin/nexoraw-ui" "$venv/bin/iccraw" "$venv/bin/iccraw-ui"
   rm -f "$venv/bin/activate" "$venv/bin/activate.csh" "$venv/bin/activate.fish" "$venv/bin/Activate.ps1"
+  while IFS= read -r -d '' entry; do
+    name="$(basename "$entry")"
+    if [[ -n "$(printf '%s' "$name" | LC_ALL=C tr -d ' -~')" ]]; then
+      rm -f "$entry"
+    fi
+  done < <(find "$venv/bin" -maxdepth 1 \( -type f -o -type l \) -print0)
 
   local entry first_line
   for entry in "$venv/bin/"*; do

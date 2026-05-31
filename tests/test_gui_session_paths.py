@@ -3746,6 +3746,7 @@ def test_visible_viewport_request_preempts_full_interactive_render(qapp, monkeyp
             (10, 12, 40, 36),
             True,
             True,
+            False,
         )
         started: list[tuple[object, ...]] = []
         window._interactive_preview_task_active = True
@@ -3788,6 +3789,7 @@ def test_visible_viewport_request_waits_for_inflight_viewport_render(qapp, monke
             (10, 12, 40, 36),
             True,
             True,
+            False,
         )
         started: list[tuple[object, ...]] = []
         window._interactive_preview_task_active = True

@@ -45,6 +45,8 @@ def bundled_tool_dirs() -> list[Path | PurePosixPath]:
                 PurePosixPath("/opt/local/bin"),
             ]
         )
+    elif sys.platform.startswith("linux"):
+        dirs.append(PurePosixPath("/usr/bin/vendor_perl"))
 
     seen: set[str] = set()
     out: list[Path | PurePosixPath] = []
