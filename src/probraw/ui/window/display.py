@@ -841,7 +841,48 @@ class DisplayControlsMixin:
             )
             return
         self.path_display_profile.setText(str(detected))
-        self.check_display_color_management.setChecked(True)
+        if hasattr(self, "check_manual_profile_override"):
+            self._set_checkbox_checked_without_signal(self.check_manual_profile_override, False)
+        if hasattr(self, "check_display_color_management"):
+            self._set_checkbox_checked_without_signal(self.check_display_color_management, True)
+        self._on_display_color_settings_changed()
+
+    def _set_checkbox_checked_without_signal(self, checkbox, checked: bool) -> None:
+        blocker = QtCore.QSignalBlocker(checkbox)
+        try:
+            checkbox.setChecked(bool(checked))
+        finally:
+            del blocker
+
+    def _sync_display_profile_mode_controls(self) -> None:
+        if not hasattr(self, "check_display_color_management"):
+            return
+        manual_enabled = bool(
+            hasattr(self, "check_manual_profile_override")
+            and self.check_manual_profile_override.isChecked()
+        )
+        expected_system_enabled = not manual_enabled
+        if self.check_display_color_management.isChecked() != expected_system_enabled:
+            self._set_checkbox_checked_without_signal(
+                self.check_display_color_management,
+                expected_system_enabled,
+            )
+
+    def _on_system_display_profile_toggled(self, enabled: bool) -> None:
+        if not hasattr(self, "check_display_color_management"):
+            return
+        if enabled and hasattr(self, "check_manual_profile_override"):
+            self._set_checkbox_checked_without_signal(self.check_manual_profile_override, False)
+        elif not enabled and not (
+            hasattr(self, "check_manual_profile_override")
+            and self.check_manual_profile_override.isChecked()
+        ):
+            self._set_checkbox_checked_without_signal(self.check_display_color_management, True)
+        self._on_display_color_settings_changed()
+
+    def _on_manual_display_profile_toggled(self, enabled: bool) -> None:
+        if hasattr(self, "check_display_color_management"):
+            self._set_checkbox_checked_without_signal(self.check_display_color_management, not enabled)
         self._on_display_color_settings_changed()
 
     def _ensure_display_profile_if_enabled(self) -> None:
@@ -858,17 +899,16 @@ class DisplayControlsMixin:
     def _on_display_color_settings_changed(self, *_args) -> None:
         if not hasattr(self, "check_display_color_management"):
             return
+        self._sync_display_profile_mode_controls()
         self._ensure_display_profile_if_enabled()
 
         self._invalidate_active_display_profile_cache()
-        self._settings.setValue(
-            "display/color_management_enabled",
-            bool(self.check_display_color_management.isChecked()),
-        )
+        self._settings.setValue("display/color_management_enabled", True)
         if hasattr(self, "check_manual_profile_override"):
+            manual_enabled = bool(self.check_manual_profile_override.isChecked())
             self._settings.setValue(
                 "display/manual_override_enabled",
-                bool(self.check_manual_profile_override.isChecked()),
+                manual_enabled,
             )
         self._settings.setValue("display/monitor_profile", self.path_display_profile.text().strip())
         self._display_color_error_key = None

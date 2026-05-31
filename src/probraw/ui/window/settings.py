@@ -242,15 +242,17 @@ class SettingsMixin:
         self.check_display_color_management = QtWidgets.QCheckBox(self.tr("Gestion de color del monitor (SO/Qt)"))
         self.check_display_color_management.setToolTip(
             self.tr(
-                "Siempre activo: ProbRAW obtiene el perfil ICC del monitor desde el SO/Qt "
-                "cuando esta disponible y convierte la vista previa con LittleCMS. "
+                "Usa el perfil ICC del monitor desde el SO/Qt cuando esta disponible "
+                "y convierte la vista previa con LittleCMS. "
                 "Los pixeles ya convertidos se entregan como RGB de dispositivo para evitar "
-                "una segunda conversion del compositor. El TIFF no usa este perfil."
+                "una segunda conversion del compositor. El TIFF no usa este perfil. "
+                "Desactiva el perfil manual cuando se elige este modo."
             )
         )
-        self.check_display_color_management.setChecked(True)
-        self.check_display_color_management.setEnabled(False)
-        self.check_display_color_management.toggled.connect(self._on_display_color_settings_changed)
+        manual_override_enabled = self._settings_bool("display/manual_override_enabled", False)
+        self.check_display_color_management.setChecked(not manual_override_enabled)
+        self.check_display_color_management.setEnabled(True)
+        self.check_display_color_management.toggled.connect(self._on_system_display_profile_toggled)
         grid.addWidget(self.check_display_color_management, 3, 0, 1, 3)
 
         self.check_manual_profile_override = QtWidgets.QCheckBox(
@@ -262,10 +264,8 @@ class SettingsMixin:
                 "Util para prueba en pantalla o cuando el SO no reporta el perfil correcto."
             )
         )
-        self.check_manual_profile_override.setChecked(
-            self._settings_bool("display/manual_override_enabled", False)
-        )
-        self.check_manual_profile_override.toggled.connect(self._on_display_color_settings_changed)
+        self.check_manual_profile_override.setChecked(manual_override_enabled)
+        self.check_manual_profile_override.toggled.connect(self._on_manual_display_profile_toggled)
         grid.addWidget(self.check_manual_profile_override, 4, 0, 1, 3)
 
         self.path_display_profile = QtWidgets.QLineEdit(str(self._settings.value("display/monitor_profile") or ""), tab)

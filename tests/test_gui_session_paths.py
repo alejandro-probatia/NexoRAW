@@ -8636,6 +8636,43 @@ def test_display_color_management_defaults_to_system_profile(tmp_path: Path, mon
         window.close()
 
 
+def test_display_color_management_can_switch_from_manual_to_system_profile(
+    tmp_path: Path,
+    monkeypatch,
+    qapp,
+):
+    system_profile = tmp_path / "system-monitor.icc"
+    manual_profile = tmp_path / "manual-monitor.icc"
+    srgb_profile = ImageCms.ImageCmsProfile(ImageCms.createProfile("sRGB"))
+    profile_bytes = srgb_profile.tobytes()
+    system_profile.write_bytes(profile_bytes)
+    manual_profile.write_bytes(profile_bytes)
+
+    settings = gui_module._make_app_settings()
+    settings.setValue("display/manual_override_enabled", True)
+    settings.setValue("display/monitor_profile", str(manual_profile))
+    settings.sync()
+    monkeypatch.setattr(gui_module, "detect_system_display_profile", lambda: system_profile)
+    monkeypatch.setattr(display_module.DisplayControlsMixin, "_monitor_profile_from_qt", lambda self: None)
+
+    window = ICCRawMainWindow()
+    try:
+        assert window.check_display_color_management.isEnabled()
+        assert not window.check_display_color_management.isChecked()
+        assert window.check_manual_profile_override.isChecked()
+        assert window._active_display_profile_path() == manual_profile
+
+        window.check_display_color_management.setChecked(True)
+
+        assert window.check_display_color_management.isChecked()
+        assert not window.check_manual_profile_override.isChecked()
+        assert window._settings_bool("display/color_management_enabled", False)
+        assert not window._settings_bool("display/manual_override_enabled", True)
+        assert window._active_display_profile_path() == system_profile
+    finally:
+        window.close()
+
+
 def test_display_color_settings_migrate_old_disabled_default(tmp_path: Path, monkeypatch, qapp):
     profile = tmp_path / "system-monitor.icc"
     srgb_profile = ImageCms.ImageCmsProfile(ImageCms.createProfile("sRGB"))
